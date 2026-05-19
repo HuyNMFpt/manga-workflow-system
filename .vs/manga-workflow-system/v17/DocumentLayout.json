@@ -1,7 +1,16 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\hooks\\useAuth.ts||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:frontend\\src\\hooks\\useAuth.ts||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\services\\authService.ts||{3B902123-F8A7-4915-9F01-361F908088D0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:frontend\\src\\services\\authService.ts||{3B902123-F8A7-4915-9F01-361F908088D0}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,7 +18,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 4,
           "Children": [
             {
               "$type": "Bookmark",
@@ -26,6 +35,32 @@
             {
               "$type": "Bookmark",
               "Name": "ST:129:0:{75188d03-9892-4ae2-abf1-207126247ce5}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "useAuth.ts",
+              "DocumentMoniker": "C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\hooks\\useAuth.ts",
+              "RelativeDocumentMoniker": "frontend\\src\\hooks\\useAuth.ts",
+              "ToolTip": "C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\hooks\\useAuth.ts",
+              "RelativeToolTip": "frontend\\src\\hooks\\useAuth.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-05-18T09:11:09.973Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "authService.ts",
+              "DocumentMoniker": "C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\services\\authService.ts",
+              "RelativeDocumentMoniker": "frontend\\src\\services\\authService.ts",
+              "ToolTip": "C:\\Users\\ncanh\\Downloads\\New folder\\manga-workflow-system\\frontend\\src\\services\\authService.ts",
+              "RelativeToolTip": "frontend\\src\\services\\authService.ts",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
+              "WhenOpened": "2026-05-18T09:10:40.865Z",
+              "EditorCaption": ""
             }
           ]
         }

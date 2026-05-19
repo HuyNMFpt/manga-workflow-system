@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { BookOpen, Eye, EyeOff } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { BookOpen, Eye, EyeOff, CheckCircle2 } from "lucide-react"
 
 interface SignupFormData {
   name: string
@@ -11,6 +12,7 @@ interface SignupFormData {
 }
 
 export default function SignupPage() {
+  const navigate = useNavigate()
   const [formData, setFormData] = useState<SignupFormData>({
     name: "",
     email: "",
@@ -23,19 +25,37 @@ export default function SignupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errors, setErrors] = useState<Partial<SignupFormData>>({})
+  const [apiError, setApiError] = useState("")
 
   const roles = [
-    { value: "MANGAKA", label: "Mangaka", icon: "✏️", desc: "Create manga series" },
-    { value: "ASSISTANT", label: "Assistant", icon: "🎨", desc: "Support mangaka" },
-    { value: "EDITOR", label: "Editor", icon: "📝", desc: "Review manuscripts" },
+    { 
+      value: "MANGAKA", 
+      label: "Mangaka", 
+      icon: "✏️", 
+      desc: "Create and publish manga series" 
+    },
+    { 
+      value: "ASSISTANT", 
+      label: "Assistant", 
+      icon: "🎨", 
+      desc: "Support mangaka in production" 
+    },
+    { 
+      value: "EDITOR", 
+      label: "Editor", 
+      icon: "📝", 
+      desc: "Review and approve manuscripts" 
+    },
+    { 
+      value: "BOARD", 
+      label: "Editorial Board", 
+      icon: "👔", 
+      desc: "Make strategic decisions" 
+    },
   ]
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target
-    const checked = (e.target as HTMLInputElement).checked
-
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -45,6 +65,14 @@ export default function SignupPage() {
     if (errors[name as keyof SignupFormData]) {
       setErrors((prev) => ({ ...prev, [name]: undefined }))
     }
+    setApiError("")
+  }
+
+  const handleRoleSelect = (roleValue: string) => {
+    setFormData((prev) => ({ ...prev, role: roleValue }))
+    if (errors.role) {
+      setErrors((prev) => ({ ...prev, role: undefined }))
+    }
   }
 
   const validate = (): boolean => {
@@ -52,6 +80,8 @@ export default function SignupPage() {
 
     if (!formData.name.trim()) {
       newErrors.name = "Name is required"
+    } else if (formData.name.trim().length < 2) {
+      newErrors.name = "Name must be at least 2 characters"
     }
 
     if (!formData.email.trim()) {
@@ -90,27 +120,55 @@ export default function SignupPage() {
     if (!validate()) return
 
     setIsSubmitting(true)
+    setApiError("")
 
     try {
-      // TODO: Call API to register user
-      await new Promise((resolve) => setTimeout(resolve, 1500)) // Simulate API call
-      
-      // Redirect to login or dashboard
-      window.location.href = "/login"
-    } catch (err) {
-      console.error("Signup error:", err)
+      // TODO: Replace with actual API call
+      // const response = await authService.register({
+      //   name: formData.name,
+      //   email: formData.email,
+      //   password: formData.password,
+      //   role: formData.role,
+      // })
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+
+      // Mock success - redirect to login
+      navigate("/login", { 
+        state: { 
+          message: "Account created successfully! Please sign in." 
+        } 
+      })
+    } catch (error: any) {
+      setApiError(error.message || "Registration failed. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4">
-      {/* Animated background */}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 relative overflow-hidden">
+      {/* Animated background mesh */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse delay-1000" />
       </div>
+
+      {/* Floating particles */}
+      {Array.from({ length: 15 }).map((_, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full bg-white/5"
+          style={{
+            width: `${Math.random() * 4 + 1}px`,
+            height: `${Math.random() * 4 + 1}px`,
+            left: `${Math.random() * 100}%`,
+            animation: `float ${Math.random() * 10 + 15}s linear infinite`,
+            animationDelay: `${Math.random() * 5}s`,
+          }}
+        />
+      ))}
 
       <div className="relative z-10 w-full max-w-2xl">
         {/* Logo */}
@@ -122,18 +180,27 @@ export default function SignupPage() {
             <h1 className="text-xl font-bold text-white tracking-tight">
               Manga CW&PM
             </h1>
+            <p className="text-xs text-white/70 uppercase tracking-widest">
+              Collaborative Workspace
+            </p>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="mb-8">
             <h2 className="text-2xl font-bold text-slate-900 mb-2">
-              Create Account
+              Create Your Account
             </h2>
             <p className="text-sm text-slate-600">
               Join our manga collaborative workspace
             </p>
           </div>
+
+          {apiError && (
+            <div className="mb-6 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600 animate-in fade-in slide-in-from-top-2 duration-300">
+              {apiError}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Name */}
@@ -148,6 +215,7 @@ export default function SignupPage() {
                 id="name"
                 name="name"
                 type="text"
+                autoComplete="name"
                 required
                 value={formData.name}
                 onChange={handleChange}
@@ -176,6 +244,7 @@ export default function SignupPage() {
                 id="email"
                 name="email"
                 type="email"
+                autoComplete="email"
                 required
                 value={formData.email}
                 onChange={handleChange}
@@ -206,6 +275,7 @@ export default function SignupPage() {
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     required
                     value={formData.password}
                     onChange={handleChange}
@@ -221,7 +291,7 @@ export default function SignupPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     disabled={isSubmitting}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -247,6 +317,7 @@ export default function SignupPage() {
                     id="confirmPassword"
                     name="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
                     required
                     value={formData.confirmPassword}
                     onChange={handleChange}
@@ -262,7 +333,7 @@ export default function SignupPage() {
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     disabled={isSubmitting}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-60"
                   >
                     {showConfirmPassword ? (
                       <EyeOff className="w-4 h-4" />
@@ -284,33 +355,32 @@ export default function SignupPage() {
               <label className="block text-sm font-medium text-slate-700 mb-3">
                 Select Your Role
               </label>
-              <div className="grid md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {roles.map((role) => (
-                  <label
+                  <button
                     key={role.value}
-                    className={`relative flex flex-col items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                    type="button"
+                    onClick={() => !isSubmitting && handleRoleSelect(role.value)}
+                    disabled={isSubmitting}
+                    className={`relative flex flex-col items-center p-4 border-2 rounded-lg cursor-pointer transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                       formData.role === role.value
                         ? "border-purple-600 bg-purple-50"
-                        : "border-slate-200 hover:border-purple-300"
-                    } ${isSubmitting ? "opacity-60 cursor-not-allowed" : ""}`}
+                        : "border-slate-200 hover:border-purple-300 bg-white"
+                    }`}
                   >
-                    <input
-                      type="radio"
-                      name="role"
-                      value={role.value}
-                      checked={formData.role === role.value}
-                      onChange={handleChange}
-                      disabled={isSubmitting}
-                      className="sr-only"
-                    />
+                    {formData.role === role.value && (
+                      <div className="absolute -top-2 -right-2 w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      </div>
+                    )}
                     <span className="text-2xl mb-2">{role.icon}</span>
-                    <span className="text-sm font-semibold text-slate-900 mb-1">
+                    <span className="text-xs font-semibold text-slate-900 text-center">
                       {role.label}
                     </span>
-                    <span className="text-xs text-slate-500 text-center">
+                    <span className="text-[10px] text-slate-500 text-center mt-1 leading-tight">
                       {role.desc}
                     </span>
-                  </label>
+                  </button>
                 ))}
               </div>
               {errors.role && (
@@ -320,7 +390,7 @@ export default function SignupPage() {
 
             {/* Terms */}
             <div>
-              <label className="flex items-start gap-2 cursor-pointer">
+              <label className="flex items-start gap-2 cursor-pointer group">
                 <input
                   type="checkbox"
                   name="acceptTerms"
@@ -331,11 +401,12 @@ export default function SignupPage() {
                     errors.acceptTerms ? "border-red-300" : ""
                   }`}
                 />
-                <span className="text-sm text-slate-600">
+                <span className="text-sm text-slate-600 group-hover:text-slate-900 transition-colors">
                   I agree to the{" "}
                   <a
                     href="/terms"
                     className="text-purple-600 hover:text-purple-700 font-medium underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     Terms of Service
                   </a>{" "}
@@ -343,6 +414,7 @@ export default function SignupPage() {
                   <a
                     href="/privacy"
                     className="text-purple-600 hover:text-purple-700 font-medium underline"
+                    onClick={(e) => e.stopPropagation()}
                   >
                     Privacy Policy
                   </a>
@@ -377,6 +449,25 @@ export default function SignupPage() {
           </p>
         </div>
       </div>
+
+      <style>{`
+        @keyframes float {
+          0% {
+            transform: translateY(100vh) scale(0);
+            opacity: 0;
+          }
+          10% {
+            opacity: 1;
+          }
+          90% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(-100vh) scale(1);
+            opacity: 0;
+          }
+        }
+      `}</style>
     </div>
   )
 }

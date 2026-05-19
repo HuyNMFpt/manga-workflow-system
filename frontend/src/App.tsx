@@ -4,6 +4,9 @@ import AppLayout from "@/components/layout/AppLayout"
 import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import LoginPage from "@/pages/auth/LoginPage"
 import UnauthorizedPage from "@/pages/auth/UnauthorizedPage"
+import SignupPage from "@/pages/auth/SignupPage"
+import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage"
+import ResetPasswordPage from "@/pages/auth/ResetPasswordPage"
 import MangakaDashboard from "@/pages/mangaka/MangakaDashboard"
 import SeriesList from "@/pages/mangaka/SeriesList"
 import ChapterManager from "@/pages/mangaka/ChapterManager"
@@ -29,6 +32,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
 
