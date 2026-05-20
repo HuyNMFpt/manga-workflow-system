@@ -1,129 +1,281 @@
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { seriesService } from "@/services/seriesService"
-import PageHeader from "@/components/shared/PageHeader"
-import { AlertTriangle, XCircle, RotateCcw, Calendar, ArrowRight } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useState } from 'react';
+import { 
+  AlertTriangle, 
+  XCircle, 
+  Calendar,
+  Check,
+  ArrowRight,
+  Ban,
+  Clock,
+  MonitorPlay,
+  Target
+} from 'lucide-react';
 
-type Decision = "cancel" | "monthly" | "digital" | "probation"
+type Decision = 'cancel' | 'monthly' | 'digital' | 'probation';
 
-const DECISION_OPTIONS: { value: Decision; label: string; desc: string; cls: string }[] = [
-  { value: "cancel",    label: "Huỷ series",            desc: "Chấm dứt xuất bản hoàn toàn", cls: "border-red-300 bg-red-50 text-red-700 hover:bg-red-100" },
-  { value: "monthly",   label: "Đổi sang hàng tháng",  desc: "Giảm tần suất để cải thiện", cls: "border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100" },
-  { value: "digital",   label: "Chỉ đăng online",       desc: "Rút khỏi bản in, giữ digital", cls: "border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100" },
-  { value: "probation", label: "Thử thách 3 tháng",     desc: "Cho cơ hội cải thiện xếp hạng", cls: "border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100" },
-]
+const DecisionPanel = () => {
+  const [selectedSeries, setSelectedSeries] = useState<number | null>(null);
+  const [decisions, setDecisions] = useState<Record<number, {
+    decision: Decision | null;
+    justification: string;
+  }>>({});
+  const [submitted, setSubmitted] = useState<number[]>([]);
 
-export default function DecisionPanel() {
-  const [selected, setSelected] = useState<string | null>(null)
-  const [decision, setDecision] = useState<Decision | null>(null)
-  const [justification, setJustification] = useState("")
-  const [submitted, setSubmitted] = useState<string[]>([])
+  const atRiskSeries = [
+    {
+      id: 1,
+      title: 'Falling Star',
+      rank: 27,
+      votes: 342,
+      periodsLow: 3,
+      genre: 'Romance, Drama'
+    },
+    {
+      id: 2,
+      title: 'Lost Dreams',
+      rank: 26,
+      votes: 389,
+      periodsLow: 3,
+      genre: 'Fantasy, Adventure'
+    },
+    {
+      id: 3,
+      title: 'Silent Echo',
+      rank: 25,
+      votes: 412,
+      periodsLow: 4,
+      genre: 'Mystery, Thriller'
+    }
+  ];
 
-  const { data } = useQuery({
-    queryKey: ["rankings"],
-    queryFn: () => seriesService.getRankings(),
-  })
+  const decisionOptions: Array<{
+    value: Decision;
+    label: string;
+    desc: string;
+    icon: any;
+    gradient: string;
+  }> = [
+    {
+      value: 'cancel',
+      label: 'Huỷ series',
+      desc: 'Chấm dứt xuất bản hoàn toàn',
+      icon: Ban,
+      gradient: 'from-red-500 to-red-600'
+    },
+    {
+      value: 'monthly',
+      label: 'Đổi sang hàng tháng',
+      desc: 'Giảm tần suất để cải thiện',
+      icon: Calendar,
+      gradient: 'from-orange-500 to-orange-600'
+    },
+    {
+      value: 'digital',
+      label: 'Chỉ đăng online',
+      desc: 'Rút khỏi bản in, giữ digital',
+      icon: MonitorPlay,
+      gradient: 'from-yellow-500 to-yellow-600'
+    },
+    {
+      value: 'probation',
+      label: 'Thử thách 3 tháng',
+      desc: 'Cho cơ hội cải thiện xếp hạng',
+      icon: Target,
+      gradient: 'from-blue-500 to-blue-600'
+    }
+  ];
 
-  const atRisk = (data ?? []).filter(r => r.isAtRisk)
+  const updateDecision = (seriesId: number, field: string, value: any) => {
+    setDecisions(prev => ({
+      ...prev,
+      [seriesId]: {
+        ...prev[seriesId],
+        [field]: value
+      }
+    }));
+  };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selected || !decision) return
-    // TODO: POST to API
-    setSubmitted(prev => [...prev, selected])
-    setSelected(null)
-    setDecision(null)
-    setJustification("")
-  }
+  const handleSubmit = (seriesId: number) => {
+    const decision = decisions[seriesId];
+    if (!decision?.decision || decision.justification.length < 100) return;
+    
+    setSubmitted(prev => [...prev, seriesId]);
+    setSelectedSeries(null);
+  };
 
   return (
-    <div>
-      <PageHeader title="Quyết định xuất bản" description="Xử lý series xếp hạng thấp liên tiếp (cần 60% đa số)" />
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Quyết định xuất bản</h1>
+        <p className="text-gray-400">Xử lý series xếp hạng thấp liên tiếp (cần 60% đa số)</p>
+      </div>
 
-      {atRisk.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          <XCircle className="w-10 h-10 mx-auto mb-3 opacity-25" />
-          <p className="text-sm font-medium">Không có series nào cần xử lý</p>
-          <p className="text-xs mt-1">Series sẽ xuất hiện ở đây khi xếp hạng thấp 3 kỳ liên tiếp</p>
+      {/* At Risk Series */}
+      {atRiskSeries.length === 0 ? (
+        <div className="text-center py-16">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-2xl flex items-center justify-center">
+            <Check className="w-10 h-10 text-green-400" />
+          </div>
+          <p className="text-lg font-medium text-white mb-2">Không có series nào cần xử lý</p>
+          <p className="text-sm text-gray-400">
+            Series sẽ xuất hiện ở đây khi xếp hạng thấp 3 kỳ liên tiếp
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {atRisk.map(r => {
-            const isDone = submitted.includes(r.seriesId)
-            const isActive = selected === r.seriesId
+          {atRiskSeries.map((series) => {
+            const isSelected = selectedSeries === series.id;
+            const hasSubmitted = submitted.includes(series.id);
+            const currentDecision = decisions[series.id] || { decision: null, justification: '' };
 
-            if (isDone) {
+            if (hasSubmitted) {
               return (
-                <div key={r.seriesId} className="rounded-lg border border-green-200 bg-green-50 p-4 flex items-center gap-3">
-                  <RotateCcw className="w-4 h-4 text-green-600" />
-                  <div>
-                    <p className="text-sm font-medium text-green-800">{r.seriesTitle}</p>
-                    <p className="text-xs text-green-700">Quyết định đã được ghi nhận — đang chờ đủ phiếu</p>
+                <div
+                  key={series.id}
+                  className="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/30 rounded-2xl p-5"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-xl flex items-center justify-center border border-green-500/30">
+                      <Check className="w-6 h-6 text-green-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-lg font-bold text-white mb-1">{series.title}</h3>
+                      <p className="text-sm text-green-300">
+                        Quyết định đã được ghi nhận — đang chờ đủ phiếu từ thành viên khác
+                      </p>
+                    </div>
                   </div>
                 </div>
-              )
+              );
             }
 
             return (
-              <div key={r.seriesId} className={cn("rounded-lg border bg-card overflow-hidden", isActive ? "border-primary/40" : "border-border")}>
-                <div className="flex items-center gap-3 p-4">
-                  <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
+              <div
+                key={series.id}
+                className={`bg-white/5 backdrop-blur-xl border rounded-2xl overflow-hidden transition-all ${
+                  isSelected ? 'border-purple-500/50' : 'border-white/10'
+                }`}
+              >
+                {/* Header */}
+                <div className="flex items-center gap-4 p-5">
+                  <div className="w-14 h-14 bg-gradient-to-br from-red-500/20 to-red-600/20 rounded-xl flex items-center justify-center flex-shrink-0 border border-red-500/30">
+                    <AlertTriangle className="w-7 h-7 text-red-400" />
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{r.seriesTitle}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Hạng #{r.rank} · {r.currentVotes.toLocaleString()} votes · Xếp hạng thấp liên tiếp 3 kỳ
-                    </p>
+                    <h3 className="text-lg font-bold text-white mb-1">{series.title}</h3>
+                    <p className="text-sm text-gray-400 mb-2">{series.genre}</p>
+                    <div className="flex items-center gap-3 text-xs text-gray-500">
+                      <span>Hạng #{series.rank}</span>
+                      <span>•</span>
+                      <span>{series.votes.toLocaleString()} votes</span>
+                      <span>•</span>
+                      <span className="text-red-400 font-medium">
+                        {series.periodsLow} kỳ thấp liên tiếp
+                      </span>
+                    </div>
                   </div>
                   <button
-                    onClick={() => setSelected(isActive ? null : r.seriesId)}
-                    className={cn("flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-all",
-                      isActive ? "bg-primary text-primary-foreground border-primary" : "border-border hover:bg-accent")}>
-                    {isActive ? "Đóng" : "Xử lý"}
-                    <ArrowRight className="w-3 h-3" />
+                    onClick={() => setSelectedSeries(isSelected ? null : series.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                      isSelected
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-white/5 border border-white/10 text-white hover:bg-white/10'
+                    }`}
+                  >
+                    {isSelected ? 'Đóng' : 'Xử lý'}
+                    <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
 
-                {isActive && (
-                  <form onSubmit={handleSubmit} className="border-t border-border p-4 space-y-4">
+                {/* Decision Form */}
+                {isSelected && (
+                  <div className="border-t border-white/10 p-6 space-y-6">
+                    {/* Decision Options */}
                     <div>
-                      <p className="text-xs font-medium text-muted-foreground mb-2">CHỌN QUYẾT ĐỊNH</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {DECISION_OPTIONS.map(opt => (
-                          <button key={opt.value} type="button" onClick={() => setDecision(opt.value)}
-                            className={cn("p-3 rounded-md border text-left transition-all",
-                              decision === opt.value ? opt.cls + " ring-2 ring-offset-1 ring-current/30" : opt.cls)}>
-                            <p className="text-sm font-medium">{opt.label}</p>
-                            <p className="text-xs opacity-70 mt-0.5">{opt.desc}</p>
-                          </button>
-                        ))}
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-4">
+                        Chọn quyết định
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        {decisionOptions.map((option) => {
+                          const Icon = option.icon;
+                          const isActive = currentDecision.decision === option.value;
+                          
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => updateDecision(series.id, 'decision', option.value)}
+                              className={`p-4 rounded-xl text-left transition-all ${
+                                isActive
+                                  ? `bg-gradient-to-br ${option.gradient} text-white shadow-lg border-2 border-white/20`
+                                  : 'bg-white/5 border border-white/10 hover:bg-white/10'
+                              }`}
+                            >
+                              <Icon className={`w-5 h-5 mb-3 ${isActive ? 'text-white' : 'text-gray-400'}`} />
+                              <p className={`text-sm font-bold mb-1 ${isActive ? 'text-white' : 'text-white'}`}>
+                                {option.label}
+                              </p>
+                              <p className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-400'}`}>
+                                {option.desc}
+                              </p>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {/* Justification */}
                     <div>
-                      <label className="block text-xs font-medium text-muted-foreground mb-1.5">
-                        LÝ DO * ({justification.length}/100)
+                      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+                        Lý do quyết định <span className="text-red-400">*</span>
+                        <span className="text-gray-500 normal-case ml-2">
+                          ({currentDecision.justification.length}/100)
+                        </span>
                       </label>
-                      <textarea rows={3} required value={justification} onChange={e => setJustification(e.target.value)}
-                        placeholder="Lý do quyết định..." className="w-full resize-none text-sm" />
+                      <textarea
+                        rows={4}
+                        required
+                        value={currentDecision.justification}
+                        onChange={(e) => updateDecision(series.id, 'justification', e.target.value)}
+                        placeholder="Giải thích lý do quyết định của bạn..."
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                      />
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
-                      <p className="text-xs text-muted-foreground">Cần 60% thành viên hội đồng đồng ý để quyết định có hiệu lực</p>
+
+                    {/* Info */}
+                    <div className="flex items-center gap-2 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                      <Calendar className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                      <p className="text-xs text-blue-300">
+                        Cần 60% thành viên hội đồng đồng ý để quyết định có hiệu lực
+                      </p>
                     </div>
-                    <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => setSelected(null)} className="px-4 py-2 text-sm border border-border rounded-md hover:bg-accent">Huỷ</button>
-                      <button type="submit" disabled={!decision || justification.length < 100}
-                        className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-40">
+
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3 pt-4">
+                      <button
+                        onClick={() => setSelectedSeries(null)}
+                        className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all font-medium"
+                      >
+                        Huỷ
+                      </button>
+                      <button
+                        onClick={() => handleSubmit(series.id)}
+                        disabled={!currentDecision.decision || currentDecision.justification.length < 100}
+                        className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all font-medium shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                         Gửi phiếu quyết định
                       </button>
                     </div>
-                  </form>
+                  </div>
                 )}
               </div>
-            )
+            );
           })}
         </div>
       )}
     </div>
-  )
-}
+  );
+};
+
+export default DecisionPanel;

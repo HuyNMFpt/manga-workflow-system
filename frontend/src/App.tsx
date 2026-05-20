@@ -7,16 +7,27 @@ import UnauthorizedPage from "@/pages/auth/UnauthorizedPage"
 import SignupPage from "@/pages/auth/SignupPage"
 import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage"
 import ResetPasswordPage from "@/pages/auth/ResetPasswordPage"
+
+// Mangaka Pages
 import MangakaDashboard from "@/pages/mangaka/MangakaDashboard"
 import SeriesList from "@/pages/mangaka/SeriesList"
-import ChapterManager from "@/pages/mangaka/ChapterManager"
-import RankingView from "@/pages/mangaka/RankingView"
+import ChapterManager from "@/pages/mangaka/ChapterManager"  // ✅ KEPT - Placeholder
+import SeriesSubmission from "@/pages/mangaka/SeriesSubmission"
+import TaskAssignment from "@/pages/mangaka/TaskAssignment"
+import PageReview from "@/pages/mangaka/PageReview"
+import MyRankings from "@/pages/mangaka/MyRankings"
+
+// Assistant Pages
 import AssistantDashboard from "@/pages/assistant/AssistantDashboard"
 import TaskList from "@/pages/assistant/TaskList"
 import EarningsDashboard from "@/pages/assistant/EarningsDashboard"
+
+// Editor Pages
 import EditorDashboard from "@/pages/editor/EditorDashboard"
 import ManuscriptReview from "@/pages/editor/ManuscriptReview"
 import StudioProgress from "@/pages/editor/StudioProgress"
+
+// Board Pages
 import BoardDashboard from "@/pages/board/BoardDashboard"
 import VotingQueue from "@/pages/board/VotingQueue"
 import RankingBoard from "@/pages/board/RankingBoard"
@@ -38,15 +49,20 @@ export default function App() {
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
 
+          {/* Mangaka Routes */}
           <Route element={<ProtectedRoute allowedRoles={["mangaka"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/mangaka" element={<MangakaDashboard />} />
               <Route path="/mangaka/series" element={<SeriesList />} />
               <Route path="/mangaka/chapters" element={<ChapterManager />} />
-              <Route path="/mangaka/ranking" element={<RankingView />} />
+              <Route path="/mangaka/submit-series" element={<SeriesSubmission />} />
+              <Route path="/mangaka/assign-tasks" element={<TaskAssignment />} />
+              <Route path="/mangaka/review-pages" element={<PageReview />} />
+              <Route path="/mangaka/rankings" element={<MyRankings />} />
             </Route>
           </Route>
 
+          {/* Assistant Routes */}
           <Route element={<ProtectedRoute allowedRoles={["assistant"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/assistant" element={<AssistantDashboard />} />
@@ -55,6 +71,7 @@ export default function App() {
             </Route>
           </Route>
 
+          {/* Editor Routes */}
           <Route element={<ProtectedRoute allowedRoles={["tantou_editor"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/editor" element={<EditorDashboard />} />
@@ -63,6 +80,7 @@ export default function App() {
             </Route>
           </Route>
 
+          {/* Board Routes */}
           <Route element={<ProtectedRoute allowedRoles={["editorial_board"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/board" element={<BoardDashboard />} />

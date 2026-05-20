@@ -1,125 +1,249 @@
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
-import { seriesService } from "@/services/seriesService"
-import PageHeader from "@/components/shared/PageHeader"
-import StatusBadge from "@/components/shared/StatusBadge"
-import { Series } from "@/types"
-import { FileText, BookOpen, ChevronRight, MessageSquare } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { useState } from 'react';
+import { 
+  FileText, 
+  BookOpen, 
+  ChevronRight,
+  MessageSquare,
+  Check,
+  X,
+  Save,
+  Filter
+} from 'lucide-react';
 
-const TAG_COLORS: Record<string, string> = {
-  story:    "bg-purple-50 text-purple-700 border-purple-200",
-  dialogue: "bg-blue-50 text-blue-700 border-blue-200",
-  art:      "bg-orange-50 text-orange-700 border-orange-200",
-  pacing:   "bg-green-50 text-green-700 border-green-200",
-}
-const TAG_LABELS: Record<string, string> = {
-  story: "Kịch bản", dialogue: "Thoại", art: "Nghệ thuật", pacing: "Nhịp độ"
-}
+const ManuscriptReview = () => {
+  const [activeFilter, setActiveFilter] = useState('in_review');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
-function ManuscriptCard({ series }: { series: Series }) {
-  const [expanded, setExpanded] = useState(false)
-  return (
-    <div className="rounded-lg border border-border bg-card overflow-hidden">
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center gap-3 p-4 hover:bg-accent transition-colors text-left"
-      >
-        <div className="w-10 h-14 rounded bg-muted flex items-center justify-center flex-shrink-0">
-          <BookOpen className="w-4 h-4 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-medium">{series.title}</p>
-            <StatusBadge status={series.status} />
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">{series.genre}</p>
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{series.synopsis}</p>
-        </div>
-        <ChevronRight className={cn("w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform", expanded && "rotate-90")} />
-      </button>
+  const filters = [
+    { id: 'in_review', label: 'Đang xét', count: 8 },
+    { id: 'pending_review', label: 'Chờ xét', count: 3 },
+    { id: 'approved_for_board', label: 'Đã duyệt', count: 12 }
+  ];
 
-      {expanded && (
-        <div className="border-t border-border">
-          {/* Page list placeholder */}
-          <div className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-3">TRANG BẢN THẢO</p>
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="aspect-[3/4] rounded-md bg-muted flex items-center justify-center cursor-pointer hover:ring-2 hover:ring-primary transition-all">
-                  <span className="text-xs text-muted-foreground font-medium">{i}</span>
-                </div>
-              ))}
-            </div>
+  const manuscripts = [
+    {
+      id: 1,
+      title: 'Tokyo Phantom',
+      genre: 'Action, Supernatural',
+      synopsis: 'Một thám tử trẻ phát hiện khả năng nhìn thấy linh hồn và phải giải quyết những vụ án siêu nhiên tại Tokyo.',
+      status: 'in_review',
+      pages: 18,
+      submittedDate: '2 ngày trước',
+      mangaka: 'Takehiko Inoue'
+    },
+    {
+      id: 2,
+      title: 'Starlight Academy',
+      genre: 'School, Romance, Drama',
+      synopsis: 'Câu chuyện về nhóm học sinh trường nghệ thuật nổi tiếng và những mối quan hệ phức tạp giữa họ.',
+      status: 'in_review',
+      pages: 22,
+      submittedDate: '1 ngày trước',
+      mangaka: 'Yuki Tanaka'
+    },
+    {
+      id: 3,
+      title: 'Dragon Chronicles',
+      genre: 'Fantasy, Adventure',
+      synopsis: 'Hành trình tìm kiếm 7 viên ngọc rồng để cứu thế giới khỏi bóng tối.',
+      status: 'in_review',
+      pages: 20,
+      submittedDate: '5 giờ trước',
+      mangaka: 'Ken Watanabe'
+    }
+  ];
 
-            {/* Annotation tools placeholder */}
-            <div className="rounded-md bg-muted/60 border border-dashed border-border p-4 text-center mb-4">
-              <MessageSquare className="w-6 h-6 mx-auto mb-2 text-muted-foreground opacity-50" />
-              <p className="text-xs text-muted-foreground">Canvas annotation (Fabric.js) — Sprint 2</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Circle · Arrow · Text · Highlight</p>
-            </div>
-
-            {/* Tag examples */}
-            <p className="text-xs font-medium text-muted-foreground mb-2">LOẠI GHI CHÚ</p>
-            <div className="flex gap-2 flex-wrap mb-4">
-              {Object.entries(TAG_LABELS).map(([k, v]) => (
-                <span key={k} className={cn("text-xs px-2.5 py-1 rounded-full border font-medium", TAG_COLORS[k])}>{v}</span>
-              ))}
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex gap-2">
-              <button className="flex-1 py-2 text-sm rounded-md border border-border hover:bg-accent">Lưu nháp</button>
-              <button className="flex-1 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600">Cần chỉnh sửa</button>
-              <button className="flex-1 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90">Duyệt lên HĐ</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export default function ManuscriptReview() {
-  const [statusFilter, setStatusFilter] = useState<string>("in_review")
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["series", "editor", statusFilter],
-    queryFn: () => seriesService.getAll({ status: statusFilter }),
-  })
-
-  const series = data?.data ?? []
+  const annotationTags = [
+    { id: 'story', label: 'Kịch bản', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+    { id: 'dialogue', label: 'Thoại', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+    { id: 'art', label: 'Nghệ thuật', color: 'bg-orange-500/10 text-orange-400 border-orange-500/30' },
+    { id: 'pacing', label: 'Nhịp độ', color: 'bg-green-500/10 text-green-400 border-green-500/30' }
+  ];
 
   return (
-    <div>
-      <PageHeader title="Xét duyệt bản thảo" description="Đọc và ghi chú trực tiếp lên từng trang bản thảo" />
-
-      <div className="flex gap-1 mb-5 border-b border-border">
-        {[
-          { label: "Đang xét", value: "in_review" },
-          { label: "Chờ xét", value: "pending_review" },
-          { label: "Đã duyệt", value: "approved_for_board" },
-        ].map(f => (
-          <button key={f.value} onClick={() => setStatusFilter(f.value)}
-            className={cn("px-3 py-2 text-sm border-b-2 -mb-px transition-colors",
-              statusFilter === f.value ? "border-primary text-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {f.label}
-          </button>
-        ))}
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Xét duyệt bản thảo</h1>
+        <p className="text-gray-400">Đọc và ghi chú trực tiếp lên từng trang bản thảo</p>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />)}</div>
-      ) : series.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          <FileText className="w-10 h-10 mx-auto mb-3 opacity-25" />
-          <p className="text-sm font-medium">Không có bản thảo nào</p>
+      {/* Filters */}
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-2">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          <Filter className="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" />
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => setActiveFilter(filter.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${
+                activeFilter === filter.id
+                  ? 'bg-purple-600 text-white shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {filter.label}
+              <span className={`px-2 py-0.5 rounded-full text-xs ${
+                activeFilter === filter.id ? 'bg-white/20' : 'bg-white/10'
+              }`}>
+                {filter.count}
+              </span>
+            </button>
+          ))}
         </div>
-      ) : (
-        <div className="space-y-3">
-          {series.map(s => <ManuscriptCard key={s.id} series={s} />)}
+      </div>
+
+      {/* Manuscript Cards */}
+      <div className="space-y-4">
+        {manuscripts.map((manuscript) => {
+          const isExpanded = expandedId === manuscript.id;
+          
+          return (
+            <div
+              key={manuscript.id}
+              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden"
+            >
+              {/* Card Header */}
+              <button
+                onClick={() => setExpandedId(isExpanded ? null : manuscript.id)}
+                className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-all text-left"
+              >
+                <div className="w-16 h-20 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg flex items-center justify-center flex-shrink-0 border border-purple-500/30">
+                  <BookOpen className="w-6 h-6 text-purple-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 mb-2">
+                    <h3 className="text-lg font-bold text-white">{manuscript.title}</h3>
+                    <span className="px-2 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded-full text-xs font-medium">
+                      Đang xét
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-400 mb-2">{manuscript.genre}</p>
+                  <p className="text-sm text-gray-300 line-clamp-1">{manuscript.synopsis}</p>
+                </div>
+                <ChevronRight 
+                  className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${
+                    isExpanded ? 'rotate-90' : ''
+                  }`} 
+                />
+              </button>
+
+              {/* Expanded Content */}
+              {isExpanded && (
+                <div className="border-t border-white/10">
+                  <div className="p-6 space-y-6">
+                    {/* Meta Info */}
+                    <div className="flex items-center gap-6 text-sm">
+                      <div>
+                        <span className="text-gray-400">Tác giả:</span>
+                        <span className="text-white ml-2 font-medium">{manuscript.mangaka}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Số trang:</span>
+                        <span className="text-white ml-2 font-medium">{manuscript.pages} trang</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Nộp lúc:</span>
+                        <span className="text-white ml-2 font-medium">{manuscript.submittedDate}</span>
+                      </div>
+                    </div>
+
+                    {/* Page Thumbnails */}
+                    <div>
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+                        Trang bản thảo
+                      </p>
+                      <div className="grid grid-cols-6 md:grid-cols-10 gap-3">
+                        {Array.from({ length: manuscript.pages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            className="aspect-[3/4] bg-white/5 border border-white/10 rounded-lg flex items-center justify-center hover:border-purple-500/50 hover:bg-white/10 transition-all group cursor-pointer"
+                          >
+                            <span className="text-xs text-gray-400 group-hover:text-white font-medium">
+                              {pageNum}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Annotation Tools Preview */}
+                    <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/10 border border-purple-500/20 rounded-xl p-6">
+                      <div className="flex items-center justify-center flex-col">
+                        <MessageSquare className="w-12 h-12 text-purple-400 mb-4" />
+                        <p className="text-white font-medium mb-2">Canvas Annotation Tool</p>
+                        <p className="text-sm text-gray-400 text-center mb-4">
+                          Fabric.js — Sprint 2 · Circle · Arrow · Text · Highlight
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                            <span className="text-xs text-red-400">●</span>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+                            <span className="text-xs text-blue-400">→</span>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                            <span className="text-xs text-green-400">A</span>
+                          </div>
+                          <div className="w-8 h-8 rounded-full bg-yellow-500/20 border border-yellow-500/30 flex items-center justify-center">
+                            <span className="text-xs text-yellow-400">✓</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Annotation Tag Categories */}
+                    <div>
+                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+                        Loại ghi chú
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {annotationTags.map((tag) => (
+                          <button
+                            key={tag.id}
+                            className={`px-3 py-2 rounded-lg border text-sm font-medium ${tag.color} hover:opacity-80 transition-opacity`}
+                          >
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 pt-4">
+                      <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium">
+                        <Save className="w-4 h-4" />
+                        Lưu nháp
+                      </button>
+                      <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all font-medium shadow-lg">
+                        <X className="w-4 h-4" />
+                        Cần chỉnh sửa
+                      </button>
+                      <button className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all font-medium shadow-lg">
+                        <Check className="w-4 h-4" />
+                        Duyệt lên HĐ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Empty State (if no manuscripts) */}
+      {manuscripts.length === 0 && (
+        <div className="text-center py-16">
+          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl flex items-center justify-center">
+            <FileText className="w-10 h-10 text-purple-400" />
+          </div>
+          <p className="text-lg font-medium text-white mb-2">Không có bản thảo nào</p>
+          <p className="text-sm text-gray-400">Chưa có bản thảo nào cần xét duyệt</p>
         </div>
       )}
     </div>
-  )
-}
+  );
+};
+
+export default ManuscriptReview;

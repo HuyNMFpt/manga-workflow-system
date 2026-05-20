@@ -1,174 +1,279 @@
-import { useQuery } from "@tanstack/react-query"
-import { Link } from "react-router-dom"
-import { useAuthStore } from "@/stores/authStore"
-import { seriesService } from "@/services/seriesService"
-import { taskService } from "@/services/taskService"
-import PageHeader from "@/components/shared/PageHeader"
-import StatusBadge from "@/components/shared/StatusBadge"
-import { BookOpen, Layers, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, Minus, ChevronRight, Clock } from "lucide-react"
+import { 
+  BookOpen, 
+  FileText, 
+  CheckSquare, 
+  Clock,
+  Plus,
+  Upload,
+  Calendar,
+  TrendingUp,
+  Target,
+  ArrowRight,
+  Sparkles
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 
-function StatCard({ label, value, sub, icon: Icon, color = "default" }: {
-  label: string; value: string | number; sub?: string
-  icon: React.ElementType; color?: "default"|"warning"|"success"|"danger"
-}) {
-  const bg = { default:"bg-secondary", warning:"bg-yellow-50", success:"bg-green-50", danger:"bg-red-50" }[color]
-  const ic = { default:"text-muted-foreground", warning:"text-yellow-600", success:"text-green-600", danger:"text-red-600" }[color]
+const MangakaDashboard = () => {
+  // Mock data
+  const stats = [
+    {
+      title: 'Series đang hoạt động',
+      value: '3',
+      change: '+1 tháng này',
+      icon: BookOpen,
+      gradient: 'from-purple-500 to-purple-600',
+      trend: 'up'
+    },
+    {
+      title: 'Tổng số Chapter',
+      value: '47',
+      change: '+5 tuần này',
+      icon: FileText,
+      gradient: 'from-blue-500 to-blue-600',
+      trend: 'up'
+    },
+    {
+      title: 'Công việc chờ xử lý',
+      value: '8',
+      change: '2 hết hạn hôm nay',
+      icon: CheckSquare,
+      gradient: 'from-orange-500 to-orange-600',
+      trend: 'neutral'
+    },
+    {
+      title: 'Deadline sắp tới',
+      value: '4',
+      change: 'Gần nhất: 2 ngày',
+      icon: Clock,
+      gradient: 'from-red-500 to-red-600',
+      trend: 'down'
+    }
+  ];
+
+  const recentSeries = [
+    { 
+      name: 'Moonlight Chronicles', 
+      chapters: 18, 
+      totalChapters: 24, 
+      status: 'Đang tiến hành',
+      lastUpdate: '2 ngày trước',
+      progress: 75
+    },
+    { 
+      name: 'Shadow Warrior', 
+      chapters: 12, 
+      totalChapters: 12, 
+      status: 'Hoàn thành',
+      lastUpdate: '1 tuần trước',
+      progress: 100
+    },
+    { 
+      name: 'Starlight Academy', 
+      chapters: 8, 
+      totalChapters: 20, 
+      status: 'Đang tiến hành',
+      lastUpdate: '3 ngày trước',
+      progress: 40
+    }
+  ];
+
+  const recentActivity = [
+    { action: 'Chapter 18 được biên tập viên phê duyệt', time: '2 giờ trước', type: 'success' },
+    { action: 'Nhiệm vụ mới: Vẽ nền cho Ch.19', time: '5 giờ trước', type: 'info' },
+    { action: 'Nhắc nhở deadline: Ch.19 còn 2 ngày', time: '1 ngày trước', type: 'warning' },
+    { action: 'Trợ lý Yamada hoàn thành tô màu', time: '1 ngày trước', type: 'success' },
+    { action: 'Chapter 17 đã được xuất bản', time: '3 ngày trước', type: 'success' }
+  ];
+
+  const pendingTasks = [
+    { title: 'Hoàn thành phác thảo Chapter 19', assignee: 'Bạn', dueDate: 'Ngày mai', priority: 'high' },
+    { title: 'Kiểm tra bản vẽ của trợ lý', assignee: 'Bạn', dueDate: 'Hôm nay', priority: 'high' },
+    { title: 'Nộp storyboard Chapter 20', assignee: 'Bạn', dueDate: '3 ngày nữa', priority: 'medium' },
+    { title: 'Duyệt chỉnh sửa cuối Ch.18', assignee: 'Biên tập viên Tanaka', dueDate: 'Hôm nay', priority: 'medium' }
+  ];
+
+  const quickActions = [
+    { icon: Plus, label: 'Tạo Series mới', gradient: 'from-purple-600 to-purple-700', link: '/mangaka/submit-series' },
+    { icon: Upload, label: 'Upload Chapter', gradient: 'from-blue-600 to-blue-700', link: '/mangaka/chapters' },
+    { icon: CheckSquare, label: 'Giao việc', gradient: 'from-green-600 to-green-700', link: '/mangaka/assign-tasks' },
+    { icon: Calendar, label: 'Xem xếp hạng', gradient: 'from-orange-600 to-orange-700', link: '/mangaka/rankings' }
+  ];
+
   return (
-    <div className={`rounded-lg p-4 ${bg}`}>
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-sm font-medium text-foreground/80">{label}</p>
-        <Icon className={`w-4 h-4 ${ic}`} />
-      </div>
-      <p className="text-2xl font-semibold">{value}</p>
-      {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
-    </div>
-  )
-}
-
-function RankTrend({ trend }: { trend: "up"|"down"|"stable" }) {
-  if (trend === "up") return <TrendingUp className="w-3.5 h-3.5 text-green-600" />
-  if (trend === "down") return <TrendingDown className="w-3.5 h-3.5 text-red-500" />
-  return <Minus className="w-3.5 h-3.5 text-muted-foreground" />
-}
-
-export default function MangakaDashboard() {
-  const { user } = useAuthStore()
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? "Chào buổi sáng" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối"
-
-  const { data: seriesData } = useQuery({
-    queryKey: ["series", "all"],
-    queryFn: () => seriesService.getAll(),
-  })
-  const { data: taskData } = useQuery({
-    queryKey: ["tasks", "my", "submitted"],
-    queryFn: () => taskService.getMyTasks({ status: "submitted" }),
-  })
-  const { data: rankingData } = useQuery({
-    queryKey: ["rankings"],
-    queryFn: () => seriesService.getRankings(),
-  })
-
-  const allSeries = seriesData?.data ?? []
-  const activeSeries = allSeries.filter(s => s.status === "serializing")
-  const pendingReviews = taskData?.data ?? []
-  const atRiskSeries = (rankingData ?? []).filter(r => r.isAtRisk)
-
-  return (
-    <div>
-      <PageHeader
-        title={`${greeting}, ${user?.name?.split(" ").at(-1) ?? "bạn"} 👋`}
-        description="Đây là tổng quan hôm nay của bạn"
-      />
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <StatCard label="Series đang đăng" value={activeSeries.length} sub={`/ ${allSeries.length} tổng`} icon={BookOpen} />
-        <StatCard label="Chờ duyệt trang" value={pendingReviews.length} sub="từ trợ lý" icon={Layers} color={pendingReviews.length > 0 ? "warning" : "default"} />
-        <StatCard label="Series nguy hiểm" value={atRiskSeries.length} sub="có nguy cơ bị huỷ" icon={AlertTriangle} color={atRiskSeries.length > 0 ? "danger" : "success"} />
-        <StatCard label="Trang đã duyệt" value="—" sub="tháng này" icon={CheckCircle2} color="success" />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium">Series đang hoạt động</h2>
-            <Link to="/mangaka/series" className="text-xs text-primary hover:underline flex items-center gap-0.5">Xem tất cả <ChevronRight className="w-3 h-3" /></Link>
-          </div>
-          {activeSeries.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-25" />
-              <p className="text-xs">Chưa có series đang đăng</p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {activeSeries.slice(0, 4).map(s => (
-                <li key={s.id}>
-                  <Link to={`/mangaka/chapters?seriesId=${s.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-accent transition-colors">
-                    <div className="w-8 h-10 rounded bg-muted flex-shrink-0 flex items-center justify-center">
-                      <BookOpen className="w-3.5 h-3.5 text-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{s.title}</p>
-                      <p className="text-xs text-muted-foreground">{s.genre}</p>
-                    </div>
-                    <StatusBadge status={s.status} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+    <div className="space-y-8">
+      {/* Welcome Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white mb-2 font-['Syne'] flex items-center gap-3">
+            Chào mừng trở lại, Takehiko
+            <Sparkles className="w-7 h-7 text-purple-400" />
+          </h1>
+          <p className="text-gray-400">Đây là tình hình dự án manga của bạn hôm nay</p>
         </div>
+      </div>
 
-        <div className="rounded-lg border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium">Trang chờ duyệt</h2>
-            <Link to="/mangaka/chapters" className="text-xs text-primary hover:underline flex items-center gap-0.5">Xem tất cả <ChevronRight className="w-3 h-3" /></Link>
-          </div>
-          {pendingReviews.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              <CheckCircle2 className="w-8 h-8 mx-auto mb-2 opacity-25" />
-              <p className="text-xs">Không có trang nào chờ duyệt</p>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {stats.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <div
+              key={index}
+              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 hover:border-purple-500/50 transition-all hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/20"
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div className={`w-12 h-12 bg-gradient-to-br ${stat.gradient} rounded-xl flex items-center justify-center shadow-lg`}>
+                  <Icon className="w-6 h-6 text-white" />
+                </div>
+                {stat.trend === 'up' && <TrendingUp className="w-5 h-5 text-green-400" />}
+                {stat.trend === 'down' && <Target className="w-5 h-5 text-red-400" />}
+              </div>
+              <h3 className="text-3xl font-bold text-white mb-1">{stat.value}</h3>
+              <p className="text-sm text-gray-300 mb-2">{stat.title}</p>
+              <p className="text-xs text-gray-500">{stat.change}</p>
             </div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {pendingReviews.slice(0, 4).map(task => (
-                <li key={task.id} className="flex items-center gap-3 px-4 py-3">
-                  <div className="w-8 h-10 rounded bg-muted flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">Chapter {task.chapterId} · Trang {task.pageId}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{task.taskType}</p>
+          );
+        })}
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
+          <h2 className="text-xl font-bold text-white font-['Syne']">Thao tác nhanh</h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {quickActions.map((action, index) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={index}
+                to={action.link}
+                className={`bg-gradient-to-br ${action.gradient} rounded-xl p-5 flex flex-col items-center gap-3 transition-all hover:scale-105 shadow-lg hover:shadow-2xl text-white group`}
+              >
+                <Icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                <span className="text-sm font-medium text-center">{action.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* My Series */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
+              <h2 className="text-xl font-bold text-white font-['Syne']">Series của tôi</h2>
+            </div>
+            <Link 
+              to="/mangaka/series"
+              className="text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+            >
+              Xem tất cả
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <div className="space-y-4">
+            {recentSeries.map((series, index) => (
+              <div key={index} className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer group border border-white/5 hover:border-purple-500/30">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-white mb-1 group-hover:text-purple-400 transition-colors">{series.name}</h3>
+                    <p className="text-sm text-gray-400">
+                      {series.chapters}/{series.totalChapters} chapters • {series.lastUpdate}
+                    </p>
                   </div>
-                  <StatusBadge status={task.status} />
-                </li>
-              ))}
-            </ul>
-          )}
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
+                    series.status === 'Hoàn thành' 
+                      ? 'bg-green-500/10 text-green-400 border-green-500/30' 
+                      : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                  }`}>
+                    {series.status}
+                  </span>
+                </div>
+                <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                  <div 
+                    className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full transition-all duration-500 shadow-lg shadow-purple-500/50"
+                    style={{ width: `${series.progress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">{series.progress}% hoàn thành</p>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="rounded-lg border border-border bg-card overflow-hidden md:col-span-2">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <h2 className="text-sm font-medium">Bảng xếp hạng — kỳ gần nhất</h2>
-            <Link to="/mangaka/ranking" className="text-xs text-primary hover:underline flex items-center gap-0.5">Xem chi tiết <ChevronRight className="w-3 h-3" /></Link>
-          </div>
-          {!rankingData || rankingData.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground">
-              <Clock className="w-8 h-8 mx-auto mb-2 opacity-25" />
-              <p className="text-xs">Chưa có dữ liệu xếp hạng</p>
+        {/* Pending Tasks */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
+              <h2 className="text-xl font-bold text-white font-['Syne']">Công việc chờ xử lý</h2>
             </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground w-12">Hạng</th>
-                  <th className="text-left px-4 py-2 text-xs font-medium text-muted-foreground">Series</th>
-                  <th className="text-right px-4 py-2 text-xs font-medium text-muted-foreground">Votes</th>
-                  <th className="text-center px-4 py-2 text-xs font-medium text-muted-foreground w-16">Xu hướng</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rankingData.slice(0, 5).map(r => (
-                  <tr key={r.seriesId} className={r.isAtRisk ? "bg-red-50/60" : ""}>
-                    <td className="px-4 py-2.5 text-sm font-semibold text-muted-foreground">#{r.rank}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{r.seriesTitle}</span>
-                        {r.isAtRisk && <span className="text-[10px] bg-red-100 text-red-700 border border-red-200 rounded-full px-1.5 py-0.5">Nguy hiểm</span>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium">{r.currentVotes.toLocaleString()}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center justify-center gap-1">
-                        <RankTrend trend={r.trend} />
-                        {r.previousRank && <span className="text-xs text-muted-foreground">#{r.previousRank}</span>}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+            <Link
+              to="/mangaka/review-pages"
+              className="text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+            >
+              Xem tất cả
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <div className="space-y-3">
+            {pendingTasks.map((task, index) => (
+              <div key={index} className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all group cursor-pointer border border-white/5 hover:border-purple-500/30">
+                <div className="flex items-start gap-3">
+                  <input 
+                    type="checkbox" 
+                    className="mt-1 w-4 h-4 rounded border-gray-600 bg-white/5 text-purple-600 focus:ring-purple-500 cursor-pointer" 
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium text-white text-sm mb-1.5 group-hover:text-purple-400 transition-colors">{task.title}</h3>
+                    <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
+                      <span>{task.assignee}</span>
+                      <span>•</span>
+                      <span>{task.dueDate}</span>
+                      <span className={`px-2 py-0.5 rounded-full font-medium border ${
+                        task.priority === 'high' 
+                          ? 'bg-red-500/10 text-red-400 border-red-500/30' 
+                          : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
+                      }`}>
+                        {task.priority === 'high' ? 'Ưu tiên cao' : 'Trung bình'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
+          <h2 className="text-xl font-bold text-white font-['Syne']">Hoạt động gần đây</h2>
+        </div>
+        <div className="space-y-4">
+          {recentActivity.map((activity, index) => (
+            <div key={index} className="flex items-start gap-4 group cursor-pointer hover:bg-white/5 p-3 -mx-3 rounded-lg transition-all">
+              <div className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${
+                activity.type === 'success' ? 'bg-green-400 shadow-lg shadow-green-400/50' :
+                activity.type === 'warning' ? 'bg-yellow-400 shadow-lg shadow-yellow-400/50' :
+                'bg-blue-400 shadow-lg shadow-blue-400/50'
+              }`}></div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white group-hover:text-purple-400 transition-colors">{activity.action}</p>
+                <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
+
+export default MangakaDashboard;

@@ -14,7 +14,7 @@ const NAV_ITEMS = {
     { to: "/mangaka", label: "Dashboard", icon: LayoutDashboard, end: true },
     { to: "/mangaka/series", label: "Series của tôi", icon: BookOpen },
     { to: "/mangaka/chapters", label: "Chapter & Trang", icon: Layers },
-    { to: "/mangaka/ranking", label: "Xếp hạng", icon: BarChart2 },
+    { to: "/mangaka/rankings", label: "Xếp hạng", icon: BarChart2 },
   ],
   assistant: [
     { to: "/assistant", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -49,20 +49,20 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-purple-950 overflow-hidden font-['Instrument_Sans']">
       {/* ── Sidebar ─────────────────────────────────── */}
-      <aside className="w-60 flex-shrink-0 border-r border-border flex flex-col bg-card">
+      <aside className="w-60 flex-shrink-0 bg-slate-900/50 backdrop-blur-xl border-r border-white/10 flex flex-col">
         {/* Logo */}
-        <div className="h-14 flex items-center gap-2 px-4 border-b border-border">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-            <BookOpen className="w-4 h-4 text-primary-foreground" />
+        <div className="h-14 flex items-center gap-2 px-4 border-b border-white/10">
+          <div className="w-7 h-7 rounded-md bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center">
+            <BookOpen className="w-4 h-4 text-white" />
           </div>
-          <span className="font-semibold text-sm">MangaFlow</span>
+          <span className="font-semibold text-sm text-white font-['Syne']">Manga CW&PM</span>
         </div>
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto py-3 px-2">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider px-2 mb-1">
+          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider px-2 mb-1">
             {ROLE_LABELS[user.role]}
           </p>
           <ul className="space-y-0.5">
@@ -75,8 +75,8 @@ export default function AppLayout() {
                     cn(
                       "flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm transition-colors",
                       isActive
-                        ? "bg-primary/10 text-primary font-medium"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        ? "bg-purple-600 text-white font-medium shadow-lg shadow-purple-600/30"
+                        : "text-gray-400 hover:bg-white/5 hover:text-white"
                     )
                   }
                 >
@@ -89,19 +89,19 @@ export default function AppLayout() {
         </nav>
 
         {/* User info + Logout */}
-        <div className="border-t border-border p-3">
+        <div className="border-t border-white/10 p-3">
           <div className="flex items-center gap-2.5 px-1">
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-xs font-medium text-primary flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-xs font-medium text-white flex-shrink-0">
               {user.name.slice(0, 2).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user.name}</p>
-              <p className="text-[11px] text-muted-foreground truncate">{user.email}</p>
+              <p className="text-sm font-medium truncate text-white">{user.name}</p>
+              <p className="text-[11px] text-gray-400 truncate">{user.email}</p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+            className="mt-2 w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition-colors"
           >
             <LogOut className="w-3.5 h-3.5" />
             Đăng xuất
@@ -112,11 +112,11 @@ export default function AppLayout() {
       {/* ── Main Content ────────────────────────────── */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Topbar */}
-        <header className="h-14 border-b border-border flex items-center justify-end gap-3 px-6 bg-card flex-shrink-0">
-          <button className="relative p-2 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+        <header className="h-14 border-b border-white/10 flex items-center justify-end gap-3 px-6 bg-slate-900/30 backdrop-blur-xl flex-shrink-0">
+          <button className="relative p-2 rounded-md text-gray-400 hover:bg-white/5 hover:text-white transition-colors">
             <Bell className="w-4 h-4" />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-destructive text-destructive-foreground rounded-full text-[10px] flex items-center justify-center font-medium">
+              <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center font-medium">
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
