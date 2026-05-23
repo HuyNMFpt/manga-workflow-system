@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { BookOpen, Mail, ArrowLeft, CheckCircle2 } from "lucide-react"
+import { authService } from "@/services/authService"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
@@ -25,15 +26,13 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true)
 
     try {
-      // TODO: Replace with actual API call
-      // await authService.forgotPassword(email)
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // ✅ CALL REAL API
+      await authService.forgotPassword(email)
 
       setIsSuccess(true)
     } catch (err: any) {
-      setError(err.message || "Something went wrong. Please try again.")
+      const errorMessage = err.response?.data?.message || err.message || "Something went wrong. Please try again."
+      setError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }

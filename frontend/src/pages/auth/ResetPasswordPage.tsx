@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { BookOpen, Eye, EyeOff, CheckCircle2, AlertCircle } from "lucide-react"
+import { authService } from "@/services/authService"
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate()
@@ -41,16 +42,14 @@ export default function ResetPasswordPage() {
     }
 
     try {
-      // TODO: Call API to validate token
-      // const response = await authService.validateResetToken(token)
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // ✅ CALL REAL API TO VALIDATE TOKEN
+      await authService.validateResetToken(token)
 
       setTokenValid(true)
     } catch (error: any) {
       setTokenValid(false)
-      setApiError(error.message || "Reset link expired or invalid. Please request a new one.")
+      const errorMessage = error.response?.data?.message || error.message || "Reset link expired or invalid. Please request a new one."
+      setApiError(errorMessage)
     } finally {
       setIsValidating(false)
     }
@@ -127,11 +126,8 @@ export default function ResetPasswordPage() {
     setApiError("")
 
     try {
-      // TODO: Call API to reset password
-      // await authService.resetPassword(token!, formData.password)
-
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // ✅ CALL REAL API TO RESET PASSWORD
+      await authService.resetPassword(token!, formData.password)
 
       setIsSuccess(true)
 
@@ -142,7 +138,8 @@ export default function ResetPasswordPage() {
         })
       }, 3000)
     } catch (error: any) {
-      setApiError(error.message || "Failed to reset password. Please try again.")
+      const errorMessage = error.response?.data?.message || error.message || "Failed to reset password. Please try again."
+      setApiError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -198,38 +195,29 @@ export default function ResetPasswordPage() {
 
           {/* Invalid Token */}
           {!isValidating && !tokenValid && (
-            <div className="text-center animate-in fade-in zoom-in duration-500">
-              <div className="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertCircle className="w-9 h-9 text-red-600" />
+            <div className="text-center py-4">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-red-400 to-red-600 rounded-full flex items-center justify-center shadow-lg">
+                <AlertCircle className="w-9 h-9 text-white" />
               </div>
 
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Invalid Reset Link</h2>
+              <h2 className="text-2xl font-bold text-slate-900 mb-2">Invalid Link</h2>
 
               <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                {apiError || "This password reset link is invalid or has expired."}
+                {apiError}
               </p>
 
-              <div className="space-y-3">
-                <a
-                  href="/forgot-password"
-                  className="block w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white text-sm font-semibold rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all text-center"
-                >
-                  Request New Reset Link
-                </a>
-
-                <a
-                  href="/login"
-                  className="block w-full py-3 px-4 bg-slate-100 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-200 transition-colors text-center"
-                >
-                  Back to Sign In
-                </a>
-              </div>
+              <a
+                href="/forgot-password"
+                className="inline-block w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white text-sm font-semibold rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all text-center"
+              >
+                Request New Reset Link
+              </a>
             </div>
           )}
 
-          {/* Success State */}
-          {!isValidating && tokenValid && isSuccess && (
-            <div className="text-center animate-in fade-in zoom-in duration-500">
+          {/* Success */}
+          {isSuccess && (
+            <div className="text-center py-4 animate-in fade-in zoom-in duration-500">
               <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
                 <CheckCircle2 className="w-9 h-9 text-white" />
               </div>

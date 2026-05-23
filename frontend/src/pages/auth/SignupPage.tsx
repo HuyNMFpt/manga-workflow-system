@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { BookOpen, Eye, EyeOff, CheckCircle2 } from "lucide-react"
+import { authService } from "@/services/authService" // ← THÊM IMPORT
 
 interface SignupFormData {
   name: string
@@ -29,25 +30,25 @@ export default function SignupPage() {
 
   const roles = [
     { 
-      value: "MANGAKA", 
+      value: "mangaka", // ← SỬA: lowercase để match API
       label: "Mangaka", 
       icon: "✏️", 
       desc: "Create and publish manga series" 
     },
     { 
-      value: "ASSISTANT", 
+      value: "assistant", // ← SỬA
       label: "Assistant", 
       icon: "🎨", 
       desc: "Support mangaka in production" 
     },
     { 
-      value: "EDITOR", 
+      value: "tantou_editor", // ← SỬA
       label: "Editor", 
       icon: "📝", 
       desc: "Review and approve manuscripts" 
     },
     { 
-      value: "BOARD", 
+      value: "editorial_board", // ← SỬA
       label: "Editorial Board", 
       icon: "👔", 
       desc: "Make strategic decisions" 
@@ -123,25 +124,24 @@ export default function SignupPage() {
     setApiError("")
 
     try {
-      // TODO: Replace with actual API call
-      // const response = await authService.register({
-      //   name: formData.name,
-      //   email: formData.email,
-      //   password: formData.password,
-      //   role: formData.role,
-      // })
+      // ✅ THỰC SỰ GỌI API
+      await authService.register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+      })
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      // Mock success - redirect to login
+      // Success - redirect to login
       navigate("/login", { 
         state: { 
           message: "Account created successfully! Please sign in." 
         } 
       })
     } catch (error: any) {
-      setApiError(error.message || "Registration failed. Please try again.")
+      // Handle API errors
+      const errorMessage = error.response?.data?.message || error.message || "Registration failed. Please try again."
+      setApiError(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -248,7 +248,7 @@ export default function SignupPage() {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                placeholder="your.email@example.com"
+                placeholder="you@example.com"
                 disabled={isSubmitting}
                 className={`w-full px-4 py-3 text-sm border rounded-lg focus:outline-none focus:ring-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                   errors.email
