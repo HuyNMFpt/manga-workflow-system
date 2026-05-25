@@ -21,11 +21,11 @@ const mockLoginWrapper = async (data: LoginRequest): Promise<LoginResponse> => {
       id: result.user.id,
       name: result.user.name,
       email: result.user.email,
-      role: result.role as any,
+      role: result.role as any, // Type assertion for role
       avatar_url: result.user.avatar_url
     },
     token: result.token,
-    refreshToken: result.token
+    refreshToken: result.token // Mock uses same token
   }
 }
 
@@ -35,8 +35,10 @@ const mockRegister = async (data: {
   name: string
   role: string
 }): Promise<LoginResponse> => {
+  // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 500))
   
+  // Create mock user
   return {
     user: {
       id: Date.now(),
@@ -60,6 +62,7 @@ const mockGetMe = async (): Promise<User> => {
     throw new Error('No token found')
   }
 
+  // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 300))
 
   return {
@@ -72,36 +75,37 @@ const mockGetMe = async (): Promise<User> => {
 }
 
 const mockLogout = async (): Promise<void> => {
+  // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 300))
   localStorage.clear()
 }
 
 const mockForgotPassword = async (email: string): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  console.log('Mock: Forgot password email sent to', email)
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 1500))
+  console.log('Mock: Password reset email sent to', email)
 }
 
-const mockValidateResetToken = async (token: string): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 800))
+const mockValidateResetToken = async (token: string): Promise<{ valid: boolean; email?: string; message?: string }> => {
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 1000))
   
-  if (!token || token.length < 10) {
-    throw new Error('Invalid token')
+  // Mock: Accept any token
+  return {
+    valid: true,
+    email: 'mock@demo.com',
+    message: 'Token is valid'
   }
 }
 
 const mockResetPassword = async (token: string, newPassword: string): Promise<void> => {
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  
-  if (!token) throw new Error('Token required')
-  if (!newPassword || newPassword.length < 6) {
-    throw new Error('Password must be at least 6 characters')
-  }
-  
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 1500))
   console.log('Mock: Password reset successfully')
 }
 
 // ============================================
-// REAL API FUNCTIONS
+// REAL API FUNCTIONS (using axios)
 // ============================================
 
 const realLogin = async (data: LoginRequest): Promise<LoginResponse> => {
@@ -132,8 +136,11 @@ const realForgotPassword = async (email: string): Promise<void> => {
   await api.post("/auth/forgot-password", { email })
 }
 
-const realValidateResetToken = async (token: string): Promise<void> => {
-  await api.post("/auth/validate-reset-token", { token })
+const realValidateResetToken = async (token: string): Promise<{ valid: boolean; email?: string; message?: string }> => {
+  const res = await api.get<ApiResponse<{ valid: boolean; email?: string; message?: string }>>(
+    `/auth/validate-reset-token?token=${token}`
+  )
+  return res.data.data
 }
 
 const realResetPassword = async (token: string, newPassword: string): Promise<void> => {
@@ -149,6 +156,8 @@ export const authService = {
   register: USE_MOCK_AUTH ? mockRegister : realRegister,
   getMe: USE_MOCK_AUTH ? mockGetMe : realGetMe,
   logout: USE_MOCK_AUTH ? mockLogout : realLogout,
+  
+  // Password Reset
   forgotPassword: USE_MOCK_AUTH ? mockForgotPassword : realForgotPassword,
   validateResetToken: USE_MOCK_AUTH ? mockValidateResetToken : realValidateResetToken,
   resetPassword: USE_MOCK_AUTH ? mockResetPassword : realResetPassword,

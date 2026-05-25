@@ -42,14 +42,18 @@ export default function ResetPasswordPage() {
     }
 
     try {
-      // ✅ CALL REAL API TO VALIDATE TOKEN
-      await authService.validateResetToken(token)
+      // ✅ REAL API CALL
+      const response = await authService.validateResetToken(token)
 
-      setTokenValid(true)
+      if (response.valid) {
+        setTokenValid(true)
+      } else {
+        setTokenValid(false)
+        setApiError(response.message || "Invalid reset link")
+      }
     } catch (error: any) {
       setTokenValid(false)
-      const errorMessage = error.response?.data?.message || error.message || "Reset link expired or invalid. Please request a new one."
-      setApiError(errorMessage)
+      setApiError(error.response?.data?.message || "Reset link expired or invalid. Please request a new one.")
     } finally {
       setIsValidating(false)
     }
@@ -126,7 +130,7 @@ export default function ResetPasswordPage() {
     setApiError("")
 
     try {
-      // ✅ CALL REAL API TO RESET PASSWORD
+      // ✅ REAL API CALL
       await authService.resetPassword(token!, formData.password)
 
       setIsSuccess(true)
@@ -138,8 +142,7 @@ export default function ResetPasswordPage() {
         })
       }, 3000)
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || "Failed to reset password. Please try again."
-      setApiError(errorMessage)
+      setApiError(error.response?.data?.message || "Failed to reset password. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
@@ -147,7 +150,7 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-4 relative overflow-hidden">
-      {/* Animated background mesh */}
+      {/* Same background as ForgotPasswordPage */}
       <div className="absolute inset-0 opacity-30">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/20 rounded-full blur-3xl animate-pulse delay-1000" />
@@ -195,17 +198,12 @@ export default function ResetPasswordPage() {
 
           {/* Invalid Token */}
           {!isValidating && !tokenValid && (
-            <div className="text-center py-4">
+            <div className="text-center py-6">
               <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-red-400 to-red-600 rounded-full flex items-center justify-center shadow-lg">
                 <AlertCircle className="w-9 h-9 text-white" />
               </div>
-
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Invalid Link</h2>
-
-              <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-                {apiError}
-              </p>
-
+              <p className="text-sm text-slate-600 mb-6">{apiError}</p>
               <a
                 href="/forgot-password"
                 className="inline-block w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white text-sm font-semibold rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all text-center"
@@ -216,8 +214,8 @@ export default function ResetPasswordPage() {
           )}
 
           {/* Success */}
-          {isSuccess && (
-            <div className="text-center py-4 animate-in fade-in zoom-in duration-500">
+          {!isValidating && tokenValid && isSuccess && (
+            <div className="text-center py-6 animate-in fade-in zoom-in duration-500">
               <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shadow-lg">
                 <CheckCircle2 className="w-9 h-9 text-white" />
               </div>
@@ -235,7 +233,7 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          {/* Reset Form */}
+          {/* Reset Form - Only render password fields if token is valid */}
           {!isValidating && tokenValid && !isSuccess && (
             <>
               <div className="mb-6">
@@ -252,7 +250,8 @@ export default function ResetPasswordPage() {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-5">
-                {/* Password */}
+                {/* Password - Remaining form same as original */}
+                {/* ... (keep existing password form fields) ... */}
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-2">
                     New Password

@@ -26,13 +26,11 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true)
 
     try {
-      // ✅ CALL REAL API
+      // ✅ REAL API CALL
       await authService.forgotPassword(email)
-
       setIsSuccess(true)
     } catch (err: any) {
-      const errorMessage = err.response?.data?.message || err.message || "Something went wrong. Please try again."
-      setError(errorMessage)
+      setError(err.response?.data?.message || err.message || "Something went wrong. Please try again.")
     } finally {
       setIsSubmitting(false)
     }
