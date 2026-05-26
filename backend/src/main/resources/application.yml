@@ -1,0 +1,78 @@
+# Application Configuration
+server:
+  port: 8080
+
+spring:
+  application:
+    name: manga-workflow-system
+
+  # Database Configuration
+  datasource:
+    url: jdbc:mysql://localhost:3306/manga_swp391?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  # Multipart File Upload Configuration
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10MB
+      file-size-threshold: 2MB
+
+  # Email Configuration (Gmail)
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: danghuy05022003@gmail.com  # TODO: Replace with your Gmail
+    password: xmfd dgkv pkhd tceq       # TODO: Replace with Gmail App Password (16 chars)
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+# JWT Configuration
+jwt:
+  secret: manga-swp391-secret-key-must-be-at-least-256-bits-long-for-hs384-algorithm
+  expiration: 86400000 # 24 hours
+
+# CORS Configuration
+cors:
+  allowed-origins: http://localhost:5173,http://localhost:3000
+
+# File Upload Configuration
+file:
+  upload-dir: uploads
+  base-url: http://localhost:8080
+
+# App Configuration
+app:
+  name: Manga CW&PM
+  frontend-url: http://localhost:5173
+  password-reset:
+    token-expiry-hours: 1
+    max-requests-per-hour: 3
+
+# Logging Configuration
+logging:
+  level:
+    com.mangaproject.backend: INFO
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework.mail: DEBUG
