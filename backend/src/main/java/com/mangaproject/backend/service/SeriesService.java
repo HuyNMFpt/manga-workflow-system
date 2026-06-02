@@ -5,7 +5,6 @@ import com.mangaproject.backend.model.Series;
 import com.mangaproject.backend.repository.SeriesRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -18,6 +17,7 @@ public class SeriesService {
     public SeriesDTO createSeries(CreateSeriesRequest request, String mangakaId) {
         Series series = new Series();
         series.setTitle(request.getTitle());
+        series.setSlug(generateSlug(request.getTitle()));
         series.setGenre(request.getGenre());
         series.setSynopsis(request.getSynopsis());
         series.setCoverUrl(request.getCoverUrl());
@@ -25,7 +25,7 @@ public class SeriesService {
         series.setStatus(Series.SeriesStatus.draft);
 
         if (request.getSchedule() != null) {
-            series.setSchedule(Series.PublicationSchedule.valueOf(request.getSchedule()));
+            series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
         }
 
         series = seriesRepository.save(series);
@@ -62,9 +62,16 @@ public class SeriesService {
         Series series = seriesRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
         series.setStatus(Series.SeriesStatus.valueOf(status));
-        series.setUpdatedAt(LocalDateTime.now());
         series = seriesRepository.save(series);
         return mapToDTO(series);
+    }
+
+    private String generateSlug(String title) {
+        return title.toLowerCase()
+                .replaceAll("[^a-z0-9\\s-]", "")
+                .replaceAll("\\s+", "-")
+                .replaceAll("-+", "-")
+                + "-" + System.currentTimeMillis();
     }
 
     private SeriesDTO mapToDTO(Series series) {
@@ -77,7 +84,7 @@ public class SeriesService {
                 series.getMangakaId(),
                 series.getEditorId(),
                 series.getStatus().name(),
-                series.getSchedule() != null ? series.getSchedule().name() : null,
+                series.getPublishSchedule() != null ? series.getPublishSchedule().name() : null,
                 series.getCreatedAt().toString(),
                 series.getUpdatedAt() != null ? series.getUpdatedAt().toString() : null
         );

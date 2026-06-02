@@ -44,6 +44,10 @@ public class AuthService {
             throw new RuntimeException("Invalid credentials");
         }
 
+        // Update last login
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
+
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
         String refreshToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
 
@@ -56,11 +60,16 @@ public class AuthService {
             throw new RuntimeException("Email already exists");
         }
 
+        // Generate username from email if not provided
+        String username = request.getEmail().split("@")[0] + "_" + System.currentTimeMillis() % 10000;
+
         User user = new User();
+        user.setUsername(username);
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setName(request.getName());
         user.setRole(User.UserRole.valueOf(request.getRole()));
+        user.setIsActive(true);
 
         user = userRepository.save(user);
 
@@ -77,25 +86,18 @@ public class AuthService {
         return mapToDTO(user);
     }
 
-    /**
-     * Initiate password reset process
-     * Generates token and sends reset email
-     */
     @Transactional
     public void forgotPassword(ForgotPasswordRequest request) {
         String email = request.getEmail();
         log.info("Password reset requested for email: {}", email);
 
-        // Find user by email (return success even if not found for security)
         User user = userRepository.findByEmail(email).orElse(null);
 
         if (user == null) {
             log.warn("Password reset requested for non-existent email: {}", email);
-            // Return success to prevent email enumeration attacks
             return;
         }
 
-        // Rate limiting: Check recent requests
         LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
         long recentRequests = resetTokenRepository.countRecentRequestsByUser(user, oneHourAgo);
 
@@ -104,10 +106,8 @@ public class AuthService {
             throw new RuntimeException("Too many password reset requests. Please try again later.");
         }
 
-        // Invalidate any existing tokens for this user
         resetTokenRepository.deleteByUser(user);
 
-        // Generate new reset token
         String token = UUID.randomUUID().toString();
         LocalDateTime expiryDate = LocalDateTime.now().plusHours(tokenExpiryHours);
 
@@ -119,10 +119,8 @@ public class AuthService {
 
         resetTokenRepository.save(resetToken);
 
-        // Build reset URL
         String resetUrl = String.format("%s/reset-password?token=%s", frontendUrl, token);
 
-        // Send reset email
         try {
             emailService.sendPasswordResetEmail(user.getEmail(), user.getName(), token, resetUrl);
             log.info("Password reset email sent successfully to: {}", email);
@@ -132,46 +130,32 @@ public class AuthService {
         }
     }
 
-    /**
-     * Validate reset token
-     */
     @Transactional(readOnly = true)
     public ValidateTokenResponse validateResetToken(String token) {
         log.info("Validating reset token");
 
-        PasswordResetToken resetToken = resetTokenRepository.findByToken(token)
-                .orElse(null);
+        PasswordResetToken resetToken = resetTokenRepository.findByToken(token).orElse(null);
 
         if (resetToken == null) {
-            log.warn("Invalid reset token: {}", token);
             return ValidateTokenResponse.invalid("Invalid reset link. Please request a new password reset.");
         }
 
         if (resetToken.isUsed()) {
-            log.warn("Reset token already used: {}", token);
             return ValidateTokenResponse.invalid("This reset link has already been used. Please request a new one.");
         }
 
         if (resetToken.isExpired()) {
-            log.warn("Reset token expired: {}", token);
             return ValidateTokenResponse.invalid("Reset link has expired. Please request a new password reset.");
         }
 
-        log.info("Reset token is valid for user: {}", resetToken.getUser().getEmail());
         return ValidateTokenResponse.valid(resetToken.getUser().getEmail());
     }
 
-    /**
-     * Reset password using valid token
-     */
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
         String token = request.getToken();
         String newPassword = request.getNewPassword();
 
-        log.info("Processing password reset");
-
-        // Find and validate token
         PasswordResetToken resetToken = resetTokenRepository.findByToken(token)
                 .orElseThrow(() -> new RuntimeException("Invalid reset link"));
 
@@ -183,24 +167,18 @@ public class AuthService {
             throw new RuntimeException("Reset link has expired. Please request a new one.");
         }
 
-        // Update user password
         User user = resetToken.getUser();
         user.setPassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
-        // Mark token as used
         resetToken.setUsed(true);
         resetTokenRepository.save(resetToken);
 
-        // Delete all other tokens for this user
         resetTokenRepository.deleteByUser(user);
 
         log.info("Password reset successfully for user: {}", user.getEmail());
     }
 
-    /**
-     * Cleanup expired and used tokens (scheduled job)
-     */
     @Transactional
     public void cleanupExpiredTokens() {
         log.info("Cleaning up expired and used password reset tokens");

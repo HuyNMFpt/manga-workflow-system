@@ -10,14 +10,14 @@ public class RegisterRequest {
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
     private String email;
-    
+
     @NotBlank(message = "Password is required")
     @Size(min = 6, message = "Password must be at least 6 characters")
     private String password;
-    
+
     @NotBlank(message = "Name is required")
     private String name;
-    
+
     @NotBlank(message = "Role is required")
-    private String role; // mangaka, assistant, tantou_editor, editorial_board
+    private String role; // mangaka, assistant, editor, board_member, admin
 }

@@ -46,17 +46,33 @@ public class TaskService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Lấy danh sách task assistant đã nộp, chờ mangaka duyệt
+     * PageReview frontend dùng method này
+     */
+    public List<TaskDTO> getPendingReviewTasks(String mangakaId) {
+        return taskRepository.findByAssignedByAndStatus(
+                mangakaId, Task.TaskStatus.submitted
+        ).stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
     public TaskDTO createTask(CreateTaskRequest request) {
         Task task = new Task();
         task.setPageId(request.getPageId());
-        task.setChapterId(request.getChapterId());
-        task.setSeriesId(request.getSeriesId());
         task.setAssignedTo(request.getAssignedTo());
+        task.setAssignedBy(request.getAssignedBy());
+        task.setTitle(request.getTitle());
+        task.setDescription(request.getDescription());
         task.setTaskType(Task.TaskType.valueOf(request.getTaskType()));
-        task.setRegionData(request.getRegionData());
-        task.setInstructions(request.getInstructions());
-        task.setStatus(Task.TaskStatus.assigned);
-        task.setDeadline(LocalDateTime.parse(request.getDeadline()));
+        task.setPanelRegion(request.getPanelRegion());
+        task.setPriority(Task.Priority.valueOf(
+                request.getPriority() != null ? request.getPriority() : "normal"));
+        task.setStatus(Task.TaskStatus.pending);
+        if (request.getDueDate() != null) {
+            task.setDueDate(LocalDateTime.parse(request.getDueDate()));
+        }
 
         task = taskRepository.save(task);
         return mapToDTO(task);
@@ -66,9 +82,8 @@ public class TaskService {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
-        task.setSubmissionUrl(fileUrl);
         task.setStatus(Task.TaskStatus.submitted);
-        task.setUpdatedAt(LocalDateTime.now());
+        task.setSubmittedAt(LocalDateTime.now());
 
         task = taskRepository.save(task);
         return mapToDTO(task);
@@ -79,7 +94,7 @@ public class TaskService {
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         task.setStatus(Task.TaskStatus.approved);
-        task.setUpdatedAt(LocalDateTime.now());
+        task.setApprovedAt(LocalDateTime.now());
 
         task = taskRepository.save(task);
         return mapToDTO(task);
@@ -89,9 +104,8 @@ public class TaskService {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
-        task.setStatus(Task.TaskStatus.revision_required);
-        task.setRevisionNote(note);
-        task.setUpdatedAt(LocalDateTime.now());
+        task.setStatus(Task.TaskStatus.revision_needed);
+        task.setRevisionNotes(note);
 
         task = taskRepository.save(task);
         return mapToDTO(task);
@@ -101,16 +115,18 @@ public class TaskService {
         return new TaskDTO(
                 task.getId(),
                 task.getPageId(),
-                task.getChapterId(),
-                task.getSeriesId(),
                 task.getAssignedTo(),
+                task.getAssignedBy(),
+                task.getTitle(),
+                task.getDescription(),
                 task.getTaskType().name(),
-                task.getRegionData(),
-                task.getInstructions(),
+                task.getPanelRegion(),
+                task.getPriority().name(),
                 task.getStatus().name(),
-                task.getSubmissionUrl(),
-                task.getRevisionNote(),
-                task.getDeadline().toString(),
+                task.getRevisionNotes(),
+                task.getDueDate() != null ? task.getDueDate().toString() : null,
+                task.getSubmittedAt() != null ? task.getSubmittedAt().toString() : null,
+                task.getApprovedAt() != null ? task.getApprovedAt().toString() : null,
                 task.getCreatedAt().toString(),
                 task.getUpdatedAt() != null ? task.getUpdatedAt().toString() : null
         );

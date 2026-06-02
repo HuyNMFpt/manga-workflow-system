@@ -3,6 +3,7 @@ package com.mangaproject.backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
@@ -16,39 +17,62 @@ public class Series {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
+    @Column(name = "mangaka_id", nullable = false)
+    private String mangakaId;
+
+    @Column(name = "editor_id")
+    private String editorId;
+
     @Column(nullable = false)
     private String title;
 
-    private String genre;
+    @Column(unique = true, nullable = false)
+    private String slug;
 
     @Column(columnDefinition = "TEXT")
     private String synopsis;
 
+    private String genre;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SeriesStatus status = SeriesStatus.draft;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "publish_schedule")
+    private PublishSchedule publishSchedule;
+
+    @Column(name = "cover_image_url")
     private String coverUrl;
 
-    @Column(nullable = false)
-    private String mangakaId;
+    @Column(name = "current_rank")
+    private Integer currentRank;
 
-    private String editorId;
+    @Column(name = "previous_rank")
+    private Integer previousRank;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private SeriesStatus status;
+    @Column(name = "cancellation_risk", nullable = false)
+    private Boolean cancellationRisk = false;
 
-    @Enumerated(EnumType.STRING)
-    private PublicationSchedule schedule;
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
 
     @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     public enum SeriesStatus {
-        draft, pending_review, in_review, approved, rejected,
-        serializing, on_hold, cancelled
+        draft, submitted, approved, publishing, on_hiatus, cancelled
     }
 
-    public enum PublicationSchedule {
-        weekly, monthly, one_shot
+    public enum PublishSchedule {
+        weekly, monthly
     }
 }

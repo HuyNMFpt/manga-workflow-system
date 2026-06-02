@@ -11,7 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,11 +39,9 @@ public class ChapterService {
 
     @Transactional
     public ChapterDTO createChapter(CreateChapterRequest request) {
-        // Validate series exists
         Series series = seriesRepository.findById(request.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
-        // Check if chapter number already exists
         if (chapterRepository.existsBySeriesIdAndChapterNumber(
                 request.getSeriesId(), request.getChapterNumber())) {
             throw new RuntimeException("Chapter number already exists for this series");
@@ -54,7 +52,7 @@ public class ChapterService {
         chapter.setChapterNumber(request.getChapterNumber());
         chapter.setTitle(request.getTitle());
         chapter.setNotes(request.getNotes());
-        chapter.setStatus(Chapter.ChapterStatus.DRAFT);
+        chapter.setStatus(Chapter.ChapterStatus.in_progress);
 
         chapter = chapterRepository.save(chapter);
         return mapToDTO(chapter);
@@ -65,7 +63,6 @@ public class ChapterService {
         Chapter chapter = chapterRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
-        // Check if new chapter number conflicts
         if (!chapter.getChapterNumber().equals(request.getChapterNumber())) {
             if (chapterRepository.existsBySeriesIdAndChapterNumber(
                     chapter.getSeries().getId(), request.getChapterNumber())) {
@@ -86,8 +83,7 @@ public class ChapterService {
         Chapter chapter = chapterRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
-        // Check if chapter can be deleted (not published)
-        if (chapter.getStatus() == Chapter.ChapterStatus.PUBLISHED) {
+        if (chapter.getStatus() == Chapter.ChapterStatus.published) {
             throw new RuntimeException("Cannot delete published chapter");
         }
 
@@ -101,16 +97,15 @@ public class ChapterService {
 
         Chapter.ChapterStatus newStatus;
         try {
-            newStatus = Chapter.ChapterStatus.valueOf(status.toUpperCase());
+            newStatus = Chapter.ChapterStatus.valueOf(status.toLowerCase());
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid status: " + status);
         }
 
         chapter.setStatus(newStatus);
 
-        // Set published timestamp when publishing
-        if (newStatus == Chapter.ChapterStatus.PUBLISHED && chapter.getPublishedAt() == null) {
-            chapter.setPublishedAt(LocalDateTime.now());
+        if (newStatus == Chapter.ChapterStatus.published && chapter.getPublishedAt() == null) {
+            chapter.setPublishedAt(LocalDate.now());
         }
 
         chapter = chapterRepository.save(chapter);
@@ -127,7 +122,8 @@ public class ChapterService {
         dto.setNotes(chapter.getNotes());
         dto.setStatus(chapter.getStatus().name());
         dto.setTotalPages(chapter.getPages() != null ? chapter.getPages().size() : 0);
-        dto.setPublishedAt(chapter.getPublishedAt());
+        dto.setPublishedAt(chapter.getPublishedAt() != null ?
+                chapter.getPublishedAt().atStartOfDay() : null);
         dto.setCreatedAt(chapter.getCreatedAt());
         dto.setUpdatedAt(chapter.getUpdatedAt());
         return dto;

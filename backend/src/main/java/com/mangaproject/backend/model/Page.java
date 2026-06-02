@@ -1,10 +1,9 @@
 package com.mangaproject.backend.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
@@ -22,49 +21,36 @@ public class Page {
     @JoinColumn(name = "chapter_id", nullable = false)
     private Chapter chapter;
 
-    @Column(nullable = false)
+    @Column(name = "page_number", nullable = false)
     private Integer pageNumber;
 
-    @Column(nullable = false, length = 500)
-    private String imageUrl; // URL to stored image
+    // Giữ imageUrl để ChapterService/PageService không bị lỗi
+    @Column(name = "raw_file_url")
+    private String imageUrl;
 
-    @Column(length = 500)
-    private String thumbnailUrl; // Thumbnail for preview
+    @Column(name = "final_file_url")
+    private String thumbnailUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private PageStatus status = PageStatus.DRAFT;
+    private PageStatus status = PageStatus.pending;
 
-    @Column(columnDefinition = "TEXT")
-    private String notes; // Page notes
+    // Giữ notes để ChapterService không bị lỗi
+    @Column(name = "mangaka_notes", columnDefinition = "TEXT")
+    private String notes;
 
-    @Column(nullable = false, updatable = false)
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(nullable = false)
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
-        if (updatedAt == null) {
-            updatedAt = LocalDateTime.now();
-        }
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
-    }
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     public enum PageStatus {
-        DRAFT,          // Chưa upload
-        UPLOADED,       // Đã upload
-        IN_PROGRESS,    // Đang làm việc
-        REVIEW,         // Đang review
-        APPROVED,       // Đã duyệt
-        PUBLISHED       // Đã xuất bản
+        pending, in_progress, completed, reviewing, approved, revision_needed
     }
 }
