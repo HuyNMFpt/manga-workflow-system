@@ -2,7 +2,8 @@
 // USER & AUTH
 // ============================================================
 
-export type UserRole = "mangaka" | "assistant" | "tantou_editor" | "editorial_board"
+// ✅ Backend roles: mangaka | assistant | editor | board_member
+export type UserRole = "mangaka" | "assistant" | "editor" | "board_member"
 
 export interface User {
   id: string
@@ -10,7 +11,8 @@ export interface User {
   name: string
   role: UserRole
   avatarUrl?: string
-  createdAt: string
+  avatar_url?: string | null
+  createdAt?: string
 }
 
 export interface AuthState {
@@ -63,80 +65,95 @@ export interface Series {
 export interface SeriesRanking {
   seriesId: string
   seriesTitle: string
-  rank: number
-  currentVotes: number
+  currentRank: number
   previousRank?: number
   trend: "up" | "down" | "stable"
+  currentVotes: number
   isAtRisk: boolean
-  period: string
 }
 
 // ============================================================
 // CHAPTER & PAGE
 // ============================================================
 
-export type ChapterStatus = "not_started" | "in_progress" | "review" | "approved" | "published"
+export type ChapterStatus =
+  | "not_started"
+  | "in_progress"
+  | "pending_review"
+  | "editor_review"
+  | "approved"
+  | "published"
 
 export interface Chapter {
   id: string
   seriesId: string
   chapterNumber: number
   title?: string
-  deadline: string
+  notes?: string
+  deadline?: string
   status: ChapterStatus
-  totalPages: number
-  approvedPages: number
+  totalPages?: number
+  approvedPages?: number
   createdAt: string
 }
 
-export type PageStatus = "not_started" | "in_progress" | "submitted" | "approved"
+export type PageStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "reviewing"
+  | "approved"
+  | "revision_needed"
 
 export interface Page {
   id: string
   chapterId: string
   pageNumber: number
-  imageUrl: string
+  fileUrl?: string
+  notes?: string
   status: PageStatus
-  tasks: Task[]
+  tasks?: Task[]
 }
 
 // ============================================================
 // TASK
 // ============================================================
 
-export type TaskType = "background" | "inking" | "toning" | "effects" | "text_cleanup"
+// ✅ Backend valid types: background | shading | effect | screentone | dialog | touch_up | other
+export type TaskType =
+  | "background"
+  | "shading"
+  | "effect"
+  | "screentone"
+  | "dialog"
+  | "touch_up"
+  | "other"
+
+// ✅ Backend valid priorities: low | normal | high | urgent
+export type TaskPriority = "low" | "normal" | "high" | "urgent"
 
 export type TaskStatus =
-  | "assigned"
+  | "pending"
   | "in_progress"
   | "submitted"
   | "revision_required"
   | "approved"
 
-export interface TaskRegion {
-  x: number
-  y: number
-  width: number
-  height: number
-  // For polygon regions
-  points?: { x: number; y: number }[]
-}
-
 export interface Task {
   id: string
   pageId: string
-  chapterId: string
-  seriesId: string
-  assignedTo: string        // assistant userId
+  assignedTo: string
+  title: string
+  description?: string
   taskType: TaskType
-  region: TaskRegion
-  instructions?: string
+  priority: TaskPriority
+  dueDate?: string
+  panelRegion?: Record<string, any>
   status: TaskStatus
-  submissionUrl?: string
-  revisionNote?: string
-  createdAt: string
-  updatedAt: string
-  deadline: string
+  fileUrl?: string
+  note?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface TaskSubmission {
@@ -146,8 +163,19 @@ export interface TaskSubmission {
 }
 
 // ============================================================
-// MANUSCRIPT
+// MANUSCRIPT & SUBMISSION
 // ============================================================
+
+export interface ManuscriptSubmitRequest {
+  seriesId: string
+  fileUrl: string
+  description?: string
+  targetAudience?: string
+  publicationSchedule?: PublicationSchedule
+  characterSummary?: string
+  plotSummary?: string
+  coverLetter?: string
+}
 
 export type ManuscriptStatus =
   | "pending"
@@ -163,8 +191,6 @@ export interface Manuscript {
   seriesId: string
   mangakaId: string
   editorId?: string
-  pageUrls: string[]
-  storyOutline: string
   status: ManuscriptStatus
   submittedAt: string
   updatedAt: string
@@ -175,7 +201,6 @@ export interface Manuscript {
 // ============================================================
 
 export type AnnotationTag = "story" | "dialogue" | "art" | "pacing"
-
 export type AnnotationType = "circle" | "arrow" | "text" | "highlight"
 
 export interface Annotation {
@@ -204,12 +229,6 @@ export interface BoardVote {
   justification: string
   schedulePreference?: PublicationSchedule
   createdAt: string
-}
-
-export interface ReaderVoteEntry {
-  seriesId: string
-  votes: number
-  period: string          // e.g. "2025-W20" or "2025-06"
 }
 
 // ============================================================
@@ -250,7 +269,7 @@ export interface Notification {
   type: NotificationType
   title: string
   message: string
-  relatedId?: string      // taskId / seriesId / manuscriptId
+  relatedId?: string
   isRead: boolean
   createdAt: string
 }

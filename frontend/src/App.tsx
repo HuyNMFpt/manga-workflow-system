@@ -11,7 +11,7 @@ import ResetPasswordPage from "@/pages/auth/ResetPasswordPage"
 // Mangaka Pages
 import MangakaDashboard from "@/pages/mangaka/MangakaDashboard"
 import SeriesList from "@/pages/mangaka/SeriesList"
-import ChapterManager from "@/pages/mangaka/ChapterManager"  // ✅ KEPT - Placeholder
+import ChapterManager from "@/pages/mangaka/ChapterManager"
 import SeriesSubmission from "@/pages/mangaka/SeriesSubmission"
 import TaskAssignment from "@/pages/mangaka/TaskAssignment"
 import PageReview from "@/pages/mangaka/PageReview"
@@ -71,8 +71,8 @@ export default function App() {
             </Route>
           </Route>
 
-          {/* Editor Routes */}
-          <Route element={<ProtectedRoute allowedRoles={["tantou_editor"]} />}>
+          {/* ✅ Editor role: "editor" (không phải tantou_editor) */}
+          <Route element={<ProtectedRoute allowedRoles={["editor"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/editor" element={<EditorDashboard />} />
               <Route path="/editor/manuscripts" element={<ManuscriptReview />} />
@@ -80,8 +80,8 @@ export default function App() {
             </Route>
           </Route>
 
-          {/* Board Routes */}
-          <Route element={<ProtectedRoute allowedRoles={["editorial_board"]} />}>
+          {/* ✅ Board role: "board_member" (không phải editorial_board) */}
+          <Route element={<ProtectedRoute allowedRoles={["board_member"]} />}>
             <Route element={<AppLayout />}>
               <Route path="/board" element={<BoardDashboard />} />
               <Route path="/board/voting" element={<VotingQueue />} />
