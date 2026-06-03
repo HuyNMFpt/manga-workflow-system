@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  TrendingUp, TrendingDown, Minus, AlertTriangle,
-  Award, BarChart2, Target, Activity, Loader2
-} from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, Award, Trophy, Activity, Loader2, Zap } from 'lucide-react';
 import api from '@/lib/axios';
 import { SeriesRanking } from '@/types';
 
@@ -13,157 +10,159 @@ const fetchMyRankings = async (): Promise<SeriesRanking[]> => {
 };
 
 const MyRankings = () => {
-  const [selectedPeriod, setSelectedPeriod] = useState<'current' | 'last_month' | 'last_quarter'>('current');
+  const [selectedPeriod, setSelectedPeriod] = useState<'current'|'last_month'|'last_quarter'>('current');
 
   const { data: rankings = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['rankings', 'my'],
     queryFn: fetchMyRankings,
   });
 
-  const getTrendIcon = (trend: 'up' | 'down' | 'stable') => {
-    if (trend === 'up') return <TrendingUp className="w-5 h-5 text-green-400" />;
-    if (trend === 'down') return <TrendingDown className="w-5 h-5 text-red-400" />;
-    return <Minus className="w-5 h-5 text-gray-400" />;
+  const atRisk   = rankings.filter(s => s.isAtRisk);
+  const avgRank  = rankings.length ? Math.round(rankings.reduce((a,s)=>a+s.currentRank,0)/rankings.length) : 0;
+  const top10    = rankings.filter(s => s.currentRank <= 10).length;
+
+  const TREND_ICON = {
+    up:     <TrendingUp  className="w-4 h-4 text-emerald-400" />,
+    down:   <TrendingDown className="w-4 h-4 text-red-400"    />,
+    stable: <Minus        className="w-4 h-4 text-zinc-500"   />,
   };
 
-  const getRankBadge = (rank: number) => {
-    if (rank === 1) return <Award className="w-6 h-6 text-yellow-400" />;
-    if (rank === 2) return <Award className="w-6 h-6 text-gray-400" />;
-    if (rank === 3) return <Award className="w-6 h-6 text-amber-600" />;
-    return null;
-  };
-
-  const atRiskSeries = rankings.filter(s => s.isAtRisk);
-  const avgRank = rankings.length
-    ? Math.round(rankings.reduce((sum, s) => sum + s.currentRank, 0) / rankings.length)
-    : 0;
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-        <span className="ml-3 text-gray-400">Đang tải xếp hạng...</span>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 gap-4">
-        <AlertTriangle className="w-12 h-12 text-red-400" />
-        <p className="text-red-300">Không thể tải dữ liệu xếp hạng</p>
-        <button onClick={() => refetch()} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all">
-          Thử lại
-        </button>
-      </div>
-    );
-  }
+  if (isLoading) return (
+    <div className="min-h-screen bg-[#0a0a12] flex items-center justify-center">
+      <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+    </div>
+  );
+  if (isError) return (
+    <div className="min-h-screen bg-[#0a0a12] flex flex-col items-center justify-center gap-4">
+      <AlertTriangle className="w-10 h-10 text-red-400" />
+      <p className="text-zinc-400 text-sm">Không thể tải xếp hạng</p>
+      <button onClick={()=>refetch()} className="px-4 py-2 rounded-xl bg-violet-600/20 text-violet-300 text-sm border border-violet-500/20 hover:bg-violet-600/30 transition-colors">Thử lại</button>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Xếp hạng Series</h1>
-        <p className="text-gray-400">Theo dõi thứ hạng và nhận thông báo nguy hiểm</p>
+    <div className="min-h-full bg-[#0a0a12] text-white">
+
+      {/* Header */}
+      <div className="relative border-b border-violet-900/20 overflow-hidden">
+        <div className="pointer-events-none absolute -top-20 right-0 w-72 h-72 rounded-full bg-amber-600/6 blur-3xl" />
+        <div className="relative px-8 pt-8 pb-6">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-amber-500 mb-2">Mangaka · Rankings</p>
+          <h1 className="text-2xl font-black font-['Syne']">Bảng xếp hạng</h1>
+          <p className="text-sm text-zinc-600 mt-1">Theo dõi thứ hạng và phát hiện nguy hiểm</p>
+        </div>
       </div>
 
-      {atRiskSeries.length > 0 && (
-        <div className="bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 rounded-2xl p-6">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 bg-red-500/20 rounded-xl flex items-center justify-center flex-shrink-0 border border-red-500/30">
-              <AlertTriangle className="w-7 h-7 text-red-400" />
+      <div className="px-8 py-8 space-y-8">
+
+        {/* At-risk banner */}
+        {atRisk.length > 0 && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 px-6 py-4 flex items-start gap-4">
+            <div className="w-9 h-9 rounded-xl bg-red-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Zap className="w-4.5 h-4.5 text-red-400" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white mb-2 font-['Syne']">⚠️ Cảnh báo: Series có nguy cơ bị hủy</h3>
-              <p className="text-red-300 mb-2">{atRiskSeries.map(s => s.seriesTitle).join(', ')} đang xếp hạng thấp liên tiếp.</p>
-              <p className="text-sm text-red-400">Hội đồng biên tập có thể đưa ra quyết định về series này trong kỳ tới.</p>
+              <p className="text-sm font-bold text-red-300">Cảnh báo: Series có nguy cơ bị huỷ</p>
+              <p className="text-xs text-zinc-500 mt-1">
+                <span className="text-red-400">{atRisk.map(s=>s.seriesTitle).join(', ')}</span> đang xếp hạng thấp liên tiếp.
+                Hội đồng có thể ra quyết định trong kỳ tới.
+              </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {[
-          { label: 'Tổng series', value: rankings.length, icon: BarChart2, gradient: 'from-purple-500 to-purple-600' },
-          { label: 'Xếp hạng TB', value: rankings.length ? `#${avgRank}` : '—', icon: Target, gradient: 'from-blue-500 to-blue-600' },
-          { label: 'Series top 10', value: rankings.filter(s => s.currentRank <= 10).length, icon: Award, gradient: 'from-green-500 to-green-600' },
-          { label: 'Series nguy hiểm', value: atRiskSeries.length, icon: AlertTriangle, gradient: atRiskSeries.length > 0 ? 'from-red-500 to-red-600' : 'from-gray-500 to-gray-600' },
-        ].map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div key={i} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 hover:border-purple-500/50 transition-all">
-              <div className={`w-12 h-12 bg-gradient-to-br ${stat.gradient} rounded-xl flex items-center justify-center shadow-lg mb-4`}>
-                <Icon className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="text-3xl font-bold text-white mb-1">{stat.value}</h3>
-              <p className="text-sm text-gray-300">{stat.label}</p>
+        {/* Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            { label:'Tổng series',   value: rankings.length, color:'text-violet-400', ring:'ring-violet-500/20', bg:'bg-violet-500/8',  icon: Trophy       },
+            { label:'Hạng TB',        value: rankings.length ? `#${avgRank}` : '—', color:'text-amber-400',  ring:'ring-amber-500/20',  bg:'bg-amber-500/8',   icon: Activity     },
+            { label:'Top 10',         value: top10,           color:'text-emerald-400',ring:'ring-emerald-500/20',bg:'bg-emerald-500/8', icon: Award        },
+            { label:'Nguy hiểm',      value: atRisk.length,   color: atRisk.length>0?'text-red-400':'text-zinc-500', ring: atRisk.length>0?'ring-red-500/20':'ring-zinc-700/20', bg: atRisk.length>0?'bg-red-500/8':'bg-zinc-500/5', icon: AlertTriangle },
+          ].map((s,i)=>(
+            <div key={i} className={`rounded-2xl ring-1 ${s.ring} ${s.bg} p-5`}>
+              <s.icon className={`w-5 h-5 ${s.color} mb-3`} strokeWidth={1.8} />
+              <div className={`text-3xl font-black font-['Syne'] ${s.color}`}>{s.value}</div>
+              <div className="text-[11px] text-zinc-600 mt-1">{s.label}</div>
             </div>
-          );
-        })}
-      </div>
-
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-400 mr-2">Kỳ:</span>
-          {[{ value: 'current', label: 'Hiện tại' }, { value: 'last_month', label: 'Tháng trước' }, { value: 'last_quarter', label: 'Quý trước' }].map(p => (
-            <button key={p.value} onClick={() => setSelectedPeriod(p.value as any)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedPeriod === p.value ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
-              {p.label}
-            </button>
           ))}
         </div>
-      </div>
 
-      {rankings.length === 0 && (
-        <div className="text-center py-16 text-gray-400">
-          <BarChart2 className="w-12 h-12 mx-auto mb-4 opacity-40" />
-          <p>Chưa có dữ liệu xếp hạng</p>
-          <p className="text-sm mt-1 text-gray-500">Dữ liệu sẽ xuất hiện sau khi hội đồng nhập kết quả bình chọn</p>
+        {/* Period filter */}
+        <div className="flex items-center gap-1">
+          {[{v:'current',l:'Hiện tại'},{v:'last_month',l:'Tháng trước'},{v:'last_quarter',l:'Quý trước'}].map(p=>(
+            <button key={p.v} onClick={()=>setSelectedPeriod(p.v as any)}
+              className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                selectedPeriod===p.v
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25'
+                  : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'
+              }`}>{p.l}</button>
+          ))}
         </div>
-      )}
 
-      <div className="space-y-4">
-        {rankings.map(series => {
-          const rankChange = (series.previousRank ?? series.currentRank) - series.currentRank;
-          return (
-            <div key={series.seriesId} className={`bg-white/5 backdrop-blur-xl border rounded-2xl p-6 transition-all ${series.isAtRisk ? 'border-red-500/50 hover:border-red-500/70' : 'border-white/10 hover:border-purple-500/50'}`}>
-              <div className="flex items-start gap-6">
-                <div className={`flex-shrink-0 w-20 h-20 rounded-xl flex items-center justify-center border-2 ${series.isAtRisk ? 'bg-red-500/20 border-red-500/30' : series.currentRank <= 10 ? 'bg-purple-500/20 border-purple-500/30' : 'bg-white/5 border-white/10'}`}>
-                  {getRankBadge(series.currentRank) || <span className="text-2xl font-bold text-white">#{series.currentRank}</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-xl font-bold text-white font-['Syne']">{series.seriesTitle}</h3>
-                    {series.isAtRisk && (
-                      <span className="px-3 py-1 bg-red-500/20 border border-red-500/30 text-red-400 rounded-full text-xs font-medium flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" /> Nguy hiểm
-                      </span>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-white/5 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2">{getTrendIcon(series.trend)}<span className="text-sm text-gray-400">Thay đổi hạng</span></div>
-                      <p className="text-2xl font-bold text-white">{rankChange > 0 ? '+' : ''}{rankChange}</p>
-                      <p className="text-xs text-gray-500 mt-1">Từ #{series.previousRank ?? '—'}</p>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-4">
-                      <div className="flex items-center gap-2 mb-2"><Activity className="w-4 h-4 text-blue-400" /><span className="text-sm text-gray-400">Lượt bình chọn</span></div>
-                      <p className="text-2xl font-bold text-white">{series.currentVotes.toLocaleString()}</p>
-                    </div>
-                    <div className={`rounded-lg p-4 ${series.isAtRisk ? 'bg-red-500/10 border border-red-500/30' : 'bg-white/5'}`}>
-                      <div className="flex items-center gap-2 mb-2"><Target className="w-4 h-4 text-gray-400" /><span className="text-sm text-gray-400">Trạng thái</span></div>
-                      <p className={`text-lg font-bold ${series.isAtRisk ? 'text-red-400' : 'text-green-400'}`}>{series.isAtRisk ? '⚠️ At-Risk' : '✅ An toàn'}</p>
-                    </div>
-                  </div>
-                  {series.isAtRisk && (
-                    <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                      <p className="text-sm text-red-300"><strong>Lưu ý:</strong> Hội đồng biên tập có thể đưa ra quyết định về series này trong kỳ tới.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+        {/* Rankings list */}
+        {rankings.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-700">
+            <Trophy className="w-10 h-10 opacity-20" />
+            <p className="text-sm">Chưa có dữ liệu xếp hạng</p>
+            <p className="text-xs text-zinc-800">Dữ liệu sẽ xuất hiện sau khi hội đồng nhập kết quả</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
+            {/* Table header */}
+            <div className="grid grid-cols-[3rem_1fr_6rem_6rem_5rem] gap-4 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
+              <span>Hạng</span>
+              <span>Series</span>
+              <span className="text-center">Bình chọn</span>
+              <span className="text-center">Thay đổi</span>
+              <span className="text-center">Trạng thái</span>
             </div>
-          );
-        })}
+
+            {rankings.map((s, idx) => {
+              const rankChange = (s.previousRank ?? s.currentRank) - s.currentRank;
+              return (
+                <div key={s.seriesId}
+                  className={`grid grid-cols-[3rem_1fr_6rem_6rem_5rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${s.isAtRisk ? 'bg-red-500/3' : ''}`}>
+
+                  {/* Rank */}
+                  <div className="flex items-center justify-center">
+                    {s.currentRank === 1 ? <span className="text-xl">🥇</span>
+                    : s.currentRank === 2 ? <span className="text-xl">🥈</span>
+                    : s.currentRank === 3 ? <span className="text-xl">🥉</span>
+                    : <span className="text-sm font-black text-zinc-500 font-['Syne']">#{s.currentRank}</span>}
+                  </div>
+
+                  {/* Title */}
+                  <div>
+                    <p className="text-[13px] font-semibold text-white">{s.seriesTitle}</p>
+                    {s.isAtRisk && <p className="text-[10px] text-red-400 mt-0.5">⚠ At-risk</p>}
+                  </div>
+
+                  {/* Votes */}
+                  <div className="text-center">
+                    <span className="text-sm font-bold text-white">{s.currentVotes.toLocaleString()}</span>
+                  </div>
+
+                  {/* Change */}
+                  <div className="flex items-center justify-center gap-1.5">
+                    {TREND_ICON[s.trend]}
+                    <span className={`text-[12px] font-semibold ${
+                      rankChange > 0 ? 'text-emerald-400' : rankChange < 0 ? 'text-red-400' : 'text-zinc-500'
+                    }`}>
+                      {rankChange > 0 ? `+${rankChange}` : rankChange < 0 ? `${rankChange}` : '—'}
+                    </span>
+                  </div>
+
+                  {/* Status */}
+                  <div className="flex justify-center">
+                    {s.isAtRisk
+                      ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">Nguy hiểm</span>
+                      : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">An toàn</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

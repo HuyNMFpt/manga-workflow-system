@@ -1,265 +1,308 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, MousePointer, Trash2, Send, CheckCircle2, AlertCircle, Loader2, ChevronDown } from 'lucide-react';
+import { Users, MousePointer, Trash2, Send, CheckCircle2, AlertCircle, Loader2, ChevronDown, Crosshair } from 'lucide-react';
 import api from '@/lib/axios';
 import { taskService } from '@/services/taskService';
 import { Series, Chapter } from '@/types';
 
-const fetchMySeries = async (): Promise<Series[]> => {
-  const res = await api.get('/series/my');
-  return res.data.data ?? [];
-};
-const fetchChapters = async (seriesId: string): Promise<Chapter[]> => {
-  const res = await api.get(`/chapters/series/${seriesId}`);
-  return res.data.data ?? [];
-};
-const fetchAssistants = async () => {
-  const res = await api.get('/users/assistants');
-  return res.data.data ?? [];
-};
+const fetchMySeries   = async (): Promise<Series[]>  => { const r = await api.get('/series/my');                   return r.data.data ?? []; };
+const fetchChapters   = async (id:string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`);   return r.data.data ?? []; };
+const fetchAssistants = async () => { const r = await api.get('/users/assistants'); return r.data.data ?? []; };
 
-type TaskType = 'background' | 'shading' | 'effect' | 'screentone' | 'dialog' | 'touch_up' | 'other';
-interface LocalTask {
-  id: number;
-  zone: { x: number; y: number; width: number; height: number };
-  type: TaskType;
-  assignedTo: string | null;
-  title: string;
-  description: string;
-  priority: 'low' | 'normal' | 'high' | 'urgent';
-}
+type TaskType = 'background'|'shading'|'effect'|'screentone'|'dialog'|'touch_up'|'other';
+interface LocalTask { id:number; zone:{x:number;y:number;width:number;height:number}; type:TaskType; assignedTo:string|null; title:string; description:string; priority:'low'|'normal'|'high'|'urgent'; }
 
-const TASK_TYPES: Array<{ value: TaskType; label: string; color: string }> = [
-  { value: 'background', label: 'Vẽ nền',    color: 'bg-blue-500'   },
-  { value: 'shading',    label: 'Tô bóng',   color: 'bg-purple-500' },
-  { value: 'effect',     label: 'Hiệu ứng',  color: 'bg-orange-500' },
-  { value: 'screentone', label: 'Screentone', color: 'bg-green-500'  },
-  { value: 'dialog',     label: 'Hộp thoại', color: 'bg-yellow-500' },
-  { value: 'touch_up',   label: 'Chỉnh sửa', color: 'bg-pink-500'   },
-  { value: 'other',      label: 'Khác',       color: 'bg-gray-500'   },
+const TASK_TYPES: {value:TaskType;label:string;color:string;dot:string}[] = [
+  { value:'background', label:'Vẽ nền',    color:'bg-blue-500/15 border-blue-500/25 text-blue-300',    dot:'bg-blue-400'    },
+  { value:'shading',    label:'Tô bóng',   color:'bg-violet-500/15 border-violet-500/25 text-violet-300', dot:'bg-violet-400' },
+  { value:'effect',     label:'Hiệu ứng',  color:'bg-orange-500/15 border-orange-500/25 text-orange-300',dot:'bg-orange-400' },
+  { value:'screentone', label:'Screentone',color:'bg-emerald-500/15 border-emerald-500/25 text-emerald-300',dot:'bg-emerald-400'},
+  { value:'dialog',     label:'Hộp thoại', color:'bg-yellow-500/15 border-yellow-500/25 text-yellow-300',dot:'bg-yellow-400' },
+  { value:'touch_up',   label:'Chỉnh sửa', color:'bg-pink-500/15 border-pink-500/25 text-pink-300',      dot:'bg-pink-400'   },
+  { value:'other',      label:'Khác',      color:'bg-zinc-500/15 border-zinc-500/25 text-zinc-400',       dot:'bg-zinc-500'   },
 ];
 
 const TaskAssignment = () => {
-  const queryClient = useQueryClient();
-  const [selectedSeriesId, setSelectedSeriesId] = useState('');
-  const [selectedChapterId, setSelectedChapterId] = useState('');
-  const [selectedPageNum, setSelectedPageNum] = useState(1);
-  const [selectedTaskType, setSelectedTaskType] = useState<TaskType>('background');
-  const [tasks, setTasks] = useState<LocalTask[]>([]);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
-  const [showTaskForm, setShowTaskForm] = useState(false);
-  const [tempTask, setTempTask] = useState<Partial<LocalTask> | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [submitError, setSubmitError] = useState('');
+  const qc = useQueryClient();
+  const [selectedSeriesId,   setSelectedSeriesId]   = useState('');
+  const [selectedChapterId,  setSelectedChapterId]  = useState('');
+  const [selectedPageNum,    setSelectedPageNum]    = useState(1);
+  const [selectedTaskType,   setSelectedTaskType]   = useState<TaskType>('background');
+  const [tasks,              setTasks]              = useState<LocalTask[]>([]);
+  const [isDrawing,          setIsDrawing]          = useState(false);
+  const [startPoint,         setStartPoint]         = useState<{x:number;y:number}|null>(null);
+  const [showTaskForm,       setShowTaskForm]       = useState(false);
+  const [tempTask,           setTempTask]           = useState<Partial<LocalTask>|null>(null);
+  const [submitSuccess,      setSubmitSuccess]      = useState(false);
+  const [submitError,        setSubmitError]        = useState('');
 
-  const { data: seriesList = [], isLoading: loadingSeries } = useQuery({ queryKey: ['series', 'my'], queryFn: fetchMySeries });
-  const { data: chapters = [], isLoading: loadingChapters } = useQuery({ queryKey: ['chapters', selectedSeriesId], queryFn: () => fetchChapters(selectedSeriesId), enabled: !!selectedSeriesId });
-  const { data: assistants = [], isLoading: loadingAssistants } = useQuery({ queryKey: ['assistants'], queryFn: fetchAssistants });
+  const { data:seriesList=[], isLoading:loadSeries }    = useQuery({ queryKey:['series','my'],           queryFn:fetchMySeries });
+  const { data:chapters=[],   isLoading:loadChapters }  = useQuery({ queryKey:['chapters',selectedSeriesId], queryFn:()=>fetchChapters(selectedSeriesId), enabled:!!selectedSeriesId });
+  const { data:assistants=[],  isLoading:loadAssistants } = useQuery({ queryKey:['assistants'],          queryFn:fetchAssistants });
 
-  const selectedChapter = chapters.find((c: any) => c.id === selectedChapterId);
+  const selectedChapter = (chapters as any[]).find((c:any)=>c.id===selectedChapterId);
   const pageCount = (selectedChapter as any)?.totalPages ?? 5;
 
-  const createTaskMutation = useMutation({
-    mutationFn: (task: LocalTask) => taskService.create({
-      pageId: `${selectedChapterId}_page_${selectedPageNum}`,
-      assignedTo: task.assignedTo!,
-      title: task.title || `${TASK_TYPES.find(t => t.value === task.type)?.label} - Trang ${selectedPageNum}`,
-      description: task.description,
-      taskType: task.type,
-      priority: task.priority,
-      panelRegion: task.zone,
+  const createMutation = useMutation({
+    mutationFn: (t:LocalTask) => taskService.create({
+      pageId:`${selectedChapterId}_page_${selectedPageNum}`,
+      assignedTo:t.assignedTo!,
+      title:t.title||`${TASK_TYPES.find(x=>x.value===t.type)?.label} - Trang ${selectedPageNum}`,
+      description:t.description, taskType:t.type, priority:t.priority, panelRegion:t.zone,
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess:()=>qc.invalidateQueries({queryKey:['tasks']}),
   });
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!selectedChapterId) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+  const handleMouseDown = (e:React.MouseEvent<HTMLDivElement>) => {
+    if(!selectedChapterId) return;
+    const r=e.currentTarget.getBoundingClientRect();
     setIsDrawing(true);
-    setStartPoint({ x: ((e.clientX - rect.left) / rect.width) * 100, y: ((e.clientY - rect.top) / rect.height) * 100 });
+    setStartPoint({x:((e.clientX-r.left)/r.width)*100,y:((e.clientY-r.top)/r.height)*100});
   };
-
-  const handleMouseUp = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDrawing || !startPoint) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const endX = ((e.clientX - rect.left) / rect.width) * 100;
-    const endY = ((e.clientY - rect.top) / rect.height) * 100;
-    const zone = { x: Math.min(startPoint.x, endX), y: Math.min(startPoint.y, endY), width: Math.abs(endX - startPoint.x), height: Math.abs(endY - startPoint.y) };
-    if (zone.width < 3 || zone.height < 3) { setIsDrawing(false); setStartPoint(null); return; }
-    setTempTask({ id: Date.now(), zone, type: selectedTaskType, assignedTo: null, title: '', description: '', priority: 'normal' });
+  const handleMouseUp = (e:React.MouseEvent<HTMLDivElement>) => {
+    if(!isDrawing||!startPoint) return;
+    const r=e.currentTarget.getBoundingClientRect();
+    const ex=((e.clientX-r.left)/r.width)*100, ey=((e.clientY-r.top)/r.height)*100;
+    const zone={x:Math.min(startPoint.x,ex),y:Math.min(startPoint.y,ey),width:Math.abs(ex-startPoint.x),height:Math.abs(ey-startPoint.y)};
+    if(zone.width<3||zone.height<3){setIsDrawing(false);setStartPoint(null);return;}
+    setTempTask({id:Date.now(),zone,type:selectedTaskType,assignedTo:null,title:'',description:'',priority:'normal'});
     setShowTaskForm(true); setIsDrawing(false); setStartPoint(null);
   };
 
   const handleSubmitAll = async () => {
     setSubmitError(''); setSubmitSuccess(false);
-    if (tasks.some(t => !t.assignedTo)) { setSubmitError('Còn task chưa được phân công!'); return; }
-    try {
-      await Promise.all(tasks.map(t => createTaskMutation.mutateAsync(t)));
-      setSubmitSuccess(true); setTasks([]);
-    } catch { setSubmitError('Có lỗi khi gửi task. Vui lòng thử lại.'); }
+    if(tasks.some(t=>!t.assignedTo)){setSubmitError('Còn task chưa phân công!');return;}
+    try{ await Promise.all(tasks.map(t=>createMutation.mutateAsync(t))); setSubmitSuccess(true); setTasks([]); }
+    catch{ setSubmitError('Có lỗi khi gửi task. Vui lòng thử lại.'); }
   };
 
-  const getTypeColor = (type: TaskType) => TASK_TYPES.find(t => t.value === type)?.color ?? 'bg-gray-500';
+  const getTypeStyle = (type:TaskType) => TASK_TYPES.find(t=>t.value===type) ?? TASK_TYPES[TASK_TYPES.length-1];
+
+  const SelectField = ({label,value,onChange,children,placeholder}:any) => (
+    <div>
+      {label && <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-1.5">{label}</label>}
+      <div className="relative">
+        <select value={value} onChange={onChange}
+          className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-violet-500/40 transition-all">
+          {placeholder && <option value="" className="bg-[#111118]">{placeholder}</option>}
+          {children}
+        </select>
+        <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-zinc-600 pointer-events-none" />
+      </div>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Phân công công việc</h1>
-        <p className="text-gray-400">Chọn vùng trên trang và giao việc cho trợ lý</p>
+    <div className="min-h-full bg-[#0a0a12] text-white">
+
+      {/* Header */}
+      <div className="relative border-b border-violet-900/20 overflow-hidden">
+        <div className="pointer-events-none absolute -top-20 right-0 w-64 h-64 rounded-full bg-emerald-600/6 blur-3xl" />
+        <div className="relative px-8 pt-8 pb-6">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-emerald-500 mb-2">Mangaka · Task</p>
+          <h1 className="text-2xl font-black font-['Syne']">Phân công công việc</h1>
+          <p className="text-sm text-zinc-600 mt-1">Chọn vùng trên trang và giao việc cho trợ lý</p>
+        </div>
       </div>
 
-      {/* Series selector */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-        <h2 className="text-lg font-bold text-white mb-4 font-['Syne']">1. Chọn Series</h2>
-        {loadingSeries ? <div className="flex items-center gap-2 text-gray-400"><Loader2 className="w-4 h-4 animate-spin" />Đang tải...</div> : (
-          <div className="relative">
-            <select value={selectedSeriesId} onChange={e => { setSelectedSeriesId(e.target.value); setSelectedChapterId(''); setTasks([]); }}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500">
-              <option value="">-- Chọn series --</option>
-              {seriesList.map((s: any) => <option key={s.id} value={s.id}>{s.title}</option>)}
-            </select>
-            <ChevronDown className="absolute right-3 top-3.5 w-4 h-4 text-gray-400 pointer-events-none" />
+      <div className="px-8 py-8 space-y-6">
+
+        {/* Step 1 + 2 selectors */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
+          <SelectField label="1. Chọn series" value={selectedSeriesId} placeholder="-- Chọn series --"
+            onChange={(e:any)=>{setSelectedSeriesId(e.target.value);setSelectedChapterId('');setTasks([]);}}>
+            {(seriesList as any[]).map((s:any)=><option key={s.id} value={s.id} className="bg-[#111118]">{s.title}</option>)}
+          </SelectField>
+
+          {selectedSeriesId && (
+            <SelectField label="2. Chọn chapter" value={selectedChapterId} placeholder="-- Chọn chapter --"
+              onChange={(e:any)=>{setSelectedChapterId(e.target.value);setTasks([]);}}>
+              {(chapters as any[]).map((c:any)=><option key={c.id} value={c.id} className="bg-[#111118]">Chapter {c.chapterNumber}{c.title?`: ${c.title}`:''}</option>)}
+            </SelectField>
+          )}
+        </div>
+
+        {/* Canvas + sidebar */}
+        {selectedChapterId && (
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6">
+
+            {/* Left: canvas */}
+            <div className="space-y-4">
+              {/* Task type */}
+              <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <MousePointer className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600">Loại công việc</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {TASK_TYPES.map(t=>(
+                    <button key={t.value} onClick={()=>setSelectedTaskType(t.value)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-all ${
+                        selectedTaskType===t.value ? t.color : 'bg-white/3 border-white/6 text-zinc-600 hover:text-zinc-300'
+                      }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Page canvas */}
+              <div className="rounded-2xl border border-white/5 bg-white/[0.015] p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Crosshair className="w-4 h-4 text-zinc-600" />
+                    <span className="text-sm font-semibold text-white">Trang {selectedPageNum}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {Array.from({length:Math.min(pageCount,8)},(_,i)=>i+1).map(n=>(
+                      <button key={n} onClick={()=>setSelectedPageNum(n)}
+                        className={`w-7 h-7 rounded-lg text-[11px] font-bold transition-all ${
+                          selectedPageNum===n ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/40' : 'bg-white/4 border border-white/6 text-zinc-500 hover:text-white hover:bg-white/8'
+                        }`}>{n}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="relative bg-gradient-to-br from-zinc-900 to-zinc-950 aspect-[3/4] rounded-xl overflow-hidden cursor-crosshair select-none border border-white/5"
+                  onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
+                    <MousePointer className="w-8 h-8" />
+                    <span className="text-xs">Kéo để chọn vùng</span>
+                  </div>
+                  {/* Zones */}
+                  {tasks.filter(t=>t.assignedTo).map(task=>{
+                    const ts = getTypeStyle(task.type);
+                    return (
+                      <div key={task.id} className="absolute border-2 border-dashed" style={{
+                        left:`${task.zone.x}%`,top:`${task.zone.y}%`,width:`${task.zone.width}%`,height:`${task.zone.height}%`,
+                        borderColor: ts.dot.replace('bg-','').split('-')[0]==='bg' ? '#8b5cf6' : `var(--tw-${ts.dot.replace('bg-','')})`
+                      }}>
+                        <span className={`text-[9px] font-bold px-1 py-0.5 ${ts.dot} text-white`}>{ts.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-zinc-700 mt-2 text-center">Nhấn và kéo để chọn vùng cần giao việc</p>
+              </div>
+            </div>
+
+            {/* Right: assistants + task queue */}
+            <div className="space-y-4">
+              {/* Assistants */}
+              <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/5 flex items-center gap-2">
+                  <Users className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600">Trợ lý</span>
+                </div>
+                {loadAssistants ? (
+                  <div className="flex items-center justify-center py-6 text-zinc-700"><Loader2 className="w-4 h-4 animate-spin" /></div>
+                ) : (assistants as any[]).length === 0 ? (
+                  <p className="text-xs text-zinc-700 text-center py-4">Không có trợ lý</p>
+                ) : (
+                  <div className="divide-y divide-white/4">
+                    {(assistants as any[]).map((a:any)=>(
+                      <div key={a.id} className="px-4 py-2.5 flex items-center gap-2.5">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-600/40 to-fuchsia-600/40 border border-violet-500/20 flex items-center justify-center text-[10px] font-bold text-violet-300 flex-shrink-0">
+                          {a.name?.slice(0,1)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] font-medium text-white truncate">{a.name}</p>
+                        </div>
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${a.isActive?'bg-emerald-400':'bg-zinc-600'}`} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Task queue */}
+              <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600">Công việc</span>
+                  <span className="text-[11px] text-zinc-600">{tasks.length} task</span>
+                </div>
+
+                {tasks.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 gap-2 text-zinc-800">
+                    <AlertCircle className="w-5 h-5" />
+                    <p className="text-[11px]">Vẽ vùng để tạo task</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/4 max-h-64 overflow-y-auto">
+                    {tasks.map((task,idx)=>{
+                      const ts = getTypeStyle(task.type);
+                      return (
+                        <div key={task.id} className="p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${ts.color}`}>{ts.label}</span>
+                            <button onClick={()=>setTasks(tasks.filter(t=>t.id!==task.id))} className="text-zinc-700 hover:text-red-400 transition-colors">
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <select value={task.assignedTo||''} onChange={e=>{ const u=[...tasks]; u[idx].assignedTo=e.target.value||null; setTasks(u); }}
+                            className="w-full bg-white/4 border border-white/8 rounded-lg px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-violet-500/30 transition-all">
+                            <option value="" className="bg-[#111118]">Chọn trợ lý</option>
+                            {(assistants as any[]).map((a:any)=><option key={a.id} value={a.id} className="bg-[#111118]">{a.name}</option>)}
+                          </select>
+                          {task.assignedTo && (
+                            <div className="flex items-center gap-1 mt-1.5">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                              <span className="text-[10px] text-emerald-400">Đã phân công</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {submitError && <p className="text-[11px] text-red-400 bg-red-500/8 border border-red-500/15 rounded-xl px-3 py-2">{submitError}</p>}
+              {submitSuccess && <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/8 border border-emerald-500/15 rounded-xl px-3 py-2 text-[11px]"><CheckCircle2 className="w-3.5 h-3.5" />Gửi thành công!</div>}
+
+              {tasks.length > 0 && (
+                <button onClick={handleSubmitAll} disabled={createMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-violet-600/25 disabled:opacity-60 transition-all">
+                  {createMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang gửi...</> : <><Send className="w-3.5 h-3.5" />Gửi ({tasks.length})</>}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Chapter selector */}
-      {selectedSeriesId && (
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-white mb-4 font-['Syne']">2. Chọn Chapter</h2>
-          {loadingChapters ? <div className="flex items-center gap-2 text-gray-400"><Loader2 className="w-4 h-4 animate-spin" />Đang tải...</div>
-            : chapters.length === 0 ? <p className="text-gray-400 text-sm">Chưa có chapter nào. Hãy tạo chapter trước.</p>
-            : <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {chapters.map((chapter: any) => (
-                <button key={chapter.id} onClick={() => { setSelectedChapterId(chapter.id); setTasks([]); }}
-                  className={`p-4 rounded-xl border text-left transition-all ${selectedChapterId === chapter.id ? 'border-purple-500 bg-purple-500/10' : 'border-white/10 bg-white/5 hover:border-purple-500/50'}`}>
-                  <p className="font-semibold text-white">Chapter {chapter.chapterNumber}: {chapter.title}</p>
-                  <p className="text-sm text-gray-400 mt-1">{chapter.totalPages ?? '?'} trang</p>
-                </button>
-              ))}
-            </div>}
-        </div>
-      )}
-
-      {/* Canvas + right panel */}
-      {selectedChapterId && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-4">
-              <div className="flex items-center gap-2 mb-3"><MousePointer className="w-4 h-4 text-purple-400" /><span className="text-sm font-medium text-gray-300">Loại công việc:</span></div>
-              <div className="flex flex-wrap gap-2">
-                {TASK_TYPES.map(type => (
-                  <button key={type.value} onClick={() => setSelectedTaskType(type.value)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${selectedTaskType === type.value ? `${type.color} text-white shadow-lg` : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'}`}>
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white font-['Syne']">Trang {selectedPageNum}</h3>
-                <div className="flex gap-2 flex-wrap">
-                  {Array.from({ length: Math.min(pageCount, 10) }, (_, i) => i + 1).map(n => (
-                    <button key={n} onClick={() => setSelectedPageNum(n)}
-                      className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${selectedPageNum === n ? 'bg-purple-600 text-white' : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'}`}>{n}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="relative bg-white/10 aspect-[3/4] rounded-lg overflow-hidden cursor-crosshair select-none" onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}>
-                <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">[Trang {selectedPageNum} — Kéo để chọn vùng]</div>
-                {tasks.filter(t => t.assignedTo).map(task => (
-                  <div key={task.id} className={`absolute border-2 ${getTypeColor(task.type).replace('bg-', 'border-')} opacity-60`}
-                    style={{ left: `${task.zone.x}%`, top: `${task.zone.y}%`, width: `${task.zone.width}%`, height: `${task.zone.height}%` }}>
-                    <div className={`${getTypeColor(task.type)} text-white text-xs px-1 py-0.5`}>{TASK_TYPES.find(t => t.value === task.type)?.label}</div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400 mt-3">💡 Nhấn và kéo trên trang để chọn vùng cần giao việc</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-4"><Users className="w-5 h-5 text-purple-400" /><h3 className="text-lg font-bold text-white font-['Syne']">Trợ lý</h3></div>
-              {loadingAssistants ? <div className="flex items-center gap-2 text-gray-400"><Loader2 className="w-4 h-4 animate-spin" />Đang tải...</div>
-                : assistants.length === 0 ? <p className="text-sm text-gray-400">Không có trợ lý.</p>
-                : <div className="space-y-2">{assistants.map((a: any) => (
-                    <div key={a.id} className="bg-white/5 rounded-lg p-3 border border-white/5">
-                      <div className="flex items-center justify-between mb-1"><span className="text-sm font-medium text-white">{a.name}</span><span className={`w-2 h-2 rounded-full ${a.isActive ? 'bg-green-400' : 'bg-gray-400'}`} /></div>
-                      <p className="text-xs text-gray-400">{a.email}</p>
-                    </div>
-                  ))}</div>}
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-              <h3 className="text-lg font-bold text-white mb-4 font-['Syne']">Công việc ({tasks.length})</h3>
-              {tasks.length === 0 ? (
-                <div className="text-center py-8 text-gray-400 text-sm"><AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" /><p>Chưa có công việc</p><p className="text-xs mt-1">Vẽ vùng trên trang để tạo</p></div>
-              ) : (
-                <div className="space-y-2 max-h-80 overflow-y-auto">
-                  {tasks.map((task, idx) => (
-                    <div key={task.id} className="bg-white/5 rounded-lg p-3 border border-white/5">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-medium text-white ${getTypeColor(task.type)}`}>{TASK_TYPES.find(t => t.value === task.type)?.label}</span>
-                        <button onClick={() => setTasks(tasks.filter(t => t.id !== task.id))} className="text-gray-400 hover:text-red-400 transition-colors"><Trash2 className="w-3 h-3" /></button>
-                      </div>
-                      <select value={task.assignedTo || ''} onChange={e => { const u = [...tasks]; u[idx].assignedTo = e.target.value || null; setTasks(u); }}
-                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-sm text-white">
-                        <option value="">Chọn trợ lý</option>
-                        {assistants.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
-                      {task.assignedTo && <div className="flex items-center gap-1 mt-2"><CheckCircle2 className="w-3 h-3 text-green-400" /><span className="text-xs text-green-400">Đã phân công</span></div>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {submitError && <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-sm text-red-300">{submitError}</div>}
-            {submitSuccess && <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-sm text-green-300">✅ Đã gửi công việc thành công!</div>}
-
-            {tasks.length > 0 && (
-              <button onClick={handleSubmitAll} disabled={createTaskMutation.isPending}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg font-medium disabled:opacity-60">
-                {createTaskMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Đang gửi...</> : <><Send className="w-4 h-4" />Gửi công việc ({tasks.length})</>}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Task form modal */}
       {showTaskForm && tempTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-white mb-4">Chi tiết công việc</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Tiêu đề</label>
-                <input type="text" value={tempTask.title || ''} onChange={e => setTempTask({ ...tempTask, title: e.target.value })}
-                  placeholder="VD: Vẽ nền thành phố ban đêm..." className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500" />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Mô tả</label>
-                <textarea rows={3} value={tempTask.description || ''} onChange={e => setTempTask({ ...tempTask, description: e.target.value })}
-                  placeholder="Mô tả chi tiết yêu cầu..." className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none" />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-300 mb-2">Độ ưu tiên</label>
-                <div className="flex gap-2">
-                  {[{ value: 'urgent', label: 'Khẩn', color: 'bg-red-600' }, { value: 'high', label: 'Cao', color: 'bg-orange-600' }, { value: 'normal', label: 'TB', color: 'bg-blue-600' }, { value: 'low', label: 'Thấp', color: 'bg-gray-600' }].map(p => (
-                    <button key={p.value} onClick={() => setTempTask({ ...tempTask, priority: p.value as any })}
-                      className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${tempTask.priority === p.value ? `${p.color} text-white` : 'bg-white/5 border border-white/10 text-gray-400'}`}>{p.label}</button>
-                  ))}
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-[#111118] border border-violet-900/30 rounded-2xl p-6 shadow-2xl shadow-black/50 space-y-4">
+            <h3 className="text-sm font-bold text-white">Chi tiết công việc</h3>
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">Tiêu đề</label>
+              <input type="text" value={tempTask.title||''} onChange={e=>setTempTask({...tempTask,title:e.target.value})}
+                placeholder="VD: Vẽ nền thành phố..."
+                className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/40 transition-all" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">Mô tả</label>
+              <textarea rows={3} value={tempTask.description||''} onChange={e=>setTempTask({...tempTask,description:e.target.value})}
+                placeholder="Mô tả chi tiết..."
+                className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/40 resize-none transition-all" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">Ưu tiên</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[{v:'urgent',l:'Khẩn',c:'bg-red-500/15 border-red-500/25 text-red-300'},{v:'high',l:'Cao',c:'bg-orange-500/15 border-orange-500/25 text-orange-300'},{v:'normal',l:'TB',c:'bg-blue-500/15 border-blue-500/25 text-blue-300'},{v:'low',l:'Thấp',c:'bg-zinc-500/15 border-zinc-500/25 text-zinc-400'}].map(p=>(
+                  <button key={p.v} onClick={()=>setTempTask({...tempTask,priority:p.v as any})}
+                    className={`py-1.5 rounded-lg border text-[11px] font-semibold transition-all ${tempTask.priority===p.v ? p.c : 'bg-white/3 border-white/6 text-zinc-600 hover:text-zinc-300'}`}>{p.l}</button>
+                ))}
               </div>
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => { setShowTaskForm(false); setTempTask(null); }} className="flex-1 px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all">Hủy</button>
-              <button onClick={() => { if (tempTask) { setTasks([...tasks, tempTask as LocalTask]); setTempTask(null); setShowTaskForm(false); } }} className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all font-medium">Lưu</button>
+            <div className="flex gap-2 pt-1">
+              <button onClick={()=>{setShowTaskForm(false);setTempTask(null);}}
+                className="flex-1 py-2 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors">Huỷ</button>
+              <button onClick={()=>{if(tempTask){setTasks([...tasks,tempTask as LocalTask]);setTempTask(null);setShowTaskForm(false);}}}
+                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-violet-600/25 transition-all">Lưu</button>
             </div>
           </div>
         </div>
