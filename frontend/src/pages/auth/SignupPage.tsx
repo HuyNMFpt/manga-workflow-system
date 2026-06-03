@@ -42,13 +42,13 @@ export default function SignupPage() {
       desc: "Support mangaka in production" 
     },
     { 
-      value: "tantou_editor", // ← SỬA
+      value: "editor", // ← SỬA
       label: "Editor", 
       icon: "📝", 
       desc: "Review and approve manuscripts" 
     },
     { 
-      value: "editorial_board", // ← SỬA
+      value: "board_member", // ← SỬA
       label: "Editorial Board", 
       icon: "👔", 
       desc: "Make strategic decisions" 

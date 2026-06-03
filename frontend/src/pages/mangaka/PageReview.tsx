@@ -1,348 +1,194 @@
 import { useState } from 'react';
-import { 
-  CheckCircle2, 
-  XCircle,
-  MessageSquare,
-  Download,
-  Eye,
-  Clock,
-  User,
-  AlertCircle
-} from 'lucide-react';
-
-type PageStatus = 'pending' | 'in_review' | 'approved' | 'needs_revision';
-
-type Page = {
-  id: number;
-  pageNumber: number;
-  chapterNumber: number;
-  chapterTitle: string;
-  completedBy: string;
-  completedAt: string;
-  status: PageStatus;
-  taskType: string;
-  revision: number;
-  notes?: string;
-};
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, XCircle, MessageSquare, Eye, AlertCircle, Loader2, Film } from 'lucide-react';
+import { taskService } from '@/services/taskService';
 
 const PageReview = () => {
-  const [selectedPage, setSelectedPage] = useState<Page | null>(null);
-  const [showReviewModal, setShowReviewModal] = useState(false);
-  const [reviewAction, setReviewAction] = useState<'approve' | 'reject' | null>(null);
+  const qc = useQueryClient();
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [reviewAction, setReviewAction] = useState<'approve'|'revision'|null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
-  const [filterStatus, setFilterStatus] = useState<PageStatus | 'all'>('in_review');
+  const [filterStatus, setFilterStatus] = useState('submitted');
 
-  const pages: Page[] = [
-    {
-      id: 1,
-      pageNumber: 5,
-      chapterNumber: 19,
-      chapterTitle: 'Moonlight Chronicles Ch.19',
-      completedBy: 'Yamada Ken',
-      completedAt: '2 giờ trước',
-      status: 'in_review',
-      taskType: 'Background',
-      revision: 1
-    },
-    {
-      id: 2,
-      pageNumber: 7,
-      chapterNumber: 19,
-      chapterTitle: 'Moonlight Chronicles Ch.19',
-      completedBy: 'Sato Yuki',
-      completedAt: '5 giờ trước',
-      status: 'in_review',
-      taskType: 'Shading',
-      revision: 1
-    },
-    {
-      id: 3,
-      pageNumber: 3,
-      chapterNumber: 19,
-      chapterTitle: 'Moonlight Chronicles Ch.19',
-      completedBy: 'Suzuki Mai',
-      completedAt: '1 ngày trước',
-      status: 'approved',
-      taskType: 'Screentone',
-      revision: 1
-    },
-    {
-      id: 4,
-      pageNumber: 12,
-      chapterNumber: 19,
-      chapterTitle: 'Moonlight Chronicles Ch.19',
-      completedBy: 'Yamada Ken',
-      completedAt: '1 ngày trước',
-      status: 'needs_revision',
-      taskType: 'Background',
-      revision: 2,
-      notes: 'Cần thêm chi tiết ở phía sau nhân vật'
-    }
-  ];
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery({
+    queryKey: ['tasks', 'pending-review'],
+    queryFn: () => taskService.getPendingReview(),
+  });
 
-  const handleReview = () => {
-    if (!selectedPage || !reviewAction) return;
-    
-    // Handle review logic here
-    console.log('Review:', reviewAction, reviewNotes);
-    setShowReviewModal(false);
-    setSelectedPage(null);
-    setReviewAction(null);
-    setReviewNotes('');
+  const approveMutation  = useMutation({ mutationFn: (id:string)=>taskService.approve(id), onSuccess: ()=>{ qc.invalidateQueries({queryKey:['tasks','pending-review']}); closeModal(); } });
+  const revisionMutation = useMutation({ mutationFn: ({taskId,note}:{taskId:string;note:string})=>taskService.requestRevision(taskId,note), onSuccess: ()=>{ qc.invalidateQueries({queryKey:['tasks','pending-review']}); closeModal(); } });
+
+  const closeModal = () => { setShowModal(false); setSelectedTask(null); setReviewAction(null); setReviewNotes(''); };
+  const handleConfirm = () => {
+    if (!selectedTask || !reviewAction) return;
+    if (reviewAction === 'approve') approveMutation.mutate(selectedTask.id);
+    else { if (!reviewNotes.trim()) return; revisionMutation.mutate({taskId:selectedTask.id,note:reviewNotes}); }
+  };
+  const isSubmitting = approveMutation.isPending || revisionMutation.isPending;
+
+  const STATUS_MAP: Record<string,(any)> = {
+    submitted:         { label:'Cần duyệt', pill:'bg-violet-500/10 text-violet-300 border-violet-500/20' },
+    approved:          { label:'Đã duyệt',  pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'},
+    revision_required: { label:'Cần sửa',   pill:'bg-amber-500/10 text-amber-300 border-amber-500/20'    },
+    in_progress:       { label:'Đang làm',  pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'       },
   };
 
-  const getStatusBadge = (status: PageStatus) => {
-    const badges = {
-      pending: { label: 'Chờ xử lý', class: 'bg-gray-500/10 text-gray-400 border-gray-500/30' },
-      in_review: { label: 'Cần duyệt', class: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
-      approved: { label: 'Đã duyệt', class: 'bg-green-500/10 text-green-400 border-green-500/30' },
-      needs_revision: { label: 'Cần sửa', class: 'bg-orange-500/10 text-orange-400 border-orange-500/30' }
-    };
-    const badge = badges[status];
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium border ${badge.class}`}>{badge.label}</span>;
-  };
+  const filtered = filterStatus === 'all' ? (tasks as any[]) : (tasks as any[]).filter((t:any)=>t.status===filterStatus);
 
-  const filteredPages = filterStatus === 'all' 
-    ? pages 
-    : pages.filter(p => p.status === filterStatus);
+  if (isLoading) return <div className="min-h-screen bg-[#0a0a12] flex items-center justify-center"><Loader2 className="w-7 h-7 text-violet-400 animate-spin" /></div>;
+  if (isError)   return (
+    <div className="min-h-screen bg-[#0a0a12] flex flex-col items-center justify-center gap-4">
+      <AlertCircle className="w-10 h-10 text-red-400" />
+      <button onClick={()=>refetch()} className="px-4 py-2 rounded-xl bg-violet-600/20 text-violet-300 text-sm border border-violet-500/20 hover:bg-violet-600/30 transition-colors">Thử lại</button>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-full bg-[#0a0a12] text-white">
+
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Duyệt trang hoàn thiện</h1>
-        <p className="text-gray-400">Xem và phê duyệt công việc từ trợ lý</p>
+      <div className="relative border-b border-violet-900/20 overflow-hidden">
+        <div className="pointer-events-none absolute -top-20 left-0 w-64 h-64 rounded-full bg-fuchsia-600/8 blur-3xl" />
+        <div className="relative px-8 pt-8 pb-6">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-fuchsia-500 mb-2">Mangaka · Duyệt trang</p>
+          <h1 className="text-2xl font-black font-['Syne']">Duyệt trang hoàn thiện</h1>
+          <p className="text-sm text-zinc-600 mt-1">Xem và phê duyệt công việc từ trợ lý</p>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Chờ duyệt', value: pages.filter(p => p.status === 'in_review').length, color: 'from-blue-500 to-blue-600' },
-          { label: 'Đã duyệt', value: pages.filter(p => p.status === 'approved').length, color: 'from-green-500 to-green-600' },
-          { label: 'Cần sửa', value: pages.filter(p => p.status === 'needs_revision').length, color: 'from-orange-500 to-orange-600' },
-          { label: 'Tổng cộng', value: pages.length, color: 'from-purple-500 to-purple-600' }
-        ].map((stat, index) => (
-          <div key={index} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-4">
-            <p className="text-sm text-gray-400 mb-2">{stat.label}</p>
-            <p className="text-3xl font-bold text-white">{stat.value}</p>
-          </div>
-        ))}
-      </div>
+      <div className="px-8 py-8 space-y-6">
 
-      {/* Filters */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-4">
-        <div className="flex items-center gap-2 overflow-x-auto">
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-3">
           {[
-            { value: 'all', label: 'Tất cả' },
-            { value: 'in_review', label: 'Cần duyệt' },
-            { value: 'approved', label: 'Đã duyệt' },
-            { value: 'needs_revision', label: 'Cần sửa' }
-          ].map(filter => (
-            <button
-              key={filter.value}
-              onClick={() => setFilterStatus(filter.value as any)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
-                filterStatus === filter.value
-                  ? 'bg-purple-600 text-white shadow-lg'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Page Grid */}
-      {filteredPages.length === 0 ? (
-        <div className="text-center py-16">
-          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl flex items-center justify-center">
-            <AlertCircle className="w-10 h-10 text-purple-400" />
-          </div>
-          <p className="text-lg font-medium text-white mb-2">Không có trang nào</p>
-          <p className="text-sm text-gray-400">Chưa có trang nào cần duyệt</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredPages.map(page => (
-            <div
-              key={page.id}
-              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/50 transition-all"
-            >
-              {/* Preview */}
-              <div className="aspect-[3/4] bg-white/10 relative flex items-center justify-center">
-                <span className="text-6xl font-bold text-white/10">{page.pageNumber}</span>
-                <div className="absolute top-3 right-3">
-                  {getStatusBadge(page.status)}
-                </div>
-                {page.revision > 1 && (
-                  <div className="absolute top-3 left-3 px-2 py-1 bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 rounded-full text-xs font-medium">
-                    Rev {page.revision}
-                  </div>
-                )}
-              </div>
-
-              {/* Info */}
-              <div className="p-4 space-y-3">
-                <div>
-                  <h3 className="font-semibold text-white mb-1">
-                    {page.chapterTitle} - Trang {page.pageNumber}
-                  </h3>
-                  <p className="text-sm text-gray-400">{page.taskType}</p>
-                </div>
-
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                  <User className="w-3 h-3" />
-                  <span>{page.completedBy}</span>
-                  <span>•</span>
-                  <Clock className="w-3 h-3" />
-                  <span>{page.completedAt}</span>
-                </div>
-
-                {page.notes && (
-                  <div className="p-2 bg-orange-500/10 border border-orange-500/30 rounded-lg">
-                    <p className="text-xs text-orange-300">{page.notes}</p>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => {
-                      setSelectedPage(page);
-                      setShowReviewModal(true);
-                    }}
-                    className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all text-sm font-medium"
-                  >
-                    <Eye className="w-3 h-3" />
-                    Xem
-                  </button>
-                  <button className="px-3 py-2 bg-white/5 border border-white/10 text-gray-400 rounded-lg hover:bg-white/10 transition-all">
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
+            { label:'Cần duyệt', count:(tasks as any[]).filter((t:any)=>t.status==='submitted').length,         color:'text-violet-400', ring:'ring-violet-500/20', bg:'bg-violet-500/8' },
+            { label:'Đã duyệt',  count:(tasks as any[]).filter((t:any)=>t.status==='approved').length,          color:'text-emerald-400',ring:'ring-emerald-500/20',bg:'bg-emerald-500/8'},
+            { label:'Cần sửa',   count:(tasks as any[]).filter((t:any)=>t.status==='revision_required').length,  color:'text-amber-400', ring:'ring-amber-500/20',  bg:'bg-amber-500/8'  },
+            { label:'Tổng',      count:(tasks as any[]).length,                                                  color:'text-zinc-300',  ring:'ring-zinc-700/20',   bg:'bg-zinc-500/5'   },
+          ].map((s,i)=>(
+            <div key={i} className={`rounded-2xl ring-1 ${s.ring} ${s.bg} px-5 py-4 flex items-end justify-between`}>
+              <div>
+                <div className={`text-3xl font-black font-['Syne'] ${s.color}`}>{s.count}</div>
+                <div className="text-[11px] text-zinc-600 mt-1">{s.label}</div>
               </div>
             </div>
           ))}
         </div>
-      )}
+
+        {/* Filters */}
+        <div className="flex items-center gap-1">
+          {[{v:'all',l:'Tất cả'},{v:'submitted',l:'Cần duyệt'},{v:'approved',l:'Đã duyệt'},{v:'revision_required',l:'Cần sửa'}].map(f=>(
+            <button key={f.v} onClick={()=>setFilterStatus(f.v)}
+              className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                filterStatus===f.v ? 'bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25' : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'
+              }`}>{f.l}</button>
+          ))}
+        </div>
+
+        {/* Grid */}
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-700">
+            <Film className="w-10 h-10 opacity-20" />
+            <p className="text-sm">Không có trang nào</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filtered.map((task:any) => {
+              const st = STATUS_MAP[task.status] ?? STATUS_MAP.in_progress;
+              return (
+                <div key={task.id}
+                  className="group rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden hover:border-violet-500/30 transition-all">
+                  {/* Preview */}
+                  <div className="aspect-[3/4] bg-gradient-to-br from-violet-900/20 to-fuchsia-900/10 relative flex items-center justify-center">
+                    {task.fileUrl
+                      ? <img src={task.fileUrl} alt="Result" className="w-full h-full object-cover" />
+                      : <Film className="w-8 h-8 text-violet-500/20" />}
+                    <div className="absolute top-2 right-2">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${st.pill}`}>{st.label}</span>
+                    </div>
+                  </div>
+
+                  {/* Info */}
+                  <div className="p-3">
+                    <p className="text-[12px] font-semibold text-white truncate">{task.title}</p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5">{task.taskType}</p>
+                    {task.revisionNote && (
+                      <p className="text-[10px] text-amber-400 mt-1.5 line-clamp-2">{task.revisionNote}</p>
+                    )}
+                    {task.status === 'submitted' && (
+                      <button onClick={()=>{setSelectedTask(task);setShowModal(true);}}
+                        className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-violet-600/15 border border-violet-500/20 text-violet-300 text-[11px] font-semibold hover:bg-violet-600/25 transition-colors">
+                        <Eye className="w-3 h-3" />Duyệt
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Review Modal */}
-      {showReviewModal && selectedPage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="sticky top-0 bg-slate-900 border-b border-white/10 p-6 flex items-center justify-between">
+      {showModal && selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#111118] border border-violet-900/30 rounded-2xl overflow-hidden shadow-2xl shadow-black/50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
               <div>
-                <h3 className="text-xl font-bold text-white font-['Syne']">
-                  {selectedPage.chapterTitle} - Trang {selectedPage.pageNumber}
-                </h3>
-                <p className="text-sm text-gray-400 mt-1">
-                  {selectedPage.taskType} • {selectedPage.completedBy} • {selectedPage.completedAt}
-                </p>
+                <p className="text-sm font-bold text-white">{selectedTask.title}</p>
+                <p className="text-[11px] text-zinc-500">{selectedTask.taskType}</p>
               </div>
-              <button
-                onClick={() => {
-                  setShowReviewModal(false);
-                  setSelectedPage(null);
-                  setReviewAction(null);
-                  setReviewNotes('');
-                }}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <XCircle className="w-6 h-6" />
+              <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
+                <XCircle className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Page Preview */}
-            <div className="p-6">
-              <div className="aspect-[3/4] bg-white/10 rounded-lg mb-6 flex items-center justify-center">
-                <span className="text-9xl font-bold text-white/10">{selectedPage.pageNumber}</span>
+            <div className="p-6 space-y-4">
+              {selectedTask.fileUrl && (
+                <div className="aspect-[3/4] rounded-xl overflow-hidden max-h-48 object-contain bg-black/30">
+                  <img src={selectedTask.fileUrl} alt="Result" className="w-full h-full object-contain" />
+                </div>
+              )}
+
+              <div className="bg-violet-500/8 border border-violet-500/15 rounded-xl p-3">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <MessageSquare className="w-3 h-3 text-violet-400" />
+                  <span className="text-[11px] font-semibold text-violet-300">Annotation tool</span>
+                </div>
+                <p className="text-[10px] text-zinc-600">Công cụ vẽ ghi chú sẽ có trong Sprint 2</p>
               </div>
 
-              {/* Annotation Note */}
-              <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare className="w-4 h-4 text-purple-400" />
-                  <span className="text-sm font-medium text-purple-300">Canvas Annotation</span>
-                </div>
-                <p className="text-xs text-gray-400">
-                  Công cụ vẽ ghi chú trực tiếp (Fabric.js) sẽ được triển khai trong Sprint 2
-                </p>
+              {/* Decision */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={()=>setReviewAction('approve')}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    reviewAction==='approve' ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-300' : 'bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/8'
+                  }`}><CheckCircle2 className="w-4 h-4" />Phê duyệt</button>
+                <button onClick={()=>setReviewAction('revision')}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    reviewAction==='revision' ? 'bg-amber-500/20 border border-amber-500/30 text-amber-300' : 'bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/8'
+                  }`}><XCircle className="w-4 h-4" />Yêu cầu sửa</button>
               </div>
 
-              {/* Review Actions */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-3">
-                    Quyết định
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setReviewAction('approve')}
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
-                        reviewAction === 'approve'
-                          ? 'bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg'
-                          : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-5 h-5" />
-                      Phê duyệt
-                    </button>
-                    <button
-                      onClick={() => setReviewAction('reject')}
-                      className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
-                        reviewAction === 'reject'
-                          ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg'
-                          : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
-                      }`}
-                    >
-                      <XCircle className="w-5 h-5" />
-                      Yêu cầu sửa
-                    </button>
-                  </div>
-                </div>
+              {reviewAction && (
+                <textarea rows={3} value={reviewNotes} onChange={e=>setReviewNotes(e.target.value)}
+                  placeholder={reviewAction==='approve' ? 'Nhận xét (tùy chọn)...' : 'Mô tả điểm cần sửa... *'}
+                  className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/40 resize-none transition-all" />
+              )}
 
-                {reviewAction && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Ghi chú {reviewAction === 'reject' && <span className="text-red-400">*</span>}
-                    </label>
-                    <textarea
-                      rows={4}
-                      required={reviewAction === 'reject'}
-                      value={reviewNotes}
-                      onChange={(e) => setReviewNotes(e.target.value)}
-                      placeholder={
-                        reviewAction === 'approve'
-                          ? 'Nhận xét (tùy chọn)...'
-                          : 'Mô tả chi tiết những điểm cần chỉnh sửa...'
-                      }
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                    />
-                  </div>
-                )}
+              {(approveMutation.isError || revisionMutation.isError) && (
+                <p className="text-xs text-red-400">Có lỗi xảy ra. Vui lòng thử lại.</p>
+              )}
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={() => {
-                      setShowReviewModal(false);
-                      setSelectedPage(null);
-                      setReviewAction(null);
-                      setReviewNotes('');
-                    }}
-                    className="flex-1 px-4 py-3 bg-white/5 border border-white/10 text-white rounded-xl hover:bg-white/10 transition-all font-medium"
-                  >
-                    Hủy
-                  </button>
-                  <button
-                    onClick={handleReview}
-                    disabled={!reviewAction || (reviewAction === 'reject' && !reviewNotes)}
-                    className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl hover:from-purple-700 hover:to-purple-800 transition-all font-medium shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Xác nhận
-                  </button>
-                </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={closeModal} disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors disabled:opacity-50">Huỷ</button>
+                <button onClick={handleConfirm}
+                  disabled={!reviewAction||(reviewAction==='revision'&&!reviewNotes.trim())||isSubmitting}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-violet-600/30 disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+                  {isSubmitting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang xử lý</> : 'Xác nhận'}
+                </button>
               </div>
             </div>
           </div>
