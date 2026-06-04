@@ -53,12 +53,12 @@ public class SeriesController {
     }
 
     @GetMapping("/my")
-    public PaginatedResponse<SeriesDTO> getMySeries(Authentication authentication) {
+    public ApiResponse<PaginatedResponse<SeriesDTO>> getMySeries(Authentication authentication) {
         String email = authentication.getName();
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return seriesService.getSeriesByMangaka(user.getId());
+        return ApiResponse.success(seriesService.getSeriesByMangaka(user.getId()));
     }
 
     @PutMapping("/{id}/status")

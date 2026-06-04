@@ -12,14 +12,14 @@ import java.util.Optional;
 @Repository
 public interface ChapterRepository extends JpaRepository<Chapter, String> {
 
-    List<Chapter> findBySeriesIdOrderByChapterNumberAsc(String seriesId);
+    List<Chapter> findBySeries_IdOrderByChapterNumberAsc(String seriesId);
 
-    Optional<Chapter> findBySeriesIdAndChapterNumber(String seriesId, Integer chapterNumber);
+    Optional<Chapter> findBySeries_IdAndChapterNumber(String seriesId, Integer chapterNumber);
 
-    boolean existsBySeriesIdAndChapterNumber(String seriesId, Integer chapterNumber);
+    boolean existsBySeries_IdAndChapterNumber(String seriesId, Integer chapterNumber);
 
     @Query("SELECT c FROM Chapter c LEFT JOIN FETCH c.pages WHERE c.id = :id")
     Optional<Chapter> findByIdWithPages(@Param("id") String id);
 
-    long countBySeriesId(String seriesId);
+    long countBySeries_Id(String seriesId);
 }

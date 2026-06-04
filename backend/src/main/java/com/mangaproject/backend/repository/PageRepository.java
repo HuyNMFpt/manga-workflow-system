@@ -10,11 +10,11 @@ import java.util.Optional;
 @Repository
 public interface PageRepository extends JpaRepository<Page, String> {
 
-    List<Page> findByChapterIdOrderByPageNumberAsc(String chapterId);
+    List<Page> findByChapter_IdOrderByPageNumberAsc(String chapterId);
 
-    Optional<Page> findByChapterIdAndPageNumber(String chapterId, Integer pageNumber);
+    Optional<Page> findByChapter_IdAndPageNumber(String chapterId, Integer pageNumber);
 
-    boolean existsByChapterIdAndPageNumber(String chapterId, Integer pageNumber);
+    boolean existsByChapter_IdAndPageNumber(String chapterId, Integer pageNumber);
 
-    long countByChapterId(String chapterId);
+    long countByChapter_Id(String chapterId);
 }

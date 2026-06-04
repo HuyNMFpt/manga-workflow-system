@@ -26,7 +26,7 @@ public class PageService {
 
     @Transactional(readOnly = true)
     public List<PageDTO> getPagesByChapter(String chapterId) {
-        List<Page> pages = pageRepository.findByChapterIdOrderByPageNumberAsc(chapterId);
+        List<Page> pages = pageRepository.findByChapter_IdOrderByPageNumberAsc(chapterId);
         return pages.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -44,7 +44,7 @@ public class PageService {
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
-        if (pageRepository.existsByChapterIdAndPageNumber(chapterId, pageNumber)) {
+        if (pageRepository.existsByChapter_IdAndPageNumber(chapterId, pageNumber)) {
             throw new RuntimeException("Page number already exists in this chapter");
         }
 
@@ -87,7 +87,7 @@ public class PageService {
                 .orElseThrow(() -> new RuntimeException("Page not found"));
 
         if (!page.getPageNumber().equals(newPageNumber)) {
-            if (pageRepository.existsByChapterIdAndPageNumber(
+            if (pageRepository.existsByChapter_IdAndPageNumber(
                     page.getChapter().getId(), newPageNumber)) {
                 throw new RuntimeException("Page number already exists in this chapter");
             }

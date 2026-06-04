@@ -23,6 +23,7 @@ public class BoardService {
     private final ManuscriptRepository manuscriptRepository;
     private final ReaderPollRepository readerPollRepository;
     private final UserRepository userRepository;
+    private final BoardVoteRepository boardVoteRepository;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
@@ -80,7 +81,7 @@ public class BoardService {
                     sub.getVoteYes(), sub.getVoteNo(), sub.getVoteAbstain(),
                     sub.getVotingDeadline() != null ? sub.getVotingDeadline().toString() : null,
                     sub.getCreatedAt() != null ? sub.getCreatedAt().toString() : null,
-                    false // hasVoted — có thể check BoardVote table sau
+                    boardVoteRepository.existsBySubmissionIdAndVoterId(sub.getId(), boardMemberId)
             );
         }).collect(Collectors.toList());
     }
@@ -90,6 +91,23 @@ public class BoardService {
     public SubmissionDTO castVote(VoteRequest request, String boardMemberId) {
         Submission submission = submissionRepository.findById(request.getSubmissionId())
                 .orElseThrow(() -> new RuntimeException("Submission not found"));
+
+        // Chặn vote 2 lần
+        if (boardVoteRepository.existsBySubmissionIdAndVoterId(request.getSubmissionId(), boardMemberId)) {
+            throw new RuntimeException("Bạn đã bỏ phiếu cho submission này rồi");
+        }
+
+        // Ghi nhận vote vào board_votes table
+        BoardVote boardVote = new BoardVote();
+        boardVote.setSubmissionId(request.getSubmissionId());
+        boardVote.setVoterId(boardMemberId);
+        boardVote.setComment(request.getJustification());
+        switch (request.getDecision()) {
+            case "approve"  -> boardVote.setVote(BoardVote.VoteChoice.yes);
+            case "reject"   -> boardVote.setVote(BoardVote.VoteChoice.no);
+            default         -> boardVote.setVote(BoardVote.VoteChoice.abstain);
+        }
+        boardVoteRepository.save(boardVote);
 
         submission.setStatus(Submission.SubmissionStatus.voting);
 

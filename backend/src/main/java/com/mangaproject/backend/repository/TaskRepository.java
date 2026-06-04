@@ -27,7 +27,9 @@ public interface TaskRepository extends JpaRepository<Task, String> {
     List<Task> findApprovedByAssistant(@Param("assistantId") String assistantId);
 // Thêm method này vào TaskRepository.java hiện có:
 
-    // Lấy tasks theo chapterId (dùng join qua page)
-    @Query("SELECT t FROM Task t JOIN Page p ON t.pageId = p.id JOIN Chapter c ON p.chapter.id = c.id WHERE c.id = :chapterId")
+    // Lấy tasks theo chapterId (join qua pages table)
+    @Query(value = "SELECT t.* FROM panel_tasks t " +
+            "JOIN pages p ON t.page_id = p.id " +
+            "WHERE p.chapter_id = :chapterId", nativeQuery = true)
     List<Task> findByChapterId(@Param("chapterId") String chapterId);
 }

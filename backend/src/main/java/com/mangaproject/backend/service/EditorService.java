@@ -49,7 +49,7 @@ public class EditorService {
         LocalDateTime nextWeek = LocalDateTime.now().plusDays(7);
         int deadlinesThisWeek = 0;
         for (String sid : seriesIds) {
-            deadlinesThisWeek += chapterRepository.findBySeriesIdOrderByChapterNumberAsc(sid).stream()
+            deadlinesThisWeek += chapterRepository.findBySeries_IdOrderByChapterNumberAsc(sid).stream()
                     .filter(c -> c.getDeadline() != null
                             && c.getDeadline().atStartOfDay().isBefore(nextWeek)
                             && c.getStatus() != Chapter.ChapterStatus.published)
@@ -68,7 +68,7 @@ public class EditorService {
             if (series.getStatus() != Series.SeriesStatus.publishing) continue;
 
             // Lấy chapter đang làm gần nhất
-            List<Chapter> chapters = chapterRepository.findBySeriesIdOrderByChapterNumberAsc(series.getId());
+            List<Chapter> chapters = chapterRepository.findBySeries_IdOrderByChapterNumberAsc(series.getId());
             Chapter latestChapter = chapters.stream()
                     .filter(c -> c.getStatus() != Chapter.ChapterStatus.published)
                     .findFirst()

@@ -24,7 +24,7 @@ public class ChapterService {
 
     @Transactional(readOnly = true)
     public List<ChapterDTO> getChaptersBySeries(String seriesId) {
-        List<Chapter> chapters = chapterRepository.findBySeriesIdOrderByChapterNumberAsc(seriesId);
+        List<Chapter> chapters = chapterRepository.findBySeries_IdOrderByChapterNumberAsc(seriesId);
         return chapters.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -42,7 +42,7 @@ public class ChapterService {
         Series series = seriesRepository.findById(request.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
-        if (chapterRepository.existsBySeriesIdAndChapterNumber(
+        if (chapterRepository.existsBySeries_IdAndChapterNumber(
                 request.getSeriesId(), request.getChapterNumber())) {
             throw new RuntimeException("Chapter number already exists for this series");
         }
@@ -64,7 +64,7 @@ public class ChapterService {
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
         if (!chapter.getChapterNumber().equals(request.getChapterNumber())) {
-            if (chapterRepository.existsBySeriesIdAndChapterNumber(
+            if (chapterRepository.existsBySeries_IdAndChapterNumber(
                     chapter.getSeries().getId(), request.getChapterNumber())) {
                 throw new RuntimeException("Chapter number already exists for this series");
             }
