@@ -4,7 +4,12 @@ import { BookOpen, Plus, Upload, Loader2, CheckCircle2, ChevronDown, FileText, L
 import api from '@/lib/axios';
 import { Chapter, Series } from '@/types';
 
-const fetchMySeries  = async (): Promise<Series[]>  => { const r = await api.get('/series/my');                return r.data.data ?? []; };
+// ✅ /series/my trả về PaginatedResponse { data: [...], total, page... }
+const fetchMySeries  = async (): Promise<Series[]>  => {
+  const r = await api.get('/series/my');
+  const d = r.data; // PaginatedResponse
+  return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
+};
 const fetchChapters  = async (id: string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`); return r.data.data ?? []; };
 
 const STATUS_MAP: Record<string,{label:string;pill:string}> = {
@@ -42,7 +47,8 @@ export default function ChapterManager() {
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (fd:FormData) => api.post('/pages/upload',fd,{headers:{'Content-Type':'multipart/form-data'}}).then(r=>r.data),
+    // ✅ Backend endpoint: POST /api/pages (không phải /pages/upload)
+    mutationFn: (fd:FormData) => api.post('/pages',fd,{headers:{'Content-Type':'multipart/form-data'}}).then(r=>r.data),
     onSuccess: () => { setUploadOk(true); setPageNumber(''); setPageFile(null); setUploadNotes(''); setTimeout(()=>setUploadOk(false),3000); },
     onError: (e:any) => setUploadErr(e.response?.data?.message ?? 'Upload thất bại'),
   });

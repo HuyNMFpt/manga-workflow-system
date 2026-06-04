@@ -49,7 +49,9 @@ const SeriesSubmission = () => {
     queryKey: ['series', 'my'],
     queryFn: async () => {
       const res = await api.get('/series/my');
-      return res.data.data ?? [];
+      // ✅ PaginatedResponse { data: [...] }
+      const d = res.data;
+      return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
     },
   });
 

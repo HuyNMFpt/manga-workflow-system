@@ -1,302 +1,215 @@
 import { useState } from 'react';
-import { 
-  ListTodo, 
-  CheckCircle2, 
-  AlertCircle, 
-  Clock,
-  Upload,
-  Download,
-  FileImage,
-  X,
-  Filter
-} from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ListTodo, CheckCircle2, AlertCircle, Clock, Upload, X, Loader2, FileImage } from 'lucide-react';
+import api from '@/lib/axios';
+import { taskService } from '@/services/taskService';
+
+const FILTERS = [
+  { id: 'all',               label: 'Tất cả'  },
+  { id: 'pending',           label: 'Chờ làm' },
+  { id: 'in_progress',       label: 'Đang làm'},
+  { id: 'submitted',         label: 'Đã nộp'  },
+  { id: 'revision_required', label: 'Cần sửa' },
+  { id: 'approved',          label: 'Đã duyệt'},
+];
+
+const STATUS_MAP: Record<string, { label:string; pill:string }> = {
+  pending:           { label:'Chờ làm', pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'         },
+  in_progress:       { label:'Đang làm',pill:'bg-blue-500/10 text-blue-300 border-blue-500/20'          },
+  submitted:         { label:'Đã nộp',  pill:'bg-violet-500/10 text-violet-300 border-violet-500/20'    },
+  revision_required: { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'    },
+  approved:          { label:'Đã duyệt',pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+};
 
 const TaskList = () => {
-  const [activeFilter, setActiveFilter] = useState('all');
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const qc = useQueryClient();
+  const [activeFilter,    setActiveFilter]    = useState('all');
+  const [showModal,       setShowModal]       = useState(false);
+  const [selectedTask,    setSelectedTask]    = useState<any>(null);
+  const [fileUrl,         setFileUrl]         = useState('');
+  const [uploadFile,      setUploadFile]      = useState<File|null>(null);
+  const [note,            setNote]            = useState('');
+  const [submitError,     setSubmitError]     = useState('');
 
-  const filters = [
-    { id: 'all', label: 'Tất cả', count: 15 },
-    { id: 'assigned', label: 'Chờ làm', count: 5 },
-    { id: 'in_progress', label: 'Đang làm', count: 7 },
-    { id: 'submitted', label: 'Đã nộp', count: 2 },
-    { id: 'revision_required', label: 'Cần sửa', count: 1 },
-    { id: 'approved', label: 'Đã duyệt', count: 0 }
-  ];
+  // ✅ GET /api/tasks/my
+  const { data: taskData, isLoading } = useQuery({
+    queryKey: ['tasks', 'my', activeFilter],
+    queryFn: async () => {
+      const params: any = { page: 1, limit: 50 };
+      if (activeFilter !== 'all') params.status = activeFilter;
+      const res = await api.get('/tasks/my', { params });
+      return res.data.data;
+    },
+  });
 
-  const tasks = [
-    {
-      id: 1,
-      type: 'Background',
-      chapter: 18,
-      page: 12,
-      deadline: '2024-01-25',
-      status: 'revision_required',
-      instructions: 'Vẽ background phòng khách, có cửa sổ lớn nhìn ra vườn',
-      revisionNote: 'Cần thêm chi tiết ở góc trái, cây cối chưa rõ'
-    },
-    {
-      id: 2,
-      type: 'Inking',
-      chapter: 19,
-      page: 5,
-      deadline: '2024-01-26',
-      status: 'assigned',
-      instructions: 'Inking cho nhân vật chính, focus vào mắt và tóc'
-    },
-    {
-      id: 3,
-      type: 'Toning',
-      chapter: 18,
-      page: 15,
-      deadline: '2024-01-27',
-      status: 'in_progress',
-      instructions: 'Screentone cho cảnh đêm, tạo không khí u ám'
-    },
-    {
-      id: 4,
-      type: 'Effects',
-      chapter: 19,
-      page: 8,
-      deadline: '2024-01-28',
-      status: 'submitted',
-      instructions: 'Thêm hiệu ứng tia sáng và motion lines'
-    }
-  ];
+  const tasks = Array.isArray(taskData)
+    ? taskData
+    : (taskData?.content ?? taskData?.items ?? []);
 
-  const getDeadlineInfo = (deadline: string) => {
-    const diff = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86_400_000);
-    if (diff < 0) return { text: 'Quá hạn', class: 'text-red-400', icon: AlertCircle };
-    if (diff === 0) return { text: 'Hôm nay', class: 'text-orange-400', icon: Clock };
-    if (diff <= 2) return { text: `${diff} ngày`, class: 'text-yellow-400', icon: Clock };
-    return { text: `${diff} ngày`, class: 'text-gray-400', icon: Clock };
+  // ✅ POST /api/tasks/{id}/submit
+  const submitMutation = useMutation({
+    mutationFn: ({ taskId, url, n }: { taskId: string; url: string; n: string }) =>
+      taskService.submit(taskId, url, n),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', 'my'] });
+      closeModal();
+    },
+    onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Nộp thất bại'),
+  });
+
+  const closeModal = () => { setShowModal(false); setSelectedTask(null); setFileUrl(''); setUploadFile(null); setNote(''); setSubmitError(''); };
+
+  const handleSubmit = () => {
+    if (!fileUrl && !uploadFile) { setSubmitError('Vui lòng nhập URL hoặc chọn file'); return; }
+    const url = uploadFile ? URL.createObjectURL(uploadFile) : fileUrl;
+    submitMutation.mutate({ taskId: selectedTask.id, url, n: note });
   };
 
-  const getStatusBadge = (status: string) => {
-    const badges = {
-      assigned: { label: 'Chưa làm', class: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
-      in_progress: { label: 'Đang làm', class: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
-      revision_required: { label: 'Cần sửa', class: 'bg-orange-500/10 text-orange-400 border-orange-500/30' },
-      submitted: { label: 'Đã nộp', class: 'bg-green-500/10 text-green-400 border-green-500/30' },
-      approved: { label: 'Đã duyệt', class: 'bg-green-500/10 text-green-400 border-green-500/30' }
-    };
-    const badge = badges[status as keyof typeof badges] || badges.assigned;
-    return <span className={`px-2 py-1 rounded-full text-xs font-medium border ${badge.class}`}>{badge.label}</span>;
-  };
-
-  const getTaskTypeColor = (type: string) => {
-    const colors = {
-      'Background': 'bg-blue-500/10 text-blue-400',
-      'Inking': 'bg-purple-500/10 text-purple-400',
-      'Toning': 'bg-green-500/10 text-green-400',
-      'Effects': 'bg-orange-500/10 text-orange-400'
-    };
-    return colors[type as keyof typeof colors] || 'bg-gray-500/10 text-gray-400';
-  };
-
-  const handleSubmitClick = (task: any) => {
-    setSelectedTask(task);
-    setShowSubmitModal(true);
+  const PRIORITY_MAP: Record<string, string> = {
+    urgent: 'text-red-400 bg-red-500/10 border-red-500/20',
+    high:   'text-orange-400 bg-orange-500/10 border-orange-500/20',
+    normal: 'text-zinc-500 bg-zinc-500/8 border-zinc-500/15',
+    low:    'text-zinc-600 bg-zinc-500/5 border-zinc-500/10',
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-h-full bg-[#080e1a] text-white">
+
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Công việc của tôi</h1>
-        <p className="text-gray-400">Danh sách các trang được giao, sắp xếp theo deadline</p>
-      </div>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: 'Đang chờ', count: 12, icon: ListTodo, gradient: 'from-blue-500 to-blue-600' },
-          { label: 'Cần sửa', count: 1, icon: AlertCircle, gradient: 'from-orange-500 to-orange-600' },
-          { label: 'Đã duyệt', count: 47, icon: CheckCircle2, gradient: 'from-green-500 to-green-600' }
-        ].map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <div key={stat.label} className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-4 text-center">
-              <div className={`w-10 h-10 mx-auto mb-3 bg-gradient-to-br ${stat.gradient} rounded-lg flex items-center justify-center`}>
-                <Icon className="w-5 h-5 text-white" />
-              </div>
-              <p className="text-2xl font-bold text-white mb-1">{stat.count}</p>
-              <p className="text-xs text-gray-400">{stat.label}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-2">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          <Filter className="w-4 h-4 text-gray-400 flex-shrink-0 ml-2" />
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${
-                activeFilter === filter.id
-                  ? 'bg-purple-600 text-white shadow-lg'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              {filter.label}
-              {filter.count > 0 && (
-                <span className={`px-2 py-0.5 rounded-full text-xs ${
-                  activeFilter === filter.id ? 'bg-white/20' : 'bg-white/10'
-                }`}>
-                  {filter.count}
-                </span>
-              )}
-            </button>
-          ))}
+      <div className="relative border-b border-blue-900/20 overflow-hidden">
+        <div className="pointer-events-none absolute -top-20 left-0 w-64 h-64 rounded-full bg-blue-600/8 blur-3xl" />
+        <div className="relative px-8 pt-8 pb-6">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-blue-500 mb-2">Assistant · Tasks</p>
+          <h1 className="text-2xl font-black font-['Syne']">Công việc của tôi</h1>
+          <p className="text-sm text-zinc-600 mt-1">Xem task được giao và nộp kết quả</p>
         </div>
       </div>
 
-      {/* Task Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {tasks.map((task) => {
-          const deadline = getDeadlineInfo(task.deadline);
-          const DeadlineIcon = deadline.icon;
-          
-          return (
-            <div
-              key={task.id}
-              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-5 hover:border-purple-500/50 transition-all group"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${getTaskTypeColor(task.type)}`}>
-                    {task.type}
-                  </span>
-                  {getStatusBadge(task.status)}
-                </div>
-                <div className={`flex items-center gap-1 text-xs font-medium ${deadline.class}`}>
-                  <DeadlineIcon className="w-3 h-3" />
-                  {deadline.text}
-                </div>
+      <div className="px-8 py-8 space-y-6">
+
+        {/* Filters */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {FILTERS.map(f => (
+            <button key={f.id} onClick={() => setActiveFilter(f.id)}
+              className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                activeFilter === f.id
+                  ? 'bg-blue-500/15 text-blue-300 border border-blue-500/25'
+                  : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'
+              }`}>{f.label}</button>
+          ))}
+        </div>
+
+        {/* Task list */}
+        {isLoading ? (
+          <div className="rounded-2xl border border-white/5 overflow-hidden">
+            {[1,2,3].map(i => (
+              <div key={i} className="flex items-center gap-4 px-6 py-4 border-b border-white/4 last:border-0">
+                <div className="flex-1 space-y-2"><div className="h-3 bg-white/5 rounded-full w-48 animate-pulse"/><div className="h-2 bg-white/5 rounded-full w-24 animate-pulse"/></div>
               </div>
-
-              {/* Task Info */}
-              <h3 className="text-white font-semibold mb-3">
-                Chapter {task.chapter} · Trang {task.page}
-              </h3>
-
-              {/* Instructions */}
-              {task.instructions && (
-                <div className="bg-white/5 rounded-lg p-3 mb-3">
-                  <p className="text-xs text-gray-400 mb-1 font-medium">Hướng dẫn từ tác giả</p>
-                  <p className="text-sm text-gray-300">{task.instructions}</p>
-                </div>
-              )}
-
-              {/* Revision Note */}
-              {task.status === 'revision_required' && task.revisionNote && (
-                <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 mb-3">
-                  <p className="text-xs text-orange-400 mb-1 font-medium flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Yêu cầu chỉnh sửa
-                  </p>
-                  <p className="text-sm text-orange-300">{task.revisionNote}</p>
-                </div>
-              )}
-
-              {/* Preview Area */}
-              <div className="bg-white/5 rounded-lg h-32 mb-4 flex items-center justify-center border border-white/5">
-                <p className="text-xs text-gray-500">Xem preview vùng được giao</p>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2">
-                <button className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all text-sm font-medium">
-                  <Download className="w-4 h-4" />
-                  Tải file
-                </button>
-                
-                {['assigned', 'in_progress', 'revision_required'].includes(task.status) && (
-                  <button 
-                    onClick={() => handleSubmitClick(task)}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all text-sm font-medium shadow-lg"
-                  >
-                    <Upload className="w-4 h-4" />
-                    {task.status === 'revision_required' ? 'Nộp lại' : 'Nộp bài'}
-                  </button>
-                )}
-
-                {task.status === 'approved' && (
-                  <div className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-green-500/10 border border-green-500/30 text-green-400 rounded-lg text-sm font-medium">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Đã duyệt
-                  </div>
-                )}
-              </div>
+            ))}
+          </div>
+        ) : tasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-700">
+            <ListTodo className="w-10 h-10 opacity-20" />
+            <p className="text-sm">Không có task nào</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
+            <div className="grid grid-cols-[1fr_7rem_6rem_7rem_5rem] gap-4 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
+              <span>Task</span><span className="text-center">Loại</span><span className="text-center">Ưu tiên</span><span className="text-center">Deadline</span><span className="text-center">Trạng thái</span>
             </div>
-          );
-        })}
+            {tasks.map((task: any) => {
+              const st = STATUS_MAP[task.status] ?? STATUS_MAP.pending;
+              return (
+                <div key={task.id} className="grid grid-cols-[1fr_7rem_6rem_7rem_5rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors group">
+                  <div>
+                    <p className="text-[13px] font-semibold text-white group-hover:text-blue-300 transition-colors">{task.title}</p>
+                    {task.description && <p className="text-[11px] text-zinc-600 mt-0.5 line-clamp-1">{task.description}</p>}
+                    {task.revisionNote && <p className="text-[11px] text-orange-400 mt-1 line-clamp-1">{task.revisionNote}</p>}
+                  </div>
+                  <div className="text-center">
+                    <span className="text-[11px] text-zinc-500">{task.taskType}</span>
+                  </div>
+                  <div className="flex justify-center">
+                    {task.priority && (
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${PRIORITY_MAP[task.priority] ?? PRIORITY_MAP.normal}`}>
+                        {task.priority === 'urgent' ? 'KHẨN' : task.priority === 'high' ? 'CAO' : task.priority === 'low' ? 'THẤP' : 'TB'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-center text-[11px] text-zinc-600">
+                    {task.dueDate ? new Date(task.dueDate).toLocaleDateString('vi-VN') : '—'}
+                  </div>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${st.pill}`}>{st.label}</span>
+                    {(task.status === 'pending' || task.status === 'in_progress' || task.status === 'revision_required') && (
+                      <button onClick={() => { setSelectedTask(task); setShowModal(true); }}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-md hover:bg-blue-500/8 transition-colors">
+                        Nộp
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Submit Modal */}
-      {showSubmitModal && selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg shadow-2xl">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
+      {/* Submit modal */}
+      {showModal && selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-[#0d1220] border border-blue-900/30 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-white font-['Syne']">Nộp công việc</h2>
-                <p className="text-sm text-gray-400 mt-1">
-                  {selectedTask.type} — Chapter {selectedTask.chapter}, Trang {selectedTask.page}
-                </p>
+                <h3 className="text-sm font-bold text-white">{selectedTask.title}</h3>
+                <p className="text-[11px] text-zinc-600">{selectedTask.taskType}</p>
               </div>
-              <button 
-                onClick={() => setShowSubmitModal(false)}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
-              {/* File Upload */}
-              <div>
-                <label className="block text-sm font-medium text-white mb-3">
-                  File hoàn thiện <span className="text-red-400">*</span>
-                </label>
-                <div className="border-2 border-dashed border-white/20 rounded-xl p-8 text-center hover:border-purple-500/50 transition-colors cursor-pointer group">
-                  <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <FileImage className="w-8 h-8 text-purple-400" />
-                  </div>
-                  <p className="text-sm text-white mb-2">Kéo thả hoặc click để chọn file</p>
-                  <p className="text-xs text-gray-500">PNG, PSD, JPG — tối đa 50MB</p>
-                </div>
+            {selectedTask.revisionNote && (
+              <div className="p-3 bg-orange-500/8 border border-orange-500/15 rounded-xl">
+                <p className="text-[11px] font-semibold text-orange-400 mb-0.5">Yêu cầu chỉnh sửa:</p>
+                <p className="text-[11px] text-zinc-400">{selectedTask.revisionNote}</p>
               </div>
+            )}
 
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-white mb-3">
-                  Ghi chú (tuỳ chọn)
-                </label>
-                <textarea
-                  rows={4}
-                  placeholder="Thêm ghi chú cho tác giả..."
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-                />
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">File kết quả *</label>
+              <label className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${uploadFile ? 'border-blue-500/40 bg-blue-500/5' : 'border-white/8 hover:border-blue-500/25'}`}>
+                <input type="file" accept="image/*" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
+                {uploadFile
+                  ? <div className="text-center"><CheckCircle2 className="w-5 h-5 text-blue-400 mx-auto mb-1" /><p className="text-xs text-blue-300">{uploadFile.name}</p></div>
+                  : <div className="text-center"><FileImage className="w-5 h-5 text-zinc-700 mx-auto mb-1" /><p className="text-xs text-zinc-600">Click để chọn</p></div>}
+              </label>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex-1 h-px bg-white/6" />
+                <span className="text-[10px] text-zinc-700">hoặc</span>
+                <div className="flex-1 h-px bg-white/6" />
               </div>
+              <input type="text" value={fileUrl} onChange={e => { setFileUrl(e.target.value); setUploadFile(null); }}
+                placeholder="URL file kết quả..."
+                className="mt-2 w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 transition-all" />
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex gap-3 p-6 border-t border-white/10">
-              <button
-                onClick={() => setShowSubmitModal(false)}
-                className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all font-medium"
-              >
-                Huỷ
-              </button>
-              <button className="flex-1 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all font-medium shadow-lg">
-                Nộp bài
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">Ghi chú</label>
+              <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
+                placeholder="Ghi chú cho Mangaka..."
+                className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 resize-none transition-all" />
+            </div>
+
+            {submitError && <p className="text-xs text-red-400">{submitError}</p>}
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={closeModal} disabled={submitMutation.isPending}
+                className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors">Huỷ</button>
+              <button onClick={handleSubmit} disabled={submitMutation.isPending}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-blue-600/25 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                {submitMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nộp...</> : <><Upload className="w-3.5 h-3.5" />Nộp kết quả</>}
               </button>
             </div>
           </div>

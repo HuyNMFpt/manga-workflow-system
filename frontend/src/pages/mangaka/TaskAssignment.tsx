@@ -5,7 +5,12 @@ import api from '@/lib/axios';
 import { taskService } from '@/services/taskService';
 import { Series, Chapter } from '@/types';
 
-const fetchMySeries   = async (): Promise<Series[]>  => { const r = await api.get('/series/my');                   return r.data.data ?? []; };
+// ✅ /series/my → PaginatedResponse { data: [...] }
+const fetchMySeries   = async (): Promise<Series[]>  => {
+  const r = await api.get('/series/my');
+  const d = r.data;
+  return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
+};
 const fetchChapters   = async (id:string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`);   return r.data.data ?? []; };
 const fetchAssistants = async () => { const r = await api.get('/users/assistants'); return r.data.data ?? []; };
 
@@ -40,8 +45,20 @@ const TaskAssignment = () => {
   const { data:chapters=[],   isLoading:loadChapters }  = useQuery({ queryKey:['chapters',selectedSeriesId], queryFn:()=>fetchChapters(selectedSeriesId), enabled:!!selectedSeriesId });
   const { data:assistants=[],  isLoading:loadAssistants } = useQuery({ queryKey:['assistants'],          queryFn:fetchAssistants });
 
+  // u2705 Load pages u0111u1ec3 hiu1ec7n u1ea3nh trong canvas — GET /api/pages?chapterId={id}
+  const { data:pagesData=[] } = useQuery({
+    queryKey: ["pages", selectedChapterId],
+    queryFn: async () => {
+      const r = await api.get("/pages", { params: { chapterId: selectedChapterId } });
+      return r.data.data ?? [];
+    },
+    enabled: !!selectedChapterId,
+  });
+
   const selectedChapter = (chapters as any[]).find((c:any)=>c.id===selectedChapterId);
   const pageCount = (selectedChapter as any)?.totalPages ?? 5;
+  // u2705 T�m u1ea3nh cu1ee7a trang hiu1ec7n tu1ea1i
+  const currentPageImage = (pagesData as any[]).find((p:any) => p.pageNumber === selectedPageNum)?.imageUrl ?? null;
 
   const createMutation = useMutation({
     mutationFn: (t:LocalTask) => taskService.create({
@@ -155,21 +172,43 @@ const TaskAssignment = () => {
                     <span className="text-sm font-semibold text-white">Trang {selectedPageNum}</span>
                   </div>
                   <div className="flex gap-1">
-                    {Array.from({length:Math.min(pageCount,8)},(_,i)=>i+1).map(n=>(
-                      <button key={n} onClick={()=>setSelectedPageNum(n)}
-                        className={`w-7 h-7 rounded-lg text-[11px] font-bold transition-all ${
-                          selectedPageNum===n ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/40' : 'bg-white/4 border border-white/6 text-zinc-500 hover:text-white hover:bg-white/8'
-                        }`}>{n}</button>
-                    ))}
+                    {Array.from({length:Math.min(pageCount,8)},(_,i)=>i+1).map(n=>{
+                      const hasImage = (pagesData as any[]).some((p:any) => p.pageNumber === n);
+                      return (
+                        <button key={n} onClick={()=>setSelectedPageNum(n)}
+                          className={`relative w-7 h-7 rounded-lg text-[11px] font-bold transition-all ${
+                            selectedPageNum===n ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/40' : 'bg-white/4 border border-white/6 text-zinc-500 hover:text-white hover:bg-white/8'
+                          }`}>
+                          {n}
+                          {/* ✅ Dot indicator nếu trang đã có ảnh */}
+                          {hasImage && (
+                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-[#0a0a12]" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div className="relative bg-gradient-to-br from-zinc-900 to-zinc-950 aspect-[3/4] rounded-xl overflow-hidden cursor-crosshair select-none border border-white/5"
                   onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
-                    <MousePointer className="w-8 h-8" />
-                    <span className="text-xs">Kéo để chọn vùng</span>
-                  </div>
+                  {/* ✅ Hiện ảnh trang thật nếu đã upload */}
+                  {currentPageImage ? (
+                    <img
+                      src={currentPageImage}
+                      alt={`Trang ${selectedPageNum}`}
+                      className="absolute inset-0 w-full h-full object-contain"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
+                      <MousePointer className="w-8 h-8" />
+                      <span className="text-xs">Kéo để chọn vùng</span>
+                      {selectedChapterId && (pagesData as any[]).length === 0 && (
+                        <span className="text-[10px] text-zinc-700 mt-1">Chưa có trang nào được upload</span>
+                      )}
+                    </div>
+                  )}
                   {/* Zones */}
                   {tasks.filter(t=>t.assignedTo).map(task=>{
                     const ts = getTypeStyle(task.type);

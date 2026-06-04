@@ -9,7 +9,8 @@ const MangakaDashboard = () => {
 
   const { data: seriesData } = useQuery({
     queryKey: ['series', 'my'],
-    queryFn: async () => { const r = await api.get('/series/my'); return r.data.data ?? []; },
+    // ✅ /series/my → PaginatedResponse { data: [...] }
+    queryFn: async () => { const r = await api.get('/series/my'); const d = r.data; return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []); },
   });
   const { data: pendingTasks = [] } = useQuery({
     queryKey: ['tasks', 'pending-review'],

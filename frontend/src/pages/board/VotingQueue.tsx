@@ -1,289 +1,205 @@
 import { useState } from 'react';
-import { 
-  BookOpen, 
-  ChevronRight,
-  Check,
-  X,
-  RefreshCcw,
-  Calendar,
-  Filter
-} from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { BookOpen, Check, Loader2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import api from '@/lib/axios';
+
+interface VoteForm {
+  decision: 'approve' | 'reject' | 'revision' | '';
+  justification: string;
+  schedule: string;
+}
+const EMPTY_FORM: VoteForm = { decision:'', justification:'', schedule:'weekly' };
+
+const SCHEDULE_OPTIONS = [
+  { value:'weekly',   label:'Hàng tuần'  },
+  { value:'biweekly', label:'2 tuần/lần' },
+  { value:'monthly',  label:'Hàng tháng' },
+];
 
 const VotingQueue = () => {
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [votes, setVotes] = useState<Record<number, any>>({});
+  const qc = useQueryClient();
+  // ✅ Chỉ 1 submission expand cùng lúc
+  const [expandedId,  setExpandedId]  = useState<string|null>(null);
+  const [voteForm,    setVoteForm]    = useState<VoteForm>(EMPTY_FORM);
+  const [submitError, setSubmitError] = useState('');
+  const [submitted,   setSubmitted]   = useState<string[]>([]);
 
-  const series = [
-    {
-      id: 1,
-      title: 'Dragon Chronicles',
-      genre: 'Fantasy, Adventure',
-      synopsis: 'Hành trình tìm kiếm 7 viên ngọc rồng để cứu thế giới khỏi bóng tối. Một câu chuyện về tình bạn, lòng dũng cảm và hy sinh.',
-      pages: 20,
-      mangaka: 'Ken Watanabe',
-      votesReceived: 3,
-      votesNeeded: 5
+  const { data: queueData, isLoading, isError, refetch } = useQuery({
+    queryKey: ['board','voting-queue'],
+    queryFn: async () => { const r = await api.get('/board/voting-queue'); return r.data.data; },
+    retry: 1,
+  });
+
+  // ✅ SubmissionDetailDTO dùng submissionId (không phải id)
+  const submissions: any[] = Array.isArray(queueData) ? queueData : (queueData?.content ?? queueData?.items ?? []);
+
+  const voteMutation = useMutation({
+    mutationFn: (data:any) => api.post('/board/vote', data).then(r=>r.data),
+    onSuccess: (_,vars) => {
+      qc.invalidateQueries({ queryKey:['board','voting-queue'] });
+      qc.invalidateQueries({ queryKey:['board','stats'] });
+      setSubmitted(prev=>[...prev, vars.submissionId]);
+      setExpandedId(null);
+      setVoteForm(EMPTY_FORM);
+      setSubmitError('');
     },
-    {
-      id: 2,
-      title: 'Cyber Warriors',
-      genre: 'Sci-fi, Action',
-      synopsis: 'Năm 2157, một nhóm hackers tinh nhuệ chiến đấu chống lại tập đoàn AI độc tài cai trị thế giới.',
-      pages: 22,
-      mangaka: 'Yuki Tanaka',
-      votesReceived: 1,
-      votesNeeded: 5
-    },
-    {
-      id: 3,
-      title: 'Love in Autumn',
-      genre: 'Romance, Drama',
-      synopsis: 'Câu chuyện tình yêu tuổi học trò giữa hai người đến từ hai thế giới khác nhau, bắt đầu vào mùa thu năm ấy.',
-      pages: 18,
-      mangaka: 'Mika Sato',
-      votesReceived: 0,
-      votesNeeded: 5
+    onError: (e:any) => setSubmitError(e.response?.data?.message ?? 'Lỗi xảy ra'),
+  });
+
+  const handleToggle = (id: string) => {
+    if (expandedId === id) { setExpandedId(null); setVoteForm(EMPTY_FORM); setSubmitError(''); }
+    else { setExpandedId(id); setVoteForm(EMPTY_FORM); setSubmitError(''); }
+  };
+
+  const handleVote = (submissionId: string) => {
+    setSubmitError('');
+    if (!voteForm.decision) { setSubmitError('Vui lòng chọn quyết định'); return; }
+    // ✅ Backend VoteRequest yêu cầu min 50 ký tự (không phải 100)
+    if (voteForm.justification.length < 50) {
+      setSubmitError(`Justification cần ít nhất 50 ký tự (hiện tại: ${voteForm.justification.length})`);
+      return;
     }
-  ];
-
-  const [formData, setFormData] = useState<Record<number, {
-    decision: 'approve' | 'reject' | 'revision' | null;
-    schedule?: string;
-    justification: string;
-  }>>({});
-
-  const handleVoteSubmit = (seriesId: number) => {
-    const vote = formData[seriesId];
-    if (!vote?.decision || vote.justification.length < 100) return;
-    
-    setVotes(prev => ({ ...prev, [seriesId]: vote }));
-    setExpandedId(null);
-    setFormData(prev => {
-      const { [seriesId]: _, ...rest } = prev;
-      return rest;
-    });
+    voteMutation.mutate({ submissionId, decision:voteForm.decision, justification:voteForm.justification, schedule:voteForm.schedule });
   };
 
-  const updateFormData = (seriesId: number, field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [seriesId]: {
-        ...prev[seriesId],
-        [field]: value
-      }
-    }));
-  };
+  if (isLoading) return <div className="min-h-screen bg-[#03100d] flex items-center justify-center"><Loader2 className="w-7 h-7 text-teal-400 animate-spin"/></div>;
+  if (isError) return (
+    <div className="min-h-screen bg-[#03100d] flex flex-col items-center justify-center gap-4">
+      <AlertCircle className="w-10 h-10 text-red-400"/>
+      <p className="text-zinc-400 text-sm">Không thể tải danh sách</p>
+      <button onClick={()=>refetch()} className="px-4 py-2 rounded-xl bg-teal-600/20 text-teal-300 text-sm border border-teal-500/20">Thử lại</button>
+    </div>
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2 font-['Syne']">Hàng chờ bình duyệt</h1>
-          <p className="text-gray-400">Bỏ phiếu thông qua series mới và xác định lịch xuất bản</p>
+    <div className="min-h-full bg-[#03100d] text-white">
+      <div className="relative border-b border-teal-900/20 overflow-hidden">
+        <div className="pointer-events-none absolute -top-20 right-0 w-64 h-64 rounded-full bg-teal-600/8 blur-3xl"/>
+        <div className="relative px-8 pt-8 pb-6">
+          <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-teal-500 mb-2">Board · Bình duyệt</p>
+          <h1 className="text-2xl font-black font-['Syne']">Hàng chờ bình duyệt</h1>
+          <p className="text-sm text-zinc-600 mt-1">
+            {submissions.length > 0 ? `${submissions.length} series đang chờ vote` : 'Không có series nào chờ duyệt'}
+          </p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all">
-          <RefreshCcw className="w-4 h-4" />
-          <span className="text-sm font-medium">Cập nhật</span>
-        </button>
       </div>
 
-      {/* Series Cards */}
-      <div className="space-y-4">
-        {series.map((item) => {
-          const isExpanded = expandedId === item.id;
-          const hasVoted = !!votes[item.id];
-          const currentForm = formData[item.id] || { decision: null, justification: '' };
-
-          if (hasVoted) {
-            return (
-              <div
-                key={item.id}
-                className="bg-gradient-to-br from-green-500/10 to-green-600/10 border border-green-500/30 rounded-2xl p-5"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-xl flex items-center justify-center border border-green-500/30">
-                    <Check className="w-6 h-6 text-green-400" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-white mb-1">{item.title}</h3>
-                    <p className="text-sm text-green-300">
-                      Đã bỏ phiếu: {votes[item.id].decision === 'approve' ? 'Duyệt' : 
-                        votes[item.id].decision === 'reject' ? 'Từ chối' : 'Cần sửa'} — Đang chờ các thành viên khác
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          }
+      <div className="px-8 py-8 space-y-3">
+        {submissions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-700">
+            <BookOpen className="w-10 h-10 opacity-20"/>
+            <p className="text-sm">Không có series nào chờ duyệt</p>
+          </div>
+        ) : submissions.map((s:any) => {
+          // ✅ SubmissionDetailDTO dùng submissionId làm key
+          const id        = s.submissionId ?? s.id;
+          const isExpanded = expandedId === id;
+          const isDone    = submitted.includes(id) || s.hasVoted;
 
           return (
-            <div
-              key={item.id}
-              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden"
-            >
-              {/* Card Header */}
-              <button
-                onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                className="w-full flex items-center gap-4 p-5 hover:bg-white/5 transition-all text-left"
-              >
-                <div className="w-16 h-20 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg flex items-center justify-center flex-shrink-0 border border-purple-500/30">
-                  <BookOpen className="w-6 h-6 text-purple-400" />
-                </div>
+            <div key={id} className={`rounded-2xl border overflow-hidden transition-all ${isDone ? 'border-emerald-500/20 opacity-70' : isExpanded ? 'border-teal-500/30 bg-teal-500/3' : 'border-white/5 bg-white/[0.015]'}`}>
+
+              {/* Header */}
+              <div className={`px-6 py-4 flex items-start gap-4 transition-colors ${isDone ? 'cursor-default' : 'cursor-pointer hover:bg-white/[0.02]'}`}
+                onClick={() => !isDone && handleToggle(id)}>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-bold text-white mb-2">{item.title}</h3>
-                  <p className="text-sm text-gray-400 mb-2">{item.genre}</p>
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>{item.pages} trang</span>
-                    <span>•</span>
-                    <span>{item.mangaka}</span>
-                    <span>•</span>
-                    <span>{item.votesReceived}/{item.votesNeeded} phiếu</span>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    {/* ✅ seriesTitle (không phải title) */}
+                    <h3 className="text-[13px] font-bold text-white">{s.seriesTitle}</h3>
+                    {isDone && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Đã vote</span>}
                   </div>
+                  {/* ✅ mangakaName, seriesGenre */}
+                  <p className="text-[11px] text-zinc-600">{s.mangakaName}{s.seriesGenre ? ` · ${s.seriesGenre}` : ''}</p>
+                  {s.synopsis && <p className="text-[11px] text-zinc-700 mt-1 line-clamp-2">{s.synopsis}</p>}
+                  {s.coverLetter && <p className="text-[11px] text-zinc-700 mt-0.5 line-clamp-1 italic">"{s.coverLetter}"</p>}
                 </div>
-                <ChevronRight 
-                  className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${
-                    isExpanded ? 'rotate-90' : ''
-                  }`} 
-                />
-              </button>
-
-              {/* Expanded Content */}
-              {isExpanded && (
-                <div className="border-t border-white/10 p-6 space-y-6">
-                  {/* Synopsis */}
-                  <div>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
-                      Tóm tắt nội dung
-                    </p>
-                    <p className="text-sm text-gray-300 leading-relaxed">{item.synopsis}</p>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="text-right">
+                    {/* ✅ voteYes (không phải approveVotes), hardcode /3 vì không có totalVotesNeeded */}
+                    <div className="text-lg font-black text-teal-400 font-['Syne']">{s.voteYes ?? 0}/3</div>
+                    <div className="text-[10px] text-zinc-700">phiếu approve</div>
                   </div>
+                  {!isDone && (
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center border transition-all ${isExpanded ? 'bg-teal-500/15 border-teal-500/25 text-teal-400' : 'border-white/8 text-zinc-600'}`}>
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5"/> : <ChevronDown className="w-3.5 h-3.5"/>}
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                  {/* Sample Pages */}
+              {/* Vote form — chỉ hiện khi isExpanded */}
+              {isExpanded && !isDone && (
+                <div className="px-6 pb-6 border-t border-teal-500/10 pt-5 space-y-4">
+                  {/* Decision */}
                   <div>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-                      Trang mẫu
-                    </p>
-                    <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                      {Array.from({ length: Math.min(item.pages, 6) }, (_, i) => i + 1).map((pageNum) => (
-                        <div
-                          key={pageNum}
-                          className="aspect-[3/4] bg-white/5 border border-white/10 rounded-lg flex items-center justify-center hover:border-purple-500/50 hover:bg-white/10 transition-all cursor-pointer"
-                        >
-                          <span className="text-xs text-gray-400 font-medium">{pageNum}</span>
-                        </div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">Quyết định *</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { v:'approve', l:'Approve',c:'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' },
+                        { v:'reject',  l:'Reject', c:'bg-red-500/15 border-red-500/30 text-red-300'             },
+                        { v:'revision',l:'Cần sửa',c:'bg-amber-500/15 border-amber-500/30 text-amber-300'       },
+                      ].map(d=>(
+                        <button key={d.v} onClick={()=>setVoteForm(f=>({...f,decision:d.v as any}))}
+                          className={`py-2.5 rounded-xl border text-[12px] font-bold transition-all ${voteForm.decision===d.v ? d.c : 'bg-white/3 border-white/6 text-zinc-500 hover:text-zinc-300 hover:bg-white/5'}`}>
+                          {d.l}
+                        </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Voting Form */}
-                  <form onSubmit={(e) => { e.preventDefault(); handleVoteSubmit(item.id); }} className="space-y-5 border-t border-white/10 pt-6">
-                    {/* Decision Buttons */}
+                  {/* Schedule — chỉ khi approve */}
+                  {voteForm.decision === 'approve' && (
                     <div>
-                      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-                        Quyết định
-                      </p>
-                      <div className="grid grid-cols-3 gap-3">
-                        {[
-                          { value: 'approve', label: 'Duyệt', gradient: 'from-green-500 to-green-600' },
-                          { value: 'revision', label: 'Cần sửa', gradient: 'from-orange-500 to-orange-600' },
-                          { value: 'reject', label: 'Từ chối', gradient: 'from-red-500 to-red-600' }
-                        ].map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => updateFormData(item.id, 'decision', option.value)}
-                            className={`px-4 py-3 rounded-xl font-medium transition-all ${
-                              currentForm.decision === option.value
-                                ? `bg-gradient-to-r ${option.gradient} text-white shadow-lg`
-                                : 'bg-white/5 border border-white/10 text-gray-400 hover:bg-white/10'
-                            }`}
-                          >
-                            {option.label}
+                      <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">Lịch xuất bản</label>
+                      <div className="flex gap-2">
+                        {SCHEDULE_OPTIONS.map(o=>(
+                          <button key={o.value} onClick={()=>setVoteForm(f=>({...f,schedule:o.value}))}
+                            className={`flex-1 py-2 rounded-xl border text-[11px] font-semibold transition-all ${voteForm.schedule===o.value ? 'bg-teal-500/15 border-teal-500/25 text-teal-300' : 'bg-white/3 border-white/6 text-zinc-500 hover:text-zinc-300'}`}>
+                            {o.label}
                           </button>
                         ))}
                       </div>
                     </div>
+                  )}
 
-                    {/* Schedule (if approved) */}
-                    {currentForm.decision === 'approve' && (
-                      <div>
-                        <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-                          Hình thức xuất bản
-                        </label>
-                        <select
-                          value={currentForm.schedule || 'weekly'}
-                          onChange={(e) => updateFormData(item.id, 'schedule', e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        >
-                          <option value="weekly">Hàng tuần</option>
-                          <option value="biweekly">Hai tuần một lần</option>
-                          <option value="monthly">Hàng tháng</option>
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Justification */}
-                    <div>
-                      <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
-                        Lý do <span className="text-red-400">*</span>
-                        <span className="text-gray-500 normal-case ml-2">
-                          (tối thiểu 100 ký tự — {currentForm.justification.length}/100)
-                        </span>
-                      </label>
-                      <textarea
-                        rows={4}
-                        required
-                        value={currentForm.justification}
-                        onChange={(e) => updateFormData(item.id, 'justification', e.target.value)}
-                        placeholder="Nhận xét và lý do quyết định của bạn..."
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
-                      />
+                  {/* Justification — ✅ min 50 ký tự theo backend */}
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">
+                      Lý do * <span className="text-zinc-700 normal-case tracking-normal font-normal">({voteForm.justification.length}/50 ký tự tối thiểu)</span>
+                    </label>
+                    <textarea rows={4} value={voteForm.justification}
+                      onChange={e=>setVoteForm(f=>({...f,justification:e.target.value}))}
+                      placeholder="Nhập lý do quyết định (ít nhất 50 ký tự)..."
+                      className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500/40 resize-none transition-all"/>
+                    <div className="mt-1.5 h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${voteForm.justification.length>=50?'bg-emerald-500':voteForm.justification.length>=25?'bg-amber-500':'bg-red-500'}`}
+                        style={{width:`${Math.min((voteForm.justification.length/50)*100,100)}%`}}/>
                     </div>
+                  </div>
 
-                    {/* Actions */}
-                    <div className="flex items-center justify-between pt-4">
-                      <div className="flex items-center gap-2 text-xs text-gray-400">
-                        <Calendar className="w-4 h-4" />
-                        <span>Cần 60% thành viên đồng ý</span>
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedId(null)}
-                          className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-lg hover:bg-white/10 transition-all font-medium"
-                        >
-                          Đóng
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={!currentForm.decision || currentForm.justification.length < 100}
-                          className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all font-medium shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          Gửi phiếu
-                        </button>
-                      </div>
-                    </div>
-                  </form>
+                  {submitError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 flex-shrink-0"/>{submitError}
+                    </p>
+                  )}
+
+                  <div className="flex justify-between items-center pt-1">
+                    <button onClick={()=>{setExpandedId(null);setVoteForm(EMPTY_FORM);setSubmitError('');}}
+                      className="px-4 py-2 rounded-xl border border-white/8 text-zinc-500 text-sm hover:bg-white/5 hover:text-white transition-colors">
+                      Huỷ
+                    </button>
+                    <button onClick={()=>handleVote(id)} disabled={voteMutation.isPending}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold shadow-lg shadow-teal-600/20 hover:shadow-teal-600/35 disabled:opacity-60 transition-all flex items-center gap-2">
+                      {voteMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</> : <><Check className="w-3.5 h-3.5"/>Xác nhận vote</>}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           );
         })}
       </div>
-
-      {/* Empty State */}
-      {series.length === 0 && (
-        <div className="text-center py-16">
-          <div className="w-20 h-20 mx-auto mb-6 bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-2xl flex items-center justify-center">
-            <Check className="w-10 h-10 text-purple-400" />
-          </div>
-          <p className="text-lg font-medium text-white mb-2">Không có series nào chờ bình duyệt</p>
-          <p className="text-sm text-gray-400">Tất cả series đã được xét duyệt</p>
-        </div>
-      )}
     </div>
   );
 };
-
 export default VotingQueue;
