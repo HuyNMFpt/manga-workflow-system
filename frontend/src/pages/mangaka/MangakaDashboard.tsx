@@ -9,8 +9,17 @@ const MangakaDashboard = () => {
 
   const { data: seriesData } = useQuery({
     queryKey: ['series', 'my'],
-    // ✅ /series/my → PaginatedResponse { data: [...] }
-    queryFn: async () => { const r = await api.get('/series/my'); const d = r.data; return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []); },
+    // ✅ /series/my → PaginatedResponse { data: [...], total, page... }
+    queryFn: async () => {
+      const r = await api.get('/series/my');
+      // Backend mới: ApiResponse<PaginatedResponse<SeriesDTO>>
+      // r.data = { data: { data: [...], total, page }, success: true }
+      const d = r.data;
+      if (Array.isArray(d)) return d;
+      if (d?.data && Array.isArray(d.data)) return d.data;         // ApiResponse trả array thẳng
+      if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data; // ApiResponse<PaginatedResponse>
+      return [];
+    },
   });
   const { data: pendingTasks = [] } = useQuery({
     queryKey: ['tasks', 'pending-review'],
@@ -21,7 +30,7 @@ const MangakaDashboard = () => {
     queryFn: async () => { const r = await api.get('/rankings/my'); return r.data.data ?? []; },
   });
 
-  const series      = seriesData ?? [];
+  const series: any[] = Array.isArray(seriesData) ? seriesData : [];
   const atRiskCount = (rankings as any[]).filter((r: any) => r.isAtRisk).length;
   const bestRank    = (rankings as any[]).length ? Math.min(...(rankings as any[]).map((r: any) => r.currentRank)) : null;
 

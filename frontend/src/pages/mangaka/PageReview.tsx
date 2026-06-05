@@ -30,7 +30,7 @@ const PageReview = () => {
   const STATUS_MAP: Record<string,(any)> = {
     submitted:         { label:'Cần duyệt', pill:'bg-violet-500/10 text-violet-300 border-violet-500/20' },
     approved:          { label:'Đã duyệt',  pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'},
-    revision_required: { label:'Cần sửa',   pill:'bg-amber-500/10 text-amber-300 border-amber-500/20'    },
+    revision_needed:   { label:'Cần sửa',   pill:'bg-amber-500/10 text-amber-300 border-amber-500/20'    },
     in_progress:       { label:'Đang làm',  pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'       },
   };
 
@@ -64,7 +64,7 @@ const PageReview = () => {
           {[
             { label:'Cần duyệt', count:(tasks as any[]).filter((t:any)=>t.status==='submitted').length,         color:'text-violet-400', ring:'ring-violet-500/20', bg:'bg-violet-500/8' },
             { label:'Đã duyệt',  count:(tasks as any[]).filter((t:any)=>t.status==='approved').length,          color:'text-emerald-400',ring:'ring-emerald-500/20',bg:'bg-emerald-500/8'},
-            { label:'Cần sửa',   count:(tasks as any[]).filter((t:any)=>t.status==='revision_required').length,  color:'text-amber-400', ring:'ring-amber-500/20',  bg:'bg-amber-500/8'  },
+            { label:'Cần sửa',   count:(tasks as any[]).filter((t:any)=>t.status==='revision_needed').length,  color:'text-amber-400', ring:'ring-amber-500/20',  bg:'bg-amber-500/8'  },
             { label:'Tổng',      count:(tasks as any[]).length,                                                  color:'text-zinc-300',  ring:'ring-zinc-700/20',   bg:'bg-zinc-500/5'   },
           ].map((s,i)=>(
             <div key={i} className={`rounded-2xl ring-1 ${s.ring} ${s.bg} px-5 py-4 flex items-end justify-between`}>
@@ -78,7 +78,7 @@ const PageReview = () => {
 
         {/* Filters */}
         <div className="flex items-center gap-1">
-          {[{v:'all',l:'Tất cả'},{v:'submitted',l:'Cần duyệt'},{v:'approved',l:'Đã duyệt'},{v:'revision_required',l:'Cần sửa'}].map(f=>(
+          {[{v:'all',l:'Tất cả'},{v:'submitted',l:'Cần duyệt'},{v:'approved',l:'Đã duyệt'},{v:'revision_needed',l:'Cần sửa'}].map(f=>(
             <button key={f.v} onClick={()=>setFilterStatus(f.v)}
               className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
                 filterStatus===f.v ? 'bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/25' : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'

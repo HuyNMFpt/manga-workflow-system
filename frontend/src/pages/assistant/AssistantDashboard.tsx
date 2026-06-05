@@ -29,7 +29,7 @@ const AssistantDashboard = () => {
     pending:           { label:'Chờ làm', pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'          },
     in_progress:       { label:'Đang làm',pill:'bg-blue-500/10 text-blue-300 border-blue-500/20'           },
     submitted:         { label:'Đã nộp',  pill:'bg-violet-500/10 text-violet-300 border-violet-500/20'     },
-    revision_required: { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'     },
+    revision_needed:   { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'     },
     approved:          { label:'Đã duyệt',pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'  },
   };
 

@@ -4,11 +4,14 @@ import { BookOpen, Plus, Upload, Loader2, CheckCircle2, ChevronDown, FileText, L
 import api from '@/lib/axios';
 import { Chapter, Series } from '@/types';
 
-// ✅ /series/my trả về PaginatedResponse { data: [...], total, page... }
+// ✅ /series/my → ApiResponse<PaginatedResponse<SeriesDTO>>
 const fetchMySeries  = async (): Promise<Series[]>  => {
   const r = await api.get('/series/my');
-  const d = r.data; // PaginatedResponse
-  return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
+  const d = r.data;
+  if (Array.isArray(d)) return d;
+  if (d?.data && Array.isArray(d.data)) return d.data;
+  if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data;
+  return [];
 };
 const fetchChapters  = async (id: string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`); return r.data.data ?? []; };
 

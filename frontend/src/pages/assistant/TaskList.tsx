@@ -9,7 +9,7 @@ const FILTERS = [
   { id: 'pending',           label: 'Chờ làm' },
   { id: 'in_progress',       label: 'Đang làm'},
   { id: 'submitted',         label: 'Đã nộp'  },
-  { id: 'revision_required', label: 'Cần sửa' },
+  { id: 'revision_needed', label: 'Cần sửa' },
   { id: 'approved',          label: 'Đã duyệt'},
 ];
 
@@ -17,7 +17,7 @@ const STATUS_MAP: Record<string, { label:string; pill:string }> = {
   pending:           { label:'Chờ làm', pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'         },
   in_progress:       { label:'Đang làm',pill:'bg-blue-500/10 text-blue-300 border-blue-500/20'          },
   submitted:         { label:'Đã nộp',  pill:'bg-violet-500/10 text-violet-300 border-violet-500/20'    },
-  revision_required: { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'    },
+  revision_needed:   { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'    },
   approved:          { label:'Đã duyệt',pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
 };
 
@@ -142,7 +142,7 @@ const TaskList = () => {
                   </div>
                   <div className="flex flex-col items-center gap-1.5">
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${st.pill}`}>{st.label}</span>
-                    {(task.status === 'pending' || task.status === 'in_progress' || task.status === 'revision_required') && (
+                    {(task.status === 'pending' || task.status === 'in_progress' || task.status === 'revision_needed') && (
                       <button onClick={() => { setSelectedTask(task); setShowModal(true); }}
                         className="text-[10px] text-blue-400 hover:text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-md hover:bg-blue-500/8 transition-colors">
                         Nộp

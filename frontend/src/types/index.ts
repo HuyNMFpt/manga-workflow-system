@@ -136,7 +136,7 @@ export type TaskStatus =
   | "pending"
   | "in_progress"
   | "submitted"
-  | "revision_required"
+  | "revision_needed"
   | "approved"
 
 export interface Task {

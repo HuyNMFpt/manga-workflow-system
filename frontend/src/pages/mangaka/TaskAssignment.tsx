@@ -9,7 +9,10 @@ import { Series, Chapter } from '@/types';
 const fetchMySeries   = async (): Promise<Series[]>  => {
   const r = await api.get('/series/my');
   const d = r.data;
-  return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
+  if (Array.isArray(d)) return d;
+  if (d?.data && Array.isArray(d.data)) return d.data;
+  if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data;
+  return [];
 };
 const fetchChapters   = async (id:string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`);   return r.data.data ?? []; };
 const fetchAssistants = async () => { const r = await api.get('/users/assistants'); return r.data.data ?? []; };
@@ -62,10 +65,12 @@ const TaskAssignment = () => {
 
   const createMutation = useMutation({
     mutationFn: (t:LocalTask) => taskService.create({
-      pageId:`${selectedChapterId}_page_${selectedPageNum}`,
+      // ✅ Lấy pageId thật từ pagesData, fallback tạo fake nếu chưa upload
+      pageId: (pagesData as any[]).find((p:any)=>p.pageNumber===selectedPageNum)?.id
+              ?? `${selectedChapterId}_page_${selectedPageNum}`,
       assignedTo:t.assignedTo!,
       title:t.title||`${TASK_TYPES.find(x=>x.value===t.type)?.label} - Trang ${selectedPageNum}`,
-      description:t.description, taskType:t.type, priority:t.priority, panelRegion:t.zone,
+      description:t.description, taskType:t.type, priority:t.priority, panelRegion: JSON.stringify(t.zone), // ✅ Backend expects String
     }),
     onSuccess:()=>qc.invalidateQueries({queryKey:['tasks']}),
   });
@@ -100,7 +105,7 @@ const TaskAssignment = () => {
       {label && <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-1.5">{label}</label>}
       <div className="relative">
         <select value={value} onChange={onChange}
-          className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-violet-500/40 transition-all">
+          className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-violet-500/40 transition-all">
           {placeholder && <option value="" className="bg-[#111118]">{placeholder}</option>}
           {children}
         </select>
@@ -246,9 +251,9 @@ const TaskAssignment = () => {
                           {a.name?.slice(0,1)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[12px] font-medium text-white truncate">{a.name}</p>
+                          <p className="text-[12px] font-medium text-white truncate">{a.name ?? a.displayName ?? a.username ?? a.email}</p>
                         </div>
-                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${a.isActive?'bg-emerald-400':'bg-zinc-600'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${(a.isActive||a.active)?'bg-emerald-400':'bg-zinc-600'}`} />
                       </div>
                     ))}
                   </div>
@@ -280,9 +285,9 @@ const TaskAssignment = () => {
                             </button>
                           </div>
                           <select value={task.assignedTo||''} onChange={e=>{ const u=[...tasks]; u[idx].assignedTo=e.target.value||null; setTasks(u); }}
-                            className="w-full bg-white/4 border border-white/8 rounded-lg px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-violet-500/30 transition-all">
+                            className="w-full bg-[#111118] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-violet-500/30 transition-all appearance-none">
                             <option value="" className="bg-[#111118]">Chọn trợ lý</option>
-                            {(assistants as any[]).map((a:any)=><option key={a.id} value={a.id} className="bg-[#111118]">{a.name}</option>)}
+                            {(assistants as any[]).map((a:any)=><option key={a.id} value={a.id} className="bg-[#111118]">{a.name ?? a.displayName ?? a.username ?? a.email}</option>)}
                           </select>
                           {task.assignedTo && (
                             <div className="flex items-center gap-1 mt-1.5">

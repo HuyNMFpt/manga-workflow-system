@@ -51,7 +51,10 @@ const SeriesSubmission = () => {
       const res = await api.get('/series/my');
       // ✅ PaginatedResponse { data: [...] }
       const d = res.data;
-      return Array.isArray(d) ? d : (d?.data ?? d?.content ?? []);
+      if (Array.isArray(d)) return d;
+      if (d?.data && Array.isArray(d.data)) return d.data;
+      if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data;
+      return [];
     },
   });
 
