@@ -19,8 +19,9 @@ public class SeriesController {
     private final UserRepository userRepository;
 
     @GetMapping
-    public ApiResponse<List<SeriesDTO>> getAllSeries() {
-        return ApiResponse.success(seriesService.getAllSeries());
+    public ApiResponse<List<SeriesDTO>> getAllSeries(
+            @RequestParam(required = false) String status) {
+        return ApiResponse.success(seriesService.getAllSeries(status));
     }
 
     @GetMapping("/{id}")

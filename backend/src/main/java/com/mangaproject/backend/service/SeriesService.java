@@ -32,8 +32,11 @@ public class SeriesService {
         return mapToDTO(series);
     }
 
-    public List<SeriesDTO> getAllSeries() {
-        return seriesRepository.findAll().stream()
+    public List<SeriesDTO> getAllSeries(String status) {
+        List<Series> result = (status != null && !status.isEmpty())
+                ? seriesRepository.findByStatus(Series.SeriesStatus.valueOf(status))
+                : seriesRepository.findAll();
+        return result.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }

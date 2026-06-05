@@ -10,4 +10,6 @@ public interface SeriesRepository extends JpaRepository<Series, String> {
     List<Series> findByMangakaId(String mangakaId);
     List<Series> findByEditorId(String editorId);
     List<Series> findByStatusIn(List<Series.SeriesStatus> statuses);
+
+    List<Series> findByStatus(Series.SeriesStatus status);
 }
