@@ -41,7 +41,12 @@ const TaskAssignment = () => {
   const [submitSuccess,      setSubmitSuccess]      = useState(false);
   const [submitError,        setSubmitError]        = useState('');
 
-  const { data:seriesList=[], isLoading:loadSeries }    = useQuery({ queryKey:['series','my'],           queryFn:fetchMySeries });
+  const { data:allSeries=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
+
+  // ✅ Chỉ hiện series approved/publishing (mới có chapter để giao việc)
+  const seriesList = (allSeries as any[]).filter(
+    (s:any) => s.status === 'approved' || s.status === 'publishing'
+  );
   const { data:chapters=[],   isLoading:loadChapters }  = useQuery({ queryKey:['chapters',selectedSeriesId], queryFn:()=>fetchChapters(selectedSeriesId), enabled:!!selectedSeriesId });
   const { data:assistants=[],  isLoading:loadAssistants } = useQuery({ queryKey:['assistants'],          queryFn:fetchAssistants });
 
@@ -130,13 +135,32 @@ const TaskAssignment = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl">
           <SelectField label="1. Chọn series" value={selectedSeriesId} placeholder="-- Chọn series --"
             onChange={(e:any)=>{setSelectedSeriesId(e.target.value);setSelectedChapterId('');setTasks([]);}}>
-            {(seriesList as any[]).map((s:any)=><option key={s.id} value={s.id} className="bg-[#111118]">{s.title}</option>)}
+            {seriesList.length === 0
+              ? <option disabled className="bg-[#111118]">-- Chưa có series được duyệt --</option>
+              : (seriesList as any[]).map((s:any)=>(<option key={s.id} value={s.id} className="bg-[#111118]">{s.title}</option>))}
           </SelectField>
 
+          {/* ✅ Info khi chưa có series approved */}
+          {!loadSeries && seriesList.length === 0 && (
+            <div className="mt-3 flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl">
+              <svg className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z"/></svg>
+              <div>
+                <p className="text-[12px] font-semibold text-amber-400">Chưa có series nào được duyệt</p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">Chỉ có thể giao việc cho series đã được Board phê duyệt và đã có chapter.</p>
+              </div>
+            </div>
+          )}
           {selectedSeriesId && (
             <SelectField label="2. Chọn chapter" value={selectedChapterId} placeholder="-- Chọn chapter --"
               onChange={(e:any)=>{setSelectedChapterId(e.target.value);setTasks([]);}}>
-              {(chapters as any[]).map((c:any)=><option key={c.id} value={c.id} className="bg-[#111118]">Chapter {c.chapterNumber}{c.title?`: ${c.title}`:''}</option>)}
+              {(chapters as any[]).length === 0
+                ? <option disabled className="bg-[#111118]">-- Series chưa có chapter nào --</option>
+                : (chapters as any[]).map((c:any)=>(
+                    <option key={c.id} value={c.id} className="bg-[#111118]">
+                      Chapter {c.chapterNumber}{c.title ? `: ${c.title}` : ''}
+                    </option>
+                  ))
+              }
             </SelectField>
           )}
         </div>
@@ -206,7 +230,17 @@ const TaskAssignment = () => {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
                       <MousePointer className="w-8 h-8" />
                       <span className="text-xs">Kéo để chọn vùng</span>
-                      {selectedChapterId && (pagesData as any[]).length === 0 && (
+                      {/* ✅ Warning khi series không có chapter */}
+          {selectedSeriesId && !loadChapters && (chapters as any[]).length === 0 && (
+            <div className="flex items-start gap-2.5 p-3 bg-orange-500/8 border border-orange-500/15 rounded-xl">
+              <svg className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+              <div>
+                <p className="text-[12px] font-semibold text-orange-400">Series chưa có chapter nào</p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">Vui lòng tạo chapter trước tại trang <span className="text-violet-400">Chapter & Trang</span> rồi quay lại giao việc.</p>
+              </div>
+            </div>
+          )}
+          {selectedChapterId && (pagesData as any[]).length === 0 && (
                         <span className="text-[10px] text-zinc-700 mt-1">Chưa có trang nào được upload</span>
                       )}
                     </div>

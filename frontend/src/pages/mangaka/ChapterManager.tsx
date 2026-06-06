@@ -37,7 +37,11 @@ export default function ChapterManager() {
   const [uploadErr, setUploadErr] = useState('');
   const [uploadOk, setUploadOk] = useState(false);
 
-  const { data: seriesList=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
+  const { data: allSeries=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
+  // ✅ Chỉ hiện series đã được Board duyệt (approved/publishing) mới được upload chapter
+  const seriesList = (allSeries as any[]).filter(
+    (s:any) => s.status === 'approved' || s.status === 'publishing'
+  );
   const { data: chapters=[], isLoading:loadChapters, refetch } = useQuery({ queryKey:['chapters',selectedSeriesId], queryFn:()=>fetchChapters(selectedSeriesId), enabled:!!selectedSeriesId });
 
   const createMutation = useMutation({
@@ -91,7 +95,10 @@ export default function ChapterManager() {
         <div className="max-w-sm">
           <SelectField label="Series" value={selectedSeriesId} onChange={(e:any)=>setSelectedSeriesId(e.target.value)}>
             <option value="" className="bg-[#111118]">-- Chọn series --</option>
-            {(seriesList as any[]).map((s:any) => <option key={s.id} value={s.id} className="bg-[#111118]">{s.title}</option>)}
+            {seriesList.length === 0
+              ? <option disabled className="bg-[#111118]">-- Chưa có series được duyệt --</option>
+              : (seriesList as any[]).map((s:any) => <option key={s.id} value={s.id} className="bg-[#111118]">{s.title}</option>)
+            }
           </SelectField>
         </div>
 
@@ -111,7 +118,17 @@ export default function ChapterManager() {
         {/* ── Tab: List ── */}
         {tab==='list' && (
           <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
-            {!selectedSeriesId ? (
+            {/* ✅ Info khi chưa có series được duyệt */}
+          {!loadSeries && seriesList.length === 0 && (
+            <div className="mt-1 flex items-start gap-2.5 p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl">
+              <svg className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z"/></svg>
+              <div>
+                <p className="text-[12px] font-semibold text-amber-400">Chưa có series nào được duyệt</p>
+                <p className="text-[11px] text-zinc-600 mt-0.5">Chỉ upload chapter cho series có status <span className="text-emerald-400 font-medium">approved</span> hoặc <span className="text-violet-400 font-medium">publishing</span>.</p>
+              </div>
+            </div>
+          )}
+          {!selectedSeriesId ? (
               <div className="flex flex-col items-center justify-center py-14 gap-3 text-zinc-700">
                 <Layers className="w-8 h-8 opacity-20" />
                 <p className="text-sm">Chọn series để xem chapters</p>
