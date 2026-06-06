@@ -18,7 +18,7 @@ const RankingBoard = () => {
 
   const { data: rankData, isLoading } = useQuery({
     queryKey: ['board','rankings'],
-    queryFn: async () => { const r = await api.get('/board/rankings'); return r.data.data; },
+    queryFn: async () => { const r = await api.get('/board/rankings'); return r.data.data?.data ?? r.data.data ?? []; }, // PAGINATED
   });
   // ✅ SeriesRankingDTO array
   const rankings: any[] = Array.isArray(rankData) ? rankData : (rankData?.rankings ?? []);

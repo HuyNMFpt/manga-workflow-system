@@ -36,15 +36,14 @@ export interface LoginResponse {
 // SERIES
 // ============================================================
 
+// ✅ Backend enum: draft | submitted | approved | publishing | on_hiatus | cancelled
 export type SeriesStatus =
   | "draft"
-  | "pending_review"
-  | "in_review"
-  | "approved"
-  | "rejected"
-  | "serializing"
-  | "on_hold"
-  | "cancelled"
+  | "submitted"    // Chờ duyệt (trước là pending_review)
+  | "approved"     // Được Board duyệt
+  | "publishing"   // Đang sản xuất - xuất bản (trước là serializing)
+  | "on_hiatus"    // Tạm ngưng (trước là on_hold)
+  | "cancelled"    // Đã hủy / không được duyệt
 
 export type PublicationSchedule = "weekly" | "monthly" | "one_shot"
 
@@ -53,13 +52,13 @@ export interface Series {
   title: string
   genre: string
   synopsis: string
-  coverUrl?: string
+  coverUrl?: string        // ✅ Backend: coverUrl (maps to cover_image_url)
   mangakaId: string
   editorId?: string
   status: SeriesStatus
-  schedule?: PublicationSchedule
+  schedule?: string        // Backend: weekly | monthly (từ publish_schedule)
   createdAt: string
-  updatedAt: string
+  updatedAt?: string
 }
 
 export interface SeriesRanking {

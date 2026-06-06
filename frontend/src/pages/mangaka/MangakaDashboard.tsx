@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { BookOpen, CheckSquare, TrendingUp, AlertTriangle, Plus, Upload, Layers, Trophy, ArrowUpRight, Feather, Sparkles } from 'lucide-react';
+import CreateSeriesModal from '@/components/shared/CreateSeriesModal';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
@@ -6,6 +8,7 @@ import api from '@/lib/axios';
 
 const MangakaDashboard = () => {
   const { user } = useAuthStore();
+  const [showCreate, setShowCreate] = useState(false);
 
   const { data: seriesData } = useQuery({
     queryKey: ['series', 'my'],
@@ -71,10 +74,10 @@ const MangakaDashboard = () => {
           </div>
 
           {/* CTA */}
-          <Link to="/mangaka/submit-series"
+          <button onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold shadow-lg shadow-violet-600/30 hover:shadow-violet-600/50 hover:scale-[1.02] transition-all">
             <Plus className="w-4 h-4" />Tạo Series mới
-          </Link>
+          </button>
         </div>
       </div>
 
@@ -138,7 +141,7 @@ const MangakaDashboard = () => {
           <h2 className="text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-4">Thao tác nhanh</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {[
-              { icon: Plus,    label: 'Tạo Series',    sub: 'Nộp lên hội đồng',   to: '/mangaka/submit-series', color: 'from-violet-600/20 to-fuchsia-600/20', border: 'border-violet-500/20', text: 'text-violet-300' },
+              { icon: Plus,    label: 'Tạo Series',    sub: 'Nộp lên hội đồng',   to: null, onClick: () => setShowCreate(true), color: 'from-violet-600/20 to-fuchsia-600/20', border: 'border-violet-500/20', text: 'text-violet-300' },
               { icon: Upload,  label: 'Upload Chapter', sub: 'Thêm trang mới',      to: '/mangaka/chapters',      color: 'from-blue-600/20 to-cyan-600/20',     border: 'border-blue-500/20',   text: 'text-blue-300'   },
               { icon: Layers,  label: 'Giao việc',     sub: 'Phân công trợ lý',    to: '/mangaka/assign-tasks',  color: 'from-emerald-600/20 to-teal-600/20',  border: 'border-emerald-500/20',text: 'text-emerald-300'},
               { icon: Trophy,  label: 'Xếp hạng',      sub: 'Theo dõi thứ hạng',   to: '/mangaka/rankings',      color: 'from-amber-600/20 to-yellow-600/20',  border: 'border-amber-500/20',  text: 'text-amber-300'  },
@@ -174,10 +177,10 @@ const MangakaDashboard = () => {
               <div className="flex flex-col items-center justify-center py-14 gap-3 text-zinc-600">
                 <BookOpen className="w-8 h-8 opacity-30" />
                 <p className="text-sm">Chưa có series nào</p>
-                <Link to="/mangaka/submit-series"
+                <button onClick={() => setShowCreate(true)}
                   className="text-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 px-3 py-1.5 rounded-lg transition-colors">
                   + Bắt đầu ngay
-                </Link>
+                </button>
               </div>
             ) : (
               <ul className="divide-y divide-white/4">
@@ -238,6 +241,9 @@ const MangakaDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* ✅ Create Series Modal */}
+      {showCreate && <CreateSeriesModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 };

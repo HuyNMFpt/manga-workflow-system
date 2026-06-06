@@ -38,7 +38,8 @@ const TaskList = () => {
       const params: any = { page: 1, limit: 50 };
       if (activeFilter !== 'all') params.status = activeFilter;
       const res = await api.get('/tasks/my', { params });
-      return res.data.data;
+      // PAGINATED: res.data.data = { data:[...], total, page }
+      return res.data.data?.data ?? res.data.data ?? [];
     },
   });
 

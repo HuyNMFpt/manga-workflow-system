@@ -6,12 +6,9 @@ import { Chapter, Series } from '@/types';
 
 // ✅ /series/my → ApiResponse<PaginatedResponse<SeriesDTO>>
 const fetchMySeries  = async (): Promise<Series[]>  => {
+  // PAGINATED
   const r = await api.get('/series/my');
-  const d = r.data;
-  if (Array.isArray(d)) return d;
-  if (d?.data && Array.isArray(d.data)) return d.data;
-  if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data;
-  return [];
+  return r.data.data?.data ?? [];
 };
 const fetchChapters  = async (id: string): Promise<Chapter[]> => { const r = await api.get(`/chapters/series/${id}`); return r.data.data ?? []; };
 

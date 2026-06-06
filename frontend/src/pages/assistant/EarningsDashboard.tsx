@@ -5,7 +5,7 @@ import api from '@/lib/axios';
 const EarningsDashboard = () => {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['assistant', 'earnings'],
-    queryFn: async () => { const r = await api.get('/assistant/earnings'); return r.data.data; },
+    queryFn: async () => { const r = await api.get('/assistant/earnings'); return r.data.data?.data ?? r.data.data; },
   });
 
   const formatVND = (n: number) =>

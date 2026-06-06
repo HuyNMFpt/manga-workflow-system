@@ -9,11 +9,13 @@ const AssistantDashboard = () => {
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ['assistant', 'stats'],
-    queryFn: async () => { const r = await api.get('/assistant/stats'); return r.data.data; },
+    queryFn: async () => { const r = await api.get('/assistant/stats'); // PAGINATED: items in .data.data
+      return r.data.data?.data ?? r.data.data ?? []; },
   });
   const { data: taskData } = useQuery({
     queryKey: ['tasks', 'my', 'recent'],
-    queryFn: async () => { const r = await api.get('/tasks/my', { params: { limit: 5 } }); return r.data.data; },
+    queryFn: async () => { const r = await api.get('/tasks/my', { params: { limit: 5 } }); // PAGINATED: items in .data.data
+      return r.data.data?.data ?? r.data.data ?? []; },
   });
   const tasks = Array.isArray(taskData) ? taskData : (taskData?.content ?? taskData?.items ?? []);
 

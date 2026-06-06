@@ -26,7 +26,7 @@ const VotingQueue = () => {
 
   const { data: queueData, isLoading, isError, refetch } = useQuery({
     queryKey: ['board','voting-queue'],
-    queryFn: async () => { const r = await api.get('/board/voting-queue'); return r.data.data; },
+    queryFn: async () => { const r = await api.get('/board/voting-queue'); return r.data.data?.data ?? r.data.data ?? []; }, // PAGINATED
     retry: 1,
   });
 
