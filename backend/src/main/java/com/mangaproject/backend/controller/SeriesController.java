@@ -68,4 +68,27 @@ public class SeriesController {
             @RequestParam String status) {
         return ApiResponse.success(seriesService.updateStatus(id, status));
     }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> deleteSeries(
+            @PathVariable String id,
+            Authentication authentication) {
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        seriesService.deleteSeries(id, user.getId());
+        return ApiResponse.success(null, "Đã xóa series");
+    }
+
+    @PostMapping("/{id}/message")
+    public ApiResponse<Void> sendMessageToEditor(
+            @PathVariable String id,
+            @RequestBody SeriesMessageRequest request,
+            Authentication authentication) {
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        seriesService.sendMessageToEditor(id, request, user.getId());
+        return ApiResponse.success(null, "Đã gửi yêu cầu cho Editor");
+    }
 }
