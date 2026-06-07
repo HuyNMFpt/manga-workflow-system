@@ -11,4 +11,5 @@ public interface SubmissionRepository extends JpaRepository<Submission, String> 
     List<Submission> findBySubmittedByOrderByCreatedAtDesc(String submittedBy);
     Optional<Submission> findByManuscriptId(String manuscriptId);
     List<Submission> findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus status);
+    long countByManuscriptId(String manuscriptId);
 }

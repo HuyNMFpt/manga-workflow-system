@@ -61,6 +61,12 @@ public class PageService {
         page.setStatus(Page.PageStatus.in_progress); // UPLOADED → in_progress
 
         page = pageRepository.save(page);
+
+        // Cập nhật total_pages của chapter
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+
         log.info("Page uploaded successfully: chapter={}, page={}", chapterId, pageNumber);
         return mapToDTO(page);
     }
@@ -70,6 +76,9 @@ public class PageService {
         Page page = pageRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Page not found"));
 
+        String chapterId = page.getChapter().getId();
+        Chapter chapter = page.getChapter();
+
         try {
             fileStorageService.deleteFile(page.getImageUrl());
             fileStorageService.deleteFile(page.getThumbnailUrl());
@@ -78,6 +87,12 @@ public class PageService {
         }
 
         pageRepository.delete(page);
+
+        // Cập nhật total_pages
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+
         log.info("Page deleted successfully: {}", id);
     }
 

@@ -64,26 +64,57 @@ public class BoardService {
                     .map(u -> u.getName() != null ? u.getName() : u.getUsername())
                     .orElse("Unknown") : "Unknown";
 
-            return new SubmissionDetailDTO(
-                    sub.getId(),
-                    sub.getManuscriptId(),
-                    series != null ? series.getId() : "",
-                    series != null ? series.getTitle() : "",
-                    series != null ? series.getGenre() : "",
-                    series != null ? series.getSynopsis() : "",
-                    series != null ? series.getMangakaId() : "",
-                    mangakaName,
-                    ms != null ? ms.getFileUrl() : "",
-                    ms != null ? ms.getDescription() : "",
-                    sub.getSubmissionRound(),
-                    sub.getCoverLetter(),
-                    sub.getStatus().name(),
-                    sub.getVoteYes(), sub.getVoteNo(), sub.getVoteAbstain(),
-                    sub.getVotingDeadline() != null ? sub.getVotingDeadline().toString() : null,
-                    sub.getCreatedAt() != null ? sub.getCreatedAt().toString() : null,
-                    boardVoteRepository.existsBySubmissionIdAndVoterId(sub.getId(), boardMemberId)
-            );
+            // Editor name — submittedBy của submission là editor
+            String editorName = userRepository.findById(sub.getSubmittedBy())
+                    .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                    .orElse("Unknown");
+
+            // Parse editor evaluation fields từ description
+            String desc = ms != null ? ms.getDescription() : "";
+            String audienceSummary = parseTag(desc, "Audience");
+            String marketingAngle = parseTag(desc, "Marketing");
+            String whyItWillSell = parseTag(desc, "WhySell");
+            String editorNote = parseTag(desc, "EditorNote");
+            String recommendedSchedule = parseTag(sub.getCoverLetter(), "RecommendedSchedule");
+
+            SubmissionDetailDTO dto = new SubmissionDetailDTO();
+            dto.setSubmissionId(sub.getId());
+            dto.setManuscriptId(sub.getManuscriptId());
+            dto.setSeriesId(series != null ? series.getId() : "");
+            dto.setSeriesTitle(series != null ? series.getTitle() : "");
+            dto.setSeriesGenre(series != null ? series.getGenre() : "");
+            dto.setSynopsis(series != null ? series.getSynopsis() : "");
+            dto.setMangakaId(series != null ? series.getMangakaId() : "");
+            dto.setMangakaName(mangakaName);
+            dto.setFileUrl(ms != null ? ms.getFileUrl() : "");
+            dto.setDescription(desc);
+            dto.setSubmissionRound(sub.getSubmissionRound());
+            dto.setCoverLetter(sub.getCoverLetter());
+            dto.setStatus(sub.getStatus().name());
+            dto.setVoteYes(sub.getVoteYes());
+            dto.setVoteNo(sub.getVoteNo());
+            dto.setVoteAbstain(sub.getVoteAbstain());
+            dto.setVotingDeadline(sub.getVotingDeadline() != null ? sub.getVotingDeadline().toString() : null);
+            dto.setCreatedAt(sub.getCreatedAt() != null ? sub.getCreatedAt().toString() : null);
+            dto.setHasVoted(boardVoteRepository.existsBySubmissionIdAndVoterId(sub.getId(), boardMemberId));
+            dto.setEditorName(editorName);
+            dto.setAudienceSummary(audienceSummary);
+            dto.setMarketingAngle(marketingAngle);
+            dto.setWhyItWillSell(whyItWillSell);
+            dto.setRecommendedSchedule(recommendedSchedule);
+            dto.setEditorNote(editorNote);
+            return dto;
         }).collect(Collectors.toList());
+    }
+
+    private String parseTag(String text, String tag) {
+        if (text == null) return null;
+        String marker = "[" + tag + "]: ";
+        int start = text.indexOf(marker);
+        if (start == -1) return null;
+        start += marker.length();
+        int end = text.indexOf("\n", start);
+        return end == -1 ? text.substring(start).trim() : text.substring(start, end).trim();
     }
 
     // ── Vote ─────────────────────────────────────────────────────
@@ -130,7 +161,7 @@ public class BoardService {
                 if (ms != null) {
                     Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
                     if (series != null) {
-                        series.setStatus(Series.SeriesStatus.approved);
+                        series.setStatus(Series.SeriesStatus.publishing);
                         if (request.getSchedule() != null) {
                             try {
                                 series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));

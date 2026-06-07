@@ -21,6 +21,8 @@ public class EditorService {
     private final ChapterRepository chapterRepository;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
+    private final SubmissionRepository submissionRepository;
+    private final NotificationRepository notificationRepository;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public EditorStatsDTO getStats(String editorId) {
@@ -154,7 +156,6 @@ public class EditorService {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
 
-        // Append note vào description
         String existing = manuscript.getDescription() != null ? manuscript.getDescription() : "";
         manuscript.setDescription(existing + "\n[Editor note]: " + note);
         manuscript.setStatus(Manuscript.ManuscriptStatus.under_review);
@@ -172,4 +173,126 @@ public class EditorService {
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null
         );
     }
-}
+
+    // ── Editor nộp lên Board ──────────────────────────────────────
+    @org.springframework.transaction.annotation.Transactional
+    public SubmissionDTO submitToBoard(String manuscriptId, String editorId, SubmitToBoardRequest request) {
+        Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        Series series = seriesRepository.findById(manuscript.getSeriesId())
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        // Kiểm tra editor có phụ trách series này không
+        if (!editorId.equals(series.getEditorId())) {
+            throw new RuntimeException("Bạn không phụ trách series này");
+        }
+
+        // Build editor evaluation note vào description
+        StringBuilder evalNote = new StringBuilder(manuscript.getDescription() != null ? manuscript.getDescription() : "");
+        if (request.getAudienceSummary() != null)
+            evalNote.append("\n[Audience]: ").append(request.getAudienceSummary());
+        if (request.getMarketingAngle() != null)
+            evalNote.append("\n[Marketing]: ").append(request.getMarketingAngle());
+        if (request.getWhyItWillSell() != null)
+            evalNote.append("\n[WhySell]: ").append(request.getWhyItWillSell());
+        if (request.getEditorNote() != null)
+            evalNote.append("\n[EditorNote]: ").append(request.getEditorNote());
+
+        manuscript.setDescription(evalNote.toString());
+        manuscript.setStatus(Manuscript.ManuscriptStatus.approved);
+        manuscript.setReviewedAt(LocalDateTime.now());
+        manuscriptRepository.save(manuscript);
+
+        // Tạo Submission lên Board
+        int submissionRound = (int) submissionRepository.countByManuscriptId(manuscriptId) + 1;
+
+        Submission submission = new Submission();
+        submission.setManuscriptId(manuscriptId);
+        submission.setSubmittedBy(editorId);
+        submission.setSubmissionRound(submissionRound);
+        submission.setCoverLetter(request.getEditorNote());
+        submission.setStatus(Submission.SubmissionStatus.pending);
+        submission.setVotingDeadline(LocalDateTime.now().plusDays(7));
+
+        // Lưu recommended schedule vào coverLetter tag
+        if (request.getRecommendedSchedule() != null) {
+            String cl = submission.getCoverLetter() != null ? submission.getCoverLetter() : "";
+            submission.setCoverLetter(cl + "\n[RecommendedSchedule]: " + request.getRecommendedSchedule());
+        }
+
+        submission = submissionRepository.save(submission);
+
+        // Update series status → submitted (chờ Board)
+        series.setStatus(Series.SeriesStatus.submitted);
+        seriesRepository.save(series);
+
+        log.info("Editor submitted manuscript to board: manuscriptId={}, editorId={}", manuscriptId, editorId);
+
+        return new SubmissionDTO(
+                submission.getId(), manuscriptId, series.getId(), series.getTitle(),
+                submission.getSubmittedBy(), submission.getSubmissionRound(),
+                submission.getCoverLetter(), submission.getStatus().name(),
+                0, 0, 0,
+                submission.getVotingDeadline().toString(),
+                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null
+        );
+    }
+
+    // ── Editor trả lại Mangaka để sửa ────────────────────────────
+    @org.springframework.transaction.annotation.Transactional
+    public ManuscriptDTO updateManuscriptStatus(String manuscriptId, String editorId, UpdateManuscriptStatusRequest request) {
+        Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        Series series = seriesRepository.findById(manuscript.getSeriesId())
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        if (!editorId.equals(series.getEditorId())) {
+            throw new RuntimeException("Bạn không phụ trách series này");
+        }
+
+        // Map status string → ManuscriptStatus
+        Manuscript.ManuscriptStatus newStatus;
+        switch (request.getStatus()) {
+            case "needs_minor_revision", "needs_major_revision", "revision_requested"
+                    -> newStatus = Manuscript.ManuscriptStatus.revision_requested;
+            case "under_review" -> newStatus = Manuscript.ManuscriptStatus.under_review;
+            default -> throw new RuntimeException("Status không hợp lệ: " + request.getStatus());
+        }
+
+        manuscript.setStatus(newStatus);
+        manuscript.setRejectionReason(request.getReason());
+        manuscript.setReviewedAt(LocalDateTime.now());
+        manuscript = manuscriptRepository.save(manuscript);
+
+        // Series về draft để Mangaka sửa lại
+        series.setStatus(Series.SeriesStatus.draft);
+        seriesRepository.save(series);
+
+        // Gửi notification cho Mangaka
+        if (notificationRepository != null) {
+            Notification notification = new Notification();
+            notification.setUserId(series.getMangakaId());
+            notification.setType(Notification.NotificationType.revision_requested);
+            notification.setReferenceId(manuscriptId);
+            notification.setReferenceType("manuscript");
+            notification.setMessage(String.format(
+                    "Editor yêu cầu chỉnh sửa bản thảo [%s]: %s",
+                    series.getTitle(),
+                    request.getReason() != null ? request.getReason() : "Vui lòng xem lại bản thảo"
+            ));
+            notificationRepository.save(notification);
+        }
+
+        log.info("Editor requested revision: manuscriptId={}, editorId={}, status={}", manuscriptId, editorId, newStatus);
+
+        return new ManuscriptDTO(
+                manuscript.getId(), manuscript.getSeriesId(), series.getTitle(),
+                manuscript.getSubmittedBy(), manuscript.getVersion(), manuscript.getFileUrl(),
+                manuscript.getDescription(), manuscript.getStatus().name(),
+                manuscript.getRejectionReason(),
+                manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
+                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null
+        );
+    }}

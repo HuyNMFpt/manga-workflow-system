@@ -36,6 +36,10 @@ public class SeriesService {
             series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
         }
 
+        if (request.getEditorId() != null) {
+            series.setEditorId(request.getEditorId());
+        }
+
         series = seriesRepository.save(series);
         return mapToDTO(series);
     }
@@ -73,6 +77,26 @@ public class SeriesService {
         Series series = seriesRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
         series.setStatus(Series.SeriesStatus.valueOf(status));
+        series = seriesRepository.save(series);
+        return mapToDTO(series);
+    }
+
+    @Transactional
+    public SeriesDTO updateSeries(String id, String title, String genre, String synopsis,
+                                   String coverUrl, String editorId, String mangakaId) {
+        Series series = seriesRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        if (!series.getMangakaId().equals(mangakaId)) {
+            throw new RuntimeException("Bạn không có quyền chỉnh sửa series này");
+        }
+
+        if (title != null) series.setTitle(title);
+        if (genre != null) series.setGenre(genre);
+        if (synopsis != null) series.setSynopsis(synopsis);
+        if (coverUrl != null) series.setCoverUrl(coverUrl);
+        if (editorId != null) series.setEditorId(editorId);
+
         series = seriesRepository.save(series);
         return mapToDTO(series);
     }

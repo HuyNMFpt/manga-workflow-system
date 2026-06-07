@@ -28,9 +28,23 @@ public class UserController {
                         u.getName() != null ? u.getName() : u.getUsername(),
                         u.getEmail(),
                         u.getAvatarUrl(),
-                        true // isActive — có thể mở rộng sau
+                        true
                 ))
                 .collect(Collectors.toList());
         return ApiResponse.success(assistants);
+    }
+
+    @GetMapping("/editors")
+    public ApiResponse<List<EditorDTO>> getEditors() {
+        List<EditorDTO> editors = userRepository
+                .findByRole(User.UserRole.editor).stream()
+                .map(u -> new EditorDTO(
+                        u.getId(),
+                        u.getName() != null ? u.getName() : u.getUsername(),
+                        u.getEmail(),
+                        u.getAvatarUrl()
+                ))
+                .collect(Collectors.toList());
+        return ApiResponse.success(editors);
     }
 }

@@ -36,6 +36,7 @@ public class SeriesController {
             @RequestParam("synopsis") String synopsis,
             @RequestParam(value = "coverUrl", required = false) String coverUrl,
             @RequestParam(value = "schedule", required = false) String schedule,
+            @RequestParam(value = "editorId", required = false) String editorId,
             @RequestParam(value = "cover", required = false) MultipartFile cover,
             Authentication authentication) {
 
@@ -49,6 +50,7 @@ public class SeriesController {
         request.setSynopsis(synopsis);
         request.setCoverUrl(coverUrl);
         request.setSchedule(schedule);
+        request.setEditorId(editorId);
 
         return ApiResponse.success(seriesService.createSeries(request, user.getId()));
     }
@@ -67,6 +69,24 @@ public class SeriesController {
             @PathVariable String id,
             @RequestParam String status) {
         return ApiResponse.success(seriesService.updateStatus(id, status));
+    }
+
+    @PutMapping(value = "/{id}", consumes = "multipart/form-data")
+    public ApiResponse<SeriesDTO> updateSeries(
+            @PathVariable String id,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "genre", required = false) String genre,
+            @RequestParam(value = "synopsis", required = false) String synopsis,
+            @RequestParam(value = "coverUrl", required = false) String coverUrl,
+            @RequestParam(value = "editorId", required = false) String editorId,
+            @RequestParam(value = "cover", required = false) MultipartFile cover,
+            Authentication authentication) {
+
+        String email = authentication.getName();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        return ApiResponse.success(seriesService.updateSeries(id, title, genre, synopsis, coverUrl, editorId, user.getId()));
     }
 
     @DeleteMapping("/{id}")

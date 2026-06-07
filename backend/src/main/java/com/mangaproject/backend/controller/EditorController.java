@@ -52,6 +52,30 @@ public class EditorController {
         return ApiResponse.success(editorService.addAnnotation(id, user.getId(), note));
     }
 
+    @PostMapping("/manuscripts/{id}/submit-to-board")
+    public ApiResponse<SubmissionDTO> submitToBoard(
+            @PathVariable String id,
+            @RequestBody SubmitToBoardRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(
+                editorService.submitToBoard(id, user.getId(), request),
+                "Đã nộp bản thảo lên Hội đồng biên tập"
+        );
+    }
+
+    @PutMapping("/manuscripts/{id}/status")
+    public ApiResponse<ManuscriptDTO> updateManuscriptStatus(
+            @PathVariable String id,
+            @RequestBody UpdateManuscriptStatusRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(
+                editorService.updateManuscriptStatus(id, user.getId(), request),
+                "Đã cập nhật trạng thái bản thảo"
+        );
+    }
+
     /**
      * GET /api/editor/studio-progress
      * Tiến độ real-time của tất cả studio Editor phụ trách

@@ -24,5 +24,12 @@ public class SubmissionDetailDTO {
     private int voteAbstain;
     private String votingDeadline;
     private String createdAt;
-    private boolean hasVoted; // board member này đã vote chưa
+    private boolean hasVoted;
+    // Editor evaluation fields
+    private String editorName;
+    private String audienceSummary;
+    private String marketingAngle;
+    private String whyItWillSell;
+    private String recommendedSchedule;
+    private String editorNote;
 }
