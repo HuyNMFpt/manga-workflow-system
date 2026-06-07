@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQueryClient, useMutation } from '@tanstack/react-query'
-import { Feather, X, ChevronDown, Upload, Check, FileText, Users, Loader2, ArrowRight } from 'lucide-react'
+import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query'
+import { Feather, X, ChevronDown, Upload, Check, FileText, Users, Loader2, ArrowRight, UserCircle } from 'lucide-react'
 import { GENRE_OPTIONS } from '@/lib/constants'
 import api from '@/lib/axios'
 
@@ -49,6 +49,7 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   const [coverFile,    setCoverFile]    = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(existingSeries?.coverUrl ?? null)
   const [seriesError,  setSeriesError]  = useState('')
+  const [selectedEditorId, setSelectedEditorId] = useState(existingSeries?.editorId ?? '')
 
   // ── Step 2: Manuscript / Editor submission ──────────────────
   const [msForm, setMsForm] = useState({
@@ -62,6 +63,17 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   const [draftPreview, setDraftPreview] = useState<string | null>(null)
   const [msError,      setMsError]      = useState('')
   const [submitTarget, setSubmitTarget] = useState<'editor' | 'board'>('editor')
+
+  // ── Query: Load editors list ─────────────────────────────────
+  // GET /api/users/editors — Backend cần thêm endpoint này
+  const { data: editorsData = [] } = useQuery({
+    queryKey: ['users', 'editors'],
+    queryFn: async () => {
+      const r = await api.get('/users/editors');
+      return r.data.data ?? [];
+    },
+  });
+  const editors: any[] = Array.isArray(editorsData) ? editorsData : [];
 
   // ── Mutation 1: Create/Update series ────────────────────────
   const createSeriesMutation = useMutation({
@@ -89,6 +101,7 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
       fd.append('title',    seriesForm.title.trim())
       fd.append('genre',    seriesForm.genre)
       fd.append('synopsis', seriesForm.synopsis)
+      if (selectedEditorId) fd.append('editorId', selectedEditorId) // ✅ Assign editor
       if (coverFile) fd.append('cover', coverFile)
       const r = await api.post('/series', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -147,6 +160,10 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
     if (!seriesForm.genre)        { setSeriesError('Vui lòng chọn thể loại'); return }
     if (seriesForm.synopsis.length < 50) {
       setSeriesError(`Tóm tắt cần ít nhất 50 ký tự (${seriesForm.synopsis.length}/50)`)
+      return
+    }
+    if (!selectedEditorId) {
+      setSeriesError('Vui lòng chọn Tantou Editor phụ trách')
       return
     }
     createSeriesMutation.mutate()
