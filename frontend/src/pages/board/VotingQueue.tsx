@@ -480,31 +480,47 @@ const VotingQueue = () => {
                         </div>
                       </div>
 
-                      {/* Schedule — only when approve */}
+                      {/* Schedule — bắt buộc khi approve */}
                       {voteForm.decision === 'approve' && (
-                        <div>
-                          <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">
-                            Lịch xuất bản đề xuất
-                          </label>
-                          <div className="flex gap-2">
-                            {SCHEDULE_OPTIONS.map(o => (
+                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-bold tracking-[0.12em] uppercase text-emerald-400">
+                              Lịch xuất bản *
+                            </label>
+                            <span className="text-[10px] text-zinc-600">Quyết định tần suất ra chapter</span>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { value: 'weekly',   label: 'Hàng tuần',   desc: '~4 chapter/tháng' },
+                              { value: 'biweekly', label: '2 tuần/lần',  desc: '~2 chapter/tháng' },
+                              { value: 'monthly',  label: 'Hàng tháng',  desc: '1 chapter/tháng'  },
+                            ].map(o => (
                               <button key={o.value}
                                 onClick={() => setVoteForm(f => ({ ...f, schedule: o.value }))}
-                                className={`flex-1 py-2 rounded-xl border text-[11px] font-semibold transition-all ${
+                                className={`flex flex-col items-center gap-1 py-3 rounded-xl border text-center transition-all ${
                                   voteForm.schedule === o.value
-                                    ? 'bg-teal-500/15 border-teal-500/25 text-teal-300'
-                                    : 'bg-white/3 border-white/6 text-zinc-500 hover:text-zinc-300'
+                                    ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                                    : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300 hover:bg-white/5'
                                 }`}>
-                                {o.label}
+                                <span className="text-[13px] font-bold">{o.label}</span>
+                                <span className={`text-[10px] ${voteForm.schedule === o.value ? 'text-emerald-500/70' : 'text-zinc-700'}`}>
+                                  {o.desc}
+                                </span>
                               </button>
                             ))}
                           </div>
+
                           {s.recommendedSchedule && (
-                            <p className="text-[10px] text-zinc-700 mt-1.5">
-                              Editor đề xuất: <span className="text-teal-500">
-                                {s.recommendedSchedule === 'weekly' ? 'Hàng tuần' :
+                            <p className="text-[10px] text-zinc-600 flex items-center gap-1">
+                              <span className="text-zinc-700">Editor đề xuất:</span>
+                              <span
+                                className="text-teal-400 font-semibold cursor-pointer hover:text-teal-300 underline underline-offset-2"
+                                onClick={() => setVoteForm(f => ({ ...f, schedule: s.recommendedSchedule }))}>
+                                {s.recommendedSchedule === 'weekly'   ? 'Hàng tuần'  :
                                  s.recommendedSchedule === 'biweekly' ? '2 tuần/lần' : 'Hàng tháng'}
                               </span>
+                              <span className="text-zinc-700">— click để chọn</span>
                             </p>
                           )}
                         </div>
