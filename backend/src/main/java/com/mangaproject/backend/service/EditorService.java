@@ -135,8 +135,7 @@ public class EditorService {
 
         for (Series series : mySeries) {
             manuscriptRepository.findBySeriesIdOrderByVersionDesc(series.getId()).stream()
-                    .filter(m -> m.getStatus() == Manuscript.ManuscriptStatus.submitted
-                            || m.getStatus() == Manuscript.ManuscriptStatus.under_review)
+                    // Trả về TẤT CẢ status — frontend tự filter
                     .map(m -> new ManuscriptDTO(
                             m.getId(), m.getSeriesId(), series.getTitle(),
                             m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
@@ -258,11 +257,15 @@ public class EditorService {
             case "needs_minor_revision", "needs_major_revision", "revision_requested"
                     -> newStatus = Manuscript.ManuscriptStatus.revision_requested;
             case "under_review" -> newStatus = Manuscript.ManuscriptStatus.under_review;
+            case "approved" -> newStatus = Manuscript.ManuscriptStatus.approved;
             default -> throw new RuntimeException("Status không hợp lệ: " + request.getStatus());
         }
 
         manuscript.setStatus(newStatus);
-        manuscript.setRejectionReason(request.getReason());
+        // Chỉ set rejectionReason nếu có nội dung (không throw khi reason là empty)
+        if (request.getReason() != null && !request.getReason().isEmpty()) {
+            manuscript.setRejectionReason(request.getReason());
+        }
         manuscript.setReviewedAt(LocalDateTime.now());
         manuscript = manuscriptRepository.save(manuscript);
 
