@@ -1,54 +1,182 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ListTodo, CheckCircle2, AlertCircle, Clock, Upload, X, Loader2, FileImage } from 'lucide-react';
+import {
+  ListTodo, CheckCircle2, AlertCircle, Clock, Upload, X, Loader2,
+  FileImage, Download, Play, ChevronRight, Eye, RotateCcw,
+  FileText, Layers, AlertTriangle
+} from 'lucide-react';
 import api from '@/lib/axios';
 import { taskService } from '@/services/taskService';
 
+// ─── Constants ────────────────────────────────────────────────────
 const FILTERS = [
-  { id: 'all',               label: 'Tất cả'  },
-  { id: 'pending',           label: 'Chờ làm' },
-  { id: 'in_progress',       label: 'Đang làm'},
-  { id: 'submitted',         label: 'Đã nộp'  },
+  { id: 'all',             label: 'Tất cả'  },
+  { id: 'pending',         label: 'Chờ làm' },
+  { id: 'in_progress',     label: 'Đang làm'},
+  { id: 'submitted',       label: 'Đã nộp'  },
   { id: 'revision_needed', label: 'Cần sửa' },
-  { id: 'approved',          label: 'Đã duyệt'},
+  { id: 'approved',        label: 'Đã duyệt'},
 ];
 
-const STATUS_MAP: Record<string, { label:string; pill:string }> = {
-  pending:           { label:'Chờ làm', pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'         },
-  in_progress:       { label:'Đang làm',pill:'bg-blue-500/10 text-blue-300 border-blue-500/20'          },
-  submitted:         { label:'Đã nộp',  pill:'bg-violet-500/10 text-violet-300 border-violet-500/20'    },
-  revision_needed:   { label:'Cần sửa', pill:'bg-orange-500/10 text-orange-300 border-orange-500/20'    },
-  approved:          { label:'Đã duyệt',pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+const STATUS_MAP: Record<string, { label: string; pill: string; dot: string }> = {
+  pending:         { label:'Chờ làm',  pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',         dot:'bg-zinc-500'     },
+  in_progress:     { label:'Đang làm', pill:'bg-blue-500/10 text-blue-300 border-blue-500/20',          dot:'bg-blue-400'     },
+  submitted:       { label:'Đã nộp',   pill:'bg-violet-500/10 text-violet-300 border-violet-500/20',    dot:'bg-violet-400'   },
+  revision_needed: { label:'Cần sửa',  pill:'bg-orange-500/10 text-orange-300 border-orange-500/20',    dot:'bg-orange-400'   },
+  approved:        { label:'Đã duyệt', pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20', dot:'bg-emerald-400'  },
 };
 
+const PRIORITY_LABEL: Record<string, string> = {
+  urgent: 'KHẨN', high: 'CAO', normal: 'TB', low: 'THẤP',
+};
+const PRIORITY_PILL: Record<string, string> = {
+  urgent: 'text-red-400 bg-red-500/10 border-red-500/20',
+  high:   'text-orange-400 bg-orange-500/10 border-orange-500/20',
+  normal: 'text-zinc-500 bg-zinc-500/8 border-zinc-500/15',
+  low:    'text-zinc-600 bg-zinc-500/5 border-zinc-500/10',
+};
+
+const TASK_TYPE_LABEL: Record<string, string> = {
+  background:  'Vẽ nền',
+  shading:     'Tô bóng',
+  effect:      'Hiệu ứng',
+  screentone:  'Screentone',
+  text_bubble: 'Bong bóng thoại',
+  cleanup:     'Làm sạch',
+  color:       'Tô màu',
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────
+const parseRegion = (s?: string) => {
+  if (!s) return null;
+  try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
+};
+
+// ─── PanelHighlight: overlay vùng được đánh dấu trên ảnh trang ───
+const PanelHighlight = ({ imageUrl, region, label }: { imageUrl?: string; region: any; label?: string }) => (
+  <div className="relative w-full overflow-hidden rounded-xl border border-white/8 bg-black/30">
+    {imageUrl ? (
+      <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[320px]" draggable={false} />
+    ) : (
+      <div className="h-32 flex items-center justify-center">
+        <Layers className="w-8 h-8 text-zinc-700 opacity-30" />
+      </div>
+    )}
+    {/* Vùng highlight */}
+    {region && (
+      <div
+        className="absolute border-2 border-blue-400 bg-blue-400/10 pointer-events-none transition-all"
+        style={{
+          left:   `${region.x}%`,
+          top:    `${region.y}%`,
+          width:  `${region.width}%`,
+          height: `${region.height}%`,
+        }}>
+        {label && (
+          <span className="absolute -top-5 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
+            {label}
+          </span>
+        )}
+      </div>
+    )}
+  </div>
+);
+
+// ─── RevisionHighlight: vùng Mangaka đánh dấu cần sửa ────────────
+const RevisionHighlight = ({ imageUrl, region }: { imageUrl?: string; region: any }) => (
+  <div className="relative w-full overflow-hidden rounded-xl border border-orange-500/20 bg-black/30">
+    {imageUrl ? (
+      <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[300px]" draggable={false} />
+    ) : (
+      <div className="h-28 flex items-center justify-center">
+        <Layers className="w-7 h-7 text-zinc-700 opacity-30" />
+      </div>
+    )}
+    {region && (
+      <div
+        className="absolute border-2 border-orange-400 bg-orange-400/12 pointer-events-none animate-pulse"
+        style={{
+          left:   `${region.x}%`,
+          top:    `${region.y}%`,
+          width:  `${region.width}%`,
+          height: `${region.height}%`,
+        }}>
+        <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+          <AlertTriangle className="w-2 h-2 text-white" />
+        </div>
+      </div>
+    )}
+  </div>
+);
+
+// ─── Hook: load page image ────────────────────────────────────────
+const usePageImage = (pageId?: string) =>
+  useQuery({
+    queryKey: ['page', pageId],
+    queryFn: async () => {
+      if (!pageId) return null;
+      // GET /api/pages/{id} → PageDTO { imageUrl, thumbnailUrl, ... }
+      const r = await api.get(`/pages/${pageId}`);
+      return r.data.data ?? null;
+    },
+    enabled: !!pageId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+// ─── Start task mutation ──────────────────────────────────────────
+// Không có endpoint riêng cho "bắt đầu" — dùng submit với status trick
+// hoặc nếu backend có PUT /tasks/{id}/start thì dùng đó
+// Hiện tại: optimistic update local + nếu backend có PUT /tasks/{id}/start → gọi đó
+// Nếu không → chỉ update local state, backend tự chuyển khi assistant submit lần đầu
+const useStartTask = () => {
+  return useMutation({
+    mutationFn: async (taskId: string) => {
+      // Thử gọi PUT /tasks/{taskId}/start nếu backend có
+      try {
+        const r = await api.put(`/tasks/${taskId}/start`);
+        return r.data.data;
+      } catch {
+        // Backend chưa có endpoint này → return null, frontend tự update optimistic
+        return null;
+      }
+    },
+  });
+};
+
+// ─── Main Component ───────────────────────────────────────────────
 const TaskList = () => {
   const qc = useQueryClient();
-  const [activeFilter,    setActiveFilter]    = useState('all');
-  const [showModal,       setShowModal]       = useState(false);
-  const [selectedTask,    setSelectedTask]    = useState<any>(null);
-  const [fileUrl,         setFileUrl]         = useState('');
-  const [uploadFile,      setUploadFile]      = useState<File|null>(null);
-  const [note,            setNote]            = useState('');
-  const [submitError,     setSubmitError]     = useState('');
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [selectedTask, setSelectedTask] = useState<any>(null);
 
-  // ✅ GET /api/tasks/my
+  // Submit form state
+  const [uploadFile,  setUploadFile]  = useState<File | null>(null);
+  const [note,        setNote]        = useState('');
+  const [submitError, setSubmitError] = useState('');
+
+  // ── Fetch tasks ────────────────────────────────────────────────
+  // GET /api/tasks/my → PAGINATED: res.data.data = { data:[...], ... }
   const { data: taskData, isLoading } = useQuery({
     queryKey: ['tasks', 'my', activeFilter],
     queryFn: async () => {
       const params: any = { page: 1, limit: 50 };
       if (activeFilter !== 'all') params.status = activeFilter;
       const res = await api.get('/tasks/my', { params });
-      // PAGINATED: res.data.data = { data:[...], total, page }
       return res.data.data?.data ?? res.data.data ?? [];
     },
   });
-
-  const tasks = Array.isArray(taskData)
+  const tasks: any[] = Array.isArray(taskData)
     ? taskData
     : (taskData?.content ?? taskData?.items ?? []);
 
-  // ✅ POST /api/tasks/{id}/submit
+  // ── Page image for selected task ───────────────────────────────
+  const { data: pageData } = usePageImage(selectedTask?.pageId);
+
+  // ── Mutations ──────────────────────────────────────────────────
+  const startMutation = useStartTask();
+
   const submitMutation = useMutation({
+    // POST /api/tasks/{taskId}/submit?fileUrl=...&note=...
     mutationFn: ({ taskId, url, n }: { taskId: string; url: string; n: string }) =>
       taskService.submit(taskId, url, n),
     onSuccess: () => {
@@ -58,25 +186,69 @@ const TaskList = () => {
     onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Nộp thất bại'),
   });
 
-  const closeModal = () => { setShowModal(false); setSelectedTask(null); setFileUrl(''); setUploadFile(null); setNote(''); setSubmitError(''); };
+  // ── Handlers ──────────────────────────────────────────────────
+  const closeModal = () => {
+    setSelectedTask(null);
+    setUploadFile(null);
+    setNote('');
+    setSubmitError('');
+  };
+
+  const handleStart = async (task: any) => {
+    // Optimistic update trước — cập nhật local cache ngay lập tức
+    const updatedTask = { ...task, status: 'in_progress' };
+
+    qc.setQueryData(['tasks', 'my', activeFilter], (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((t: any) => t.id === task.id ? updatedTask : t);
+    });
+    // Update tất cả cache keys liên quan (filter khác)
+    qc.setQueriesData({ queryKey: ['tasks', 'my'] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((t: any) => t.id === task.id ? updatedTask : t);
+    });
+    setSelectedTask(updatedTask);
+
+    // Gọi backend — nếu 500 (chưa có endpoint) thì giữ optimistic, không refetch
+    try {
+      await api.put(`/tasks/${task.id}/start`);
+      // Backend thành công → sync lại
+      qc.invalidateQueries({ queryKey: ['tasks', 'my'] });
+    } catch {
+      // Backend chưa có PUT /tasks/{id}/start → giữ nguyên optimistic
+      // Task sẽ hiển thị "Đang làm" cho đến khi reload trang
+    }
+  };
 
   const handleSubmit = () => {
-    if (!fileUrl && !uploadFile) { setSubmitError('Vui lòng nhập URL hoặc chọn file'); return; }
-    const url = uploadFile ? URL.createObjectURL(uploadFile) : fileUrl;
+    setSubmitError('');
+    if (!uploadFile) { setSubmitError('Vui lòng chọn file kết quả'); return; }
+    const url = URL.createObjectURL(uploadFile);
     submitMutation.mutate({ taskId: selectedTask.id, url, n: note });
   };
 
-  const PRIORITY_MAP: Record<string, string> = {
-    urgent: 'text-red-400 bg-red-500/10 border-red-500/20',
-    high:   'text-orange-400 bg-orange-500/10 border-orange-500/20',
-    normal: 'text-zinc-500 bg-zinc-500/8 border-zinc-500/15',
-    low:    'text-zinc-600 bg-zinc-500/5 border-zinc-500/10',
-  };
+  // ── Derived: cùng series/page → nhóm task (để check resource sharing) ─
+  // Task có cùng pageId → dùng chung tài nguyên (ảnh trang)
+  const samePageTasks = selectedTask
+    ? tasks.filter(t => t.pageId === selectedTask.pageId && t.id !== selectedTask.id)
+    : [];
+  const hasPrevApproved = samePageTasks.some(t => t.status === 'approved');
+
+  const region   = parseRegion(selectedTask?.panelRegion);
+  const imageUrl = pageData?.imageUrl ?? pageData?.thumbnailUrl;
+
+  // ── Modal view mode ────────────────────────────────────────────
+  const modalMode: 'brief' | 'submit' | 'revision' | 'done' =
+    !selectedTask ? 'brief' :
+    selectedTask.status === 'pending'         ? 'brief' :
+    selectedTask.status === 'in_progress'     ? 'submit' :
+    selectedTask.status === 'revision_needed' ? 'revision' :
+    'done';
 
   return (
     <div className="min-h-full bg-[#080e1a] text-white">
 
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="relative border-b border-blue-900/20 overflow-hidden">
         <div className="pointer-events-none absolute -top-20 left-0 w-64 h-64 rounded-full bg-blue-600/8 blur-3xl" />
         <div className="relative px-8 pt-8 pb-6">
@@ -90,14 +262,24 @@ const TaskList = () => {
 
         {/* Filters */}
         <div className="flex items-center gap-1 flex-wrap">
-          {FILTERS.map(f => (
-            <button key={f.id} onClick={() => setActiveFilter(f.id)}
-              className={`px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
-                activeFilter === f.id
-                  ? 'bg-blue-500/15 text-blue-300 border border-blue-500/25'
-                  : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'
-              }`}>{f.label}</button>
-          ))}
+          {FILTERS.map(f => {
+            const count = f.id === 'all' ? tasks.length : tasks.filter(t => t.status === f.id).length;
+            return (
+              <button key={f.id} onClick={() => setActiveFilter(f.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
+                  activeFilter === f.id
+                    ? 'bg-blue-500/15 text-blue-300 border border-blue-500/25'
+                    : 'text-zinc-600 hover:text-zinc-300 hover:bg-white/4'
+                }`}>
+                {f.label}
+                {count > 0 && (
+                  <span className={`text-[10px] px-1.5 rounded-full ${
+                    activeFilter === f.id ? 'bg-blue-500/20 text-blue-300' : 'bg-white/8 text-zinc-500'
+                  }`}>{count}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Task list */}
@@ -105,49 +287,85 @@ const TaskList = () => {
           <div className="rounded-2xl border border-white/5 overflow-hidden">
             {[1,2,3].map(i => (
               <div key={i} className="flex items-center gap-4 px-6 py-4 border-b border-white/4 last:border-0">
-                <div className="flex-1 space-y-2"><div className="h-3 bg-white/5 rounded-full w-48 animate-pulse"/><div className="h-2 bg-white/5 rounded-full w-24 animate-pulse"/></div>
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-white/5 rounded-full w-48 animate-pulse"/>
+                  <div className="h-2 bg-white/5 rounded-full w-24 animate-pulse"/>
+                </div>
               </div>
             ))}
           </div>
         ) : tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-zinc-700">
             <ListTodo className="w-10 h-10 opacity-20" />
-            <p className="text-sm">Không có task nào</p>
+            <p className="text-sm">Không có task nào{activeFilter !== 'all' ? ` ở trạng thái "${FILTERS.find(f=>f.id===activeFilter)?.label}"` : ''}</p>
           </div>
         ) : (
           <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
-            <div className="grid grid-cols-[1fr_7rem_6rem_7rem_5rem] gap-4 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
-              <span>Task</span><span className="text-center">Loại</span><span className="text-center">Ưu tiên</span><span className="text-center">Deadline</span><span className="text-center">Trạng thái</span>
+            <div className="grid grid-cols-[1fr_7rem_6rem_7rem_9rem] gap-4 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
+              <span>Task</span>
+              <span className="text-center">Loại</span>
+              <span className="text-center">Ưu tiên</span>
+              <span className="text-center">Deadline</span>
+              <span className="text-center">Trạng thái</span>
             </div>
             {tasks.map((task: any) => {
               const st = STATUS_MAP[task.status] ?? STATUS_MAP.pending;
+              const isClickable = ['pending','in_progress','revision_needed'].includes(task.status);
               return (
-                <div key={task.id} className="grid grid-cols-[1fr_7rem_6rem_7rem_5rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors group">
+                <div key={task.id}
+                  onClick={() => isClickable && setSelectedTask(task)}
+                  className={`grid grid-cols-[1fr_7rem_6rem_7rem_9rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 transition-colors ${
+                    isClickable ? 'cursor-pointer hover:bg-white/[0.025] group' : 'opacity-70'
+                  }`}>
+
+                  {/* Task name */}
                   <div>
-                    <p className="text-[13px] font-semibold text-white group-hover:text-blue-300 transition-colors">{task.title}</p>
-                    {task.description && <p className="text-[11px] text-zinc-600 mt-0.5 line-clamp-1">{task.description}</p>}
-                    {task.revisionNote && <p className="text-[11px] text-orange-400 mt-1 line-clamp-1">{task.revisionNote}</p>}
+                    <div className="flex items-center gap-2">
+                      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`} />
+                      <p className={`text-[13px] font-semibold text-white transition-colors ${isClickable ? 'group-hover:text-blue-300' : ''}`}>
+                        {task.title}
+                      </p>
+                    </div>
+                    {task.description && (
+                      <p className="text-[11px] text-zinc-600 mt-0.5 ml-3.5 line-clamp-1">{task.description}</p>
+                    )}
+                    {task.revisionNotes && task.status === 'revision_needed' && (
+                      <p className="text-[11px] text-orange-400 mt-1 ml-3.5 line-clamp-1 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 flex-shrink-0" />{task.revisionNotes}
+                      </p>
+                    )}
                   </div>
+
+                  {/* Type */}
                   <div className="text-center">
-                    <span className="text-[11px] text-zinc-500">{task.taskType}</span>
+                    <span className="text-[11px] text-zinc-500">
+                      {TASK_TYPE_LABEL[task.taskType] ?? task.taskType}
+                    </span>
                   </div>
+
+                  {/* Priority */}
                   <div className="flex justify-center">
                     {task.priority && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${PRIORITY_MAP[task.priority] ?? PRIORITY_MAP.normal}`}>
-                        {task.priority === 'urgent' ? 'KHẨN' : task.priority === 'high' ? 'CAO' : task.priority === 'low' ? 'THẤP' : 'TB'}
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${PRIORITY_PILL[task.priority] ?? PRIORITY_PILL.normal}`}>
+                        {PRIORITY_LABEL[task.priority] ?? 'TB'}
                       </span>
                     )}
                   </div>
+
+                  {/* Deadline */}
                   <div className="text-center text-[11px] text-zinc-600">
                     {task.dueDate ? new Date(task.dueDate).toLocaleDateString('vi-VN') : '—'}
                   </div>
+
+                  {/* Status + CTA */}
                   <div className="flex flex-col items-center gap-1.5">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${st.pill}`}>{st.label}</span>
-                    {(task.status === 'pending' || task.status === 'in_progress' || task.status === 'revision_needed') && (
-                      <button onClick={() => { setSelectedTask(task); setShowModal(true); }}
-                        className="text-[10px] text-blue-400 hover:text-blue-300 border border-blue-500/20 px-2 py-0.5 rounded-md hover:bg-blue-500/8 transition-colors">
-                        Nộp
-                      </button>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${st.pill}`}>
+                      {st.label}
+                    </span>
+                    {isClickable && (
+                      <span className="text-[10px] text-zinc-700 flex items-center gap-0.5">
+                        Xem <ChevronRight className="w-3 h-3" />
+                      </span>
                     )}
                   </div>
                 </div>
@@ -157,61 +375,336 @@ const TaskList = () => {
         )}
       </div>
 
-      {/* Submit modal */}
-      {showModal && selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-[#0d1220] border border-blue-900/30 rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-white">{selectedTask.title}</h3>
-                <p className="text-[11px] text-zinc-600">{selectedTask.taskType}</p>
+      {/* ════════════════════════════════════════════
+          MODAL
+      ════════════════════════════════════════════ */}
+      {selectedTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#0d1220] border border-blue-900/30 rounded-2xl shadow-2xl shadow-black/60 flex flex-col max-h-[90vh]">
+
+            {/* Modal header */}
+            <div className="flex items-start justify-between px-5 py-4 border-b border-white/5 flex-shrink-0">
+              <div className="min-w-0 flex-1 mr-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-[13px] font-bold text-white">{selectedTask.title}</h3>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${(STATUS_MAP[selectedTask.status] ?? STATUS_MAP.pending).pill}`}>
+                    {(STATUS_MAP[selectedTask.status] ?? STATUS_MAP.pending).label}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-600 mt-0.5">
+                  {TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
+                  {selectedTask.dueDate && ` · Hạn ${new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}`}
+                </p>
               </div>
-              <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">
+              <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors flex-shrink-0">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {selectedTask.revisionNote && (
-              <div className="p-3 bg-orange-500/8 border border-orange-500/15 rounded-xl">
-                <p className="text-[11px] font-semibold text-orange-400 mb-0.5">Yêu cầu chỉnh sửa:</p>
-                <p className="text-[11px] text-zinc-400">{selectedTask.revisionNote}</p>
-              </div>
-            )}
+            {/* Modal body — scrollable */}
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
 
-            <div>
-              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">File kết quả *</label>
-              <label className={`flex flex-col items-center justify-center h-24 border-2 border-dashed rounded-xl cursor-pointer transition-all ${uploadFile ? 'border-blue-500/40 bg-blue-500/5' : 'border-white/8 hover:border-blue-500/25'}`}>
-                <input type="file" accept="image/*" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
-                {uploadFile
-                  ? <div className="text-center"><CheckCircle2 className="w-5 h-5 text-blue-400 mx-auto mb-1" /><p className="text-xs text-blue-300">{uploadFile.name}</p></div>
-                  : <div className="text-center"><FileImage className="w-5 h-5 text-zinc-700 mx-auto mb-1" /><p className="text-xs text-zinc-600">Click để chọn</p></div>}
-              </label>
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex-1 h-px bg-white/6" />
-                <span className="text-[10px] text-zinc-700">hoặc</span>
-                <div className="flex-1 h-px bg-white/6" />
-              </div>
-              <input type="text" value={fileUrl} onChange={e => { setFileUrl(e.target.value); setUploadFile(null); }}
-                placeholder="URL file kết quả..."
-                className="mt-2 w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 transition-all" />
+              {/* ════ BRIEF (pending) ════ */}
+              {modalMode === 'brief' && (
+                <>
+                  {/* Task description */}
+                  {selectedTask.description && (
+                    <div className="bg-white/3 border border-white/6 rounded-xl px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">Mô tả công việc</p>
+                      <p className="text-[13px] text-zinc-300 leading-relaxed">{selectedTask.description}</p>
+                    </div>
+                  )}
+
+                  {/* Vùng làm việc trên trang */}
+                  {region && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-2">Vùng cần xử lý</p>
+                      <PanelHighlight
+                        imageUrl={imageUrl}
+                        region={region}
+                        label={TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
+                      />
+                      <p className="text-[10px] text-zinc-700 mt-1.5">
+                        Vùng xanh = khu vực bạn cần làm
+                        {` (${Math.round(region.width)}% × ${Math.round(region.height)}%)`}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Tài nguyên hỗ trợ */}
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-2">Tài nguyên hỗ trợ</p>
+                    <div className="space-y-2">
+
+                      {/* File trang truyện gốc */}
+                      {imageUrl ? (
+                        <a href={imageUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 hover:bg-blue-500/12 transition-colors group">
+                          <FileImage className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-semibold text-blue-300">Trang truyện gốc</p>
+                            <p className="text-[10px] text-zinc-600 truncate">{imageUrl}</p>
+                          </div>
+                          <Download className="w-3.5 h-3.5 text-zinc-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                        </a>
+                      ) : selectedTask.pageId ? (
+                        <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/3 border border-white/6">
+                          <Loader2 className="w-4 h-4 text-zinc-600 animate-spin flex-shrink-0" />
+                          <p className="text-[12px] text-zinc-600">Đang tải file trang...</p>
+                        </div>
+                      ) : null}
+
+                      {/* Nếu đã làm task khác trong cùng trang này → không cần tải lại */}
+                      {hasPrevApproved && (
+                        <div className="flex items-start gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                          <p className="text-[11px] text-zinc-400 leading-relaxed">
+                            Bạn đã hoàn thành task khác trên cùng trang này. Tài nguyên hỗ trợ giống nhau — không cần tải lại.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Priority banner nếu urgent */}
+                  {selectedTask.priority === 'urgent' && (
+                    <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-red-500/8 border border-red-500/20">
+                      <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                      <p className="text-[12px] text-red-300 font-semibold">Task khẩn cấp — cần hoàn thành sớm nhất có thể</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ════ SUBMIT (in_progress) ════ */}
+              {modalMode === 'submit' && (
+                <>
+                  {/* Nhắc lại brief ngắn */}
+                  {selectedTask.description && (
+                    <div className="bg-white/3 border border-white/5 rounded-xl px-3.5 py-2.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 mb-1">Yêu cầu</p>
+                      <p className="text-[12px] text-zinc-400 leading-relaxed">{selectedTask.description}</p>
+                    </div>
+                  )}
+
+                  {/* Vùng làm (mini) */}
+                  {region && imageUrl && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">Vùng cần xử lý</p>
+                      <PanelHighlight imageUrl={imageUrl} region={region} />
+                    </div>
+                  )}
+
+                  {/* Upload kết quả */}
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">
+                      File kết quả <span className="text-red-400">*</span>
+                    </label>
+                    <label className={`flex items-center gap-4 w-full border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all ${
+                      uploadFile
+                        ? 'border-blue-500/40 bg-blue-500/5'
+                        : 'border-white/8 hover:border-blue-500/25 hover:bg-white/3'
+                    }`}>
+                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
+                      {uploadFile ? (
+                        <>
+                          <div className="w-12 h-12 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center flex-shrink-0">
+                            <CheckCircle2 className="w-5 h-5 text-blue-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-semibold text-white truncate">{uploadFile.name}</p>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">{(uploadFile.size / 1024).toFixed(0)} KB</p>
+                            <p className="text-[10px] text-blue-400 mt-1">Click để đổi file</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center flex-shrink-0">
+                            <Upload className="w-5 h-5 text-zinc-700" />
+                          </div>
+                          <div>
+                            <p className="text-[12px] text-zinc-400">Click để chọn file kết quả</p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">PNG · JPG · PSD · AI</p>
+                          </div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  {/* Ghi chú */}
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">
+                      Ghi chú cho Mangaka <span className="text-zinc-700 normal-case tracking-normal">(tùy chọn)</span>
+                    </label>
+                    <textarea rows={3} value={note} onChange={e => setNote(e.target.value)}
+                      placeholder="Những điểm đáng chú ý, vấn đề phát sinh, giải thích kỹ thuật..."
+                      className="w-full bg-white/5 border border-white/8 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 resize-none transition-all" />
+                  </div>
+
+                  {submitError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />{submitError}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* ════ REVISION NEEDED ════ */}
+              {modalMode === 'revision' && (
+                <>
+                  {/* Yêu cầu sửa từ Mangaka */}
+                  <div className="bg-orange-500/8 border border-orange-500/20 rounded-xl px-4 py-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-orange-400 flex-shrink-0" />
+                      <p className="text-[11px] font-bold text-orange-400 uppercase tracking-wider">Yêu cầu chỉnh sửa từ Mangaka</p>
+                    </div>
+                    {selectedTask.revisionNotes ? (
+                      <p className="text-[13px] text-zinc-300 leading-relaxed">{selectedTask.revisionNotes}</p>
+                    ) : (
+                      <p className="text-[12px] text-zinc-500 italic">Mangaka chưa để lại ghi chú cụ thể</p>
+                    )}
+                  </div>
+
+                  {/* Vùng được đánh dấu */}
+                  {region && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-2">Vùng cần sửa</p>
+                      <RevisionHighlight imageUrl={imageUrl} region={region} />
+                      <p className="text-[10px] text-orange-400/70 mt-1.5">Vùng cam = khu vực Mangaka yêu cầu sửa</p>
+                    </div>
+                  )}
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-white/6" />
+                    <span className="text-[10px] text-zinc-700">Nộp lại kết quả đã chỉnh sửa</span>
+                    <div className="flex-1 h-px bg-white/6" />
+                  </div>
+
+                  {/* Upload lại */}
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">
+                      File đã chỉnh sửa <span className="text-red-400">*</span>
+                    </label>
+                    <label className={`flex items-center gap-4 w-full border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all ${
+                      uploadFile
+                        ? 'border-orange-500/40 bg-orange-500/5'
+                        : 'border-white/8 hover:border-orange-500/25 hover:bg-white/3'
+                    }`}>
+                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
+                      {uploadFile ? (
+                        <>
+                          <div className="w-12 h-12 rounded-lg bg-orange-500/15 border border-orange-500/25 flex items-center justify-center flex-shrink-0">
+                            <CheckCircle2 className="w-5 h-5 text-orange-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-semibold text-white truncate">{uploadFile.name}</p>
+                            <p className="text-[10px] text-zinc-500">{(uploadFile.size / 1024).toFixed(0)} KB · Click để đổi</p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center flex-shrink-0">
+                            <RotateCcw className="w-5 h-5 text-zinc-700" />
+                          </div>
+                          <div>
+                            <p className="text-[12px] text-zinc-400">Chọn file đã chỉnh sửa</p>
+                            <p className="text-[10px] text-zinc-600 mt-0.5">PNG · JPG · PSD · AI</p>
+                          </div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">Ghi chú thêm</label>
+                    <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
+                      placeholder="Giải thích thay đổi đã thực hiện..."
+                      className="w-full bg-white/5 border border-white/8 rounded-xl px-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500/40 resize-none transition-all" />
+                  </div>
+
+                  {submitError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />{submitError}
+                    </p>
+                  )}
+                </>
+              )}
+
+              {/* ════ DONE (approved / submitted) ════ */}
+              {modalMode === 'done' && (
+                <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
+                  {selectedTask.status === 'approved' ? (
+                    <>
+                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                        <CheckCircle2 className="w-7 h-7 text-emerald-400" />
+                      </div>
+                      <p className="text-sm font-semibold text-white">Mangaka đã duyệt</p>
+                      <p className="text-[12px] text-zinc-500">Công việc hoàn tất. Thu nhập sẽ được cộng vào tháng này.</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center">
+                        <Clock className="w-7 h-7 text-violet-400" />
+                      </div>
+                      <p className="text-sm font-semibold text-white">Đã nộp — chờ duyệt</p>
+                      <p className="text-[12px] text-zinc-500">Mangaka sẽ xem xét và phê duyệt hoặc yêu cầu chỉnh sửa.</p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div>
-              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5">Ghi chú</label>
-              <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
-                placeholder="Ghi chú cho Mangaka..."
-                className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500/40 resize-none transition-all" />
-            </div>
+            {/* Modal footer */}
+            <div className="px-5 py-4 border-t border-white/5 flex-shrink-0">
 
-            {submitError && <p className="text-xs text-red-400">{submitError}</p>}
+              {/* Pending → Bắt đầu */}
+              {modalMode === 'brief' && (
+                <div className="flex gap-2">
+                  <button onClick={closeModal}
+                    className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors">
+                    Đóng
+                  </button>
+                  <button
+                    onClick={() => handleStart(selectedTask)}
+                    disabled={startMutation.isPending}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-bold hover:shadow-lg hover:shadow-blue-600/25 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
+                    {startMutation.isPending
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang cập nhật...</>
+                      : <><Play className="w-3.5 h-3.5" />Bắt đầu làm</>}
+                  </button>
+                </div>
+              )}
 
-            <div className="flex gap-2 pt-1">
-              <button onClick={closeModal} disabled={submitMutation.isPending}
-                className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors">Huỷ</button>
-              <button onClick={handleSubmit} disabled={submitMutation.isPending}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-blue-600/25 disabled:opacity-60 transition-all flex items-center justify-center gap-2">
-                {submitMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nộp...</> : <><Upload className="w-3.5 h-3.5" />Nộp kết quả</>}
-              </button>
+              {/* In_progress / revision → Nộp */}
+              {(modalMode === 'submit' || modalMode === 'revision') && (
+                <div className="flex gap-2">
+                  <button onClick={closeModal} disabled={submitMutation.isPending}
+                    className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors disabled:opacity-50">
+                    Huỷ
+                  </button>
+                  <button onClick={handleSubmit} disabled={submitMutation.isPending || !uploadFile}
+                    className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold hover:shadow-lg disabled:opacity-50 transition-all flex items-center justify-center gap-2 ${
+                      modalMode === 'revision'
+                        ? 'bg-gradient-to-r from-orange-600 to-amber-600 hover:shadow-orange-600/25'
+                        : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:shadow-blue-600/25'
+                    }`}>
+                    {submitMutation.isPending
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang nộp...</>
+                      : modalMode === 'revision'
+                        ? <><RotateCcw className="w-3.5 h-3.5" />Nộp lại</>
+                        : <><Upload className="w-3.5 h-3.5" />Nộp kết quả</>}
+                  </button>
+                </div>
+              )}
+
+              {/* Done */}
+              {modalMode === 'done' && (
+                <button onClick={closeModal}
+                  className="w-full py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 hover:text-white transition-colors">
+                  Đóng
+                </button>
+              )}
             </div>
           </div>
         </div>
