@@ -51,6 +51,9 @@ public class Task {
     @Column(name = "revision_notes", columnDefinition = "TEXT")
     private String revisionNotes;
 
+    @Column(name = "result_file_url", length = 500)
+    private String resultFileUrl;
+
     @Column(name = "payment_amount", precision = 10, scale = 2)
     private BigDecimal paymentAmount;
 

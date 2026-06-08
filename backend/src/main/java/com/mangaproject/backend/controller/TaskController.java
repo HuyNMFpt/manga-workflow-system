@@ -66,6 +66,18 @@ public class TaskController {
     }
 
     /**
+     * PUT /api/tasks/{taskId}/start
+     * Assistant bắt đầu làm task (pending → in_progress)
+     */
+    @PutMapping("/{taskId}/start")
+    public ApiResponse<TaskDTO> startTask(
+            @PathVariable String taskId,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(taskService.startTask(taskId, user.getId()));
+    }
+
+    /**
      * POST /api/tasks/{taskId}/submit
      * Assistant nộp kết quả
      */

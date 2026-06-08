@@ -78,12 +78,31 @@ public class TaskService {
         return mapToDTO(task);
     }
 
+    public TaskDTO startTask(String taskId, String assistantId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task not found"));
+
+        if (!task.getAssignedTo().equals(assistantId)) {
+            throw new RuntimeException("Bạn không có quyền thực hiện task này");
+        }
+
+        if (task.getStatus() != Task.TaskStatus.pending) {
+            throw new RuntimeException("Task không ở trạng thái pending");
+        }
+
+        task.setStatus(Task.TaskStatus.in_progress);
+        task = taskRepository.save(task);
+        return mapToDTO(task);
+    }
+
     public TaskDTO submitTask(String taskId, String fileUrl, String note) {
         Task task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new RuntimeException("Task not found"));
 
         task.setStatus(Task.TaskStatus.submitted);
         task.setSubmittedAt(LocalDateTime.now());
+        if (fileUrl != null) task.setResultFileUrl(fileUrl);
+        if (note != null) task.setRevisionNotes(note);
 
         task = taskRepository.save(task);
         return mapToDTO(task);
@@ -112,23 +131,24 @@ public class TaskService {
     }
 
     private TaskDTO mapToDTO(Task task) {
-        return new TaskDTO(
-                task.getId(),
-                task.getPageId(),
-                task.getAssignedTo(),
-                task.getAssignedBy(),
-                task.getTitle(),
-                task.getDescription(),
-                task.getTaskType().name(),
-                task.getPanelRegion(),
-                task.getPriority().name(),
-                task.getStatus().name(),
-                task.getRevisionNotes(),
-                task.getDueDate() != null ? task.getDueDate().toString() : null,
-                task.getSubmittedAt() != null ? task.getSubmittedAt().toString() : null,
-                task.getApprovedAt() != null ? task.getApprovedAt().toString() : null,
-                task.getCreatedAt().toString(),
-                task.getUpdatedAt() != null ? task.getUpdatedAt().toString() : null
-        );
+        TaskDTO dto = new TaskDTO();
+        dto.setId(task.getId());
+        dto.setPageId(task.getPageId());
+        dto.setAssignedTo(task.getAssignedTo());
+        dto.setAssignedBy(task.getAssignedBy());
+        dto.setTitle(task.getTitle());
+        dto.setDescription(task.getDescription());
+        dto.setTaskType(task.getTaskType().name());
+        dto.setPanelRegion(task.getPanelRegion());
+        dto.setPriority(task.getPriority().name());
+        dto.setStatus(task.getStatus().name());
+        dto.setRevisionNotes(task.getRevisionNotes());
+        dto.setFileUrl(task.getResultFileUrl());
+        dto.setDueDate(task.getDueDate() != null ? task.getDueDate().toString() : null);
+        dto.setSubmittedAt(task.getSubmittedAt() != null ? task.getSubmittedAt().toString() : null);
+        dto.setApprovedAt(task.getApprovedAt() != null ? task.getApprovedAt().toString() : null);
+        dto.setCreatedAt(task.getCreatedAt().toString());
+        dto.setUpdatedAt(task.getUpdatedAt() != null ? task.getUpdatedAt().toString() : null);
+        return dto;
     }
 }

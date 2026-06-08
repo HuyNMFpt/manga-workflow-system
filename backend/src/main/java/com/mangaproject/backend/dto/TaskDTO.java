@@ -17,6 +17,7 @@ public class TaskDTO {
     private String priority;
     private String status;
     private String revisionNotes;
+    private String fileUrl;        // URL file kết quả Assistant đã nộp
     private String dueDate;
     private String submittedAt;
     private String approvedAt;

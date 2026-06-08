@@ -53,9 +53,16 @@ public class BoardService {
 
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
-        List<Submission> submissions = new ArrayList<>();
-        submissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
-        submissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
+        List<Submission> allSubmissions = new ArrayList<>();
+        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
+        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
+
+        // Dedup: chỉ lấy submission mới nhất theo manuscriptId
+        Map<String, Submission> latestByManuscript = new LinkedHashMap<>();
+        for (Submission sub : allSubmissions) {
+            latestByManuscript.putIfAbsent(sub.getManuscriptId(), sub);
+        }
+        List<Submission> submissions = new ArrayList<>(latestByManuscript.values());
 
         return submissions.stream().map(sub -> {
             Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
