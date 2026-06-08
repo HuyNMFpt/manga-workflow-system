@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText, MessageSquare, CheckCircle2, Loader2, AlertCircle,
@@ -60,7 +60,68 @@ const getStatus = (s: string) => STATUS_META[s] ?? {
   desc:'',
 };
 
-// ─── Annotation tags ─────────────────────────────────────────────
+// ─── AnnotationCanvas — click trên ảnh để đặt pin ───────────────
+interface Pin { x: number; y: number }  // % relative to image
+
+interface AnnotationCanvasProps {
+  imageUrl: string;
+  pins: (Pin & { index: number; color: string })[];
+  pendingPin: Pin | null;
+  onClickImage: (pin: Pin) => void;
+}
+
+const PIN_COLORS = [
+  '#f59e0b','#ef4444','#8b5cf6','#06b6d4','#10b981','#f97316',
+];
+
+const AnnotationCanvas = ({ imageUrl, pins, pendingPin, onClickImage }: AnnotationCanvasProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = ((e.clientX - rect.left) / rect.width)  * 100;
+    const y = ((e.clientY - rect.top)  / rect.height) * 100;
+    onClickImage({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      onClick={handleClick}
+      className="relative w-full overflow-hidden rounded-xl border border-amber-500/25 cursor-crosshair select-none bg-black/20"
+      style={{ userSelect: 'none' }}>
+      <img
+        src={imageUrl}
+        alt="Bản thảo"
+        className="w-full object-contain max-h-[500px] pointer-events-none"
+        draggable={false}
+      />
+      {/* Overlay hint */}
+      <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg">
+        <p className="text-[10px] text-amber-300 font-semibold">Click lên trang để đặt pin đánh dấu</p>
+      </div>
+      {/* Existing pins */}
+      {pins.map((pin, i) => (
+        <div key={i}
+          style={{ left:`${pin.x}%`, top:`${pin.y}%`, backgroundColor: pin.color }}
+          className="absolute w-5 h-5 rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 flex items-center justify-center text-[9px] font-black text-white pointer-events-none z-10">
+          {pin.index + 1}
+        </div>
+      ))}
+      {/* Pending pin (chưa submit) */}
+      {pendingPin && (
+        <div
+          style={{ left:`${pendingPin.x}%`, top:`${pendingPin.y}%` }}
+          className="absolute w-5 h-5 rounded-full border-2 border-white bg-amber-400 shadow-lg -translate-x-1/2 -translate-y-1/2 animate-pulse pointer-events-none z-20">
+          <div className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-60" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── Constants ─────────────────────────────────────────────────── (moved up)
 const ANNOTATION_TAGS = [
   { value:'story',    label:'Kịch bản',   color:'bg-violet-500/15 border-violet-500/25 text-violet-300' },
   { value:'dialogue', label:'Thoại',      color:'bg-blue-500/15 border-blue-500/25 text-blue-300'       },
@@ -119,8 +180,10 @@ const ManuscriptReview = () => {
   const [expandedId,   setExpandedId]   = useState<string|null>(null);
 
   // Annotation form
-  const [aForm, setAForm] = useState({ tag:'story', comment:'', pageNumber:'' });
-  const [aErr,  setAErr]  = useState('');
+  const [aForm, setAForm]       = useState({ tag:'story', comment:'', pageNumber:'' });
+  const [aErr,  setAErr]        = useState('');
+  const [pendingPin, setPendingPin] = useState<{ x:number; y:number } | null>(null);
+  const [localPins, setLocalPins] = useState<{ x:number; y:number; tag:string; comment:string; index:number; color:string }[]>([]);
 
   // Return-to-mangaka form
   const [rForm, setRForm] = useState({ type:'needs_minor_revision', reason:'' });
@@ -158,15 +221,43 @@ const ManuscriptReview = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey:['editor','manuscripts'] }),
   });
 
-  // 2. Annotate
-  // Backend: POST /editor/manuscripts/{id}/annotate body: { note }
+  // 2. Annotate — gửi kèm tọa độ pin (x, y tính theo % ảnh)
+  // Backend: POST /editor/manuscripts/{id}/annotate
+  // Body hiện tại: { note: string }
+  // Body cần mở rộng: { note, x?, y?, tag?, pageNumber? }
+  // (Xem BACKEND_TODO để biết cần thêm gì)
   const annotateMutation = useMutation({
-    mutationFn: ({ id, note }: { id:string; note:string }) =>
-      api.post(`/editor/manuscripts/${id}/annotate`, { note }).then(r => r.data),
-    onSuccess: () => {
+    mutationFn: ({ id, note, x, y, tag, pageNumber }:
+      { id:string; note:string; x?:number; y?:number; tag?:string; pageNumber?:string }) =>
+      api.post(`/editor/manuscripts/${id}/annotate`, {
+        note,
+        ...(x != null && y != null ? { x, y } : {}),
+        ...(tag        ? { tag }        : {}),
+        ...(pageNumber ? { pageNumber } : {}),
+      }).then(r => r.data),
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
       setAForm({ tag:'story', comment:'', pageNumber:'' });
       setAErr('');
+      // Thêm vào localPins nếu có tọa độ (từ single-image canvas)
+      if (vars.x != null && vars.y != null && !vars.pageId) {
+        setLocalPins(prev => [...prev, {
+          x: vars.x!, y: vars.y!,
+          tag: vars.tag ?? 'story',
+          comment: vars.note,
+          index: prev.length,
+          color: PIN_COLORS[prev.length % PIN_COLORS.length],
+        }]);
+      }
+      // Xóa pending pin từ grid nếu vừa submit
+      if (vars.pageId) {
+        setPendingPins(prev => {
+          const msId = vars.manuscriptId ?? '';
+          const existing = prev[msId] ?? [];
+          return { ...prev, [msId]: existing.filter(p => !(p.pageId === vars.pageId && p.x === vars.x && p.y === vars.y)) };
+        });
+      }
+      setPendingPin(null);
     },
     onError: (e:any) => setAErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });
@@ -184,6 +275,20 @@ const ManuscriptReview = () => {
       setExpandedId(null);
     },
     onError: (e:any) => setRErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
+  });
+
+  // 4. Đánh dấu Sẵn sàng (under_review → approved)
+  // Backend: PUT /editor/manuscripts/{id}/status body: { status: "approved" }
+  const approveMutation = useMutation({
+    mutationFn: (id: string) =>
+      api.put(`/editor/manuscripts/${id}/status`, { status:'approved', reason:'' }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
+      // Tự động chuyển filter sang "Sẵn sàng" để Editor thấy form nộp Board ngay
+      setActiveFilter('approved');
+      setExpandedId(null);
+    },
+    onError: (e:any) => setRErr(e.response?.data?.message ?? 'Không thể cập nhật trạng thái'),
   });
 
   // 4. Submit lên Board
@@ -205,18 +310,28 @@ const ManuscriptReview = () => {
     if (expandedId === m.id) { setExpandedId(null); return; }
     setExpandedId(m.id);
     setAErr(''); setRErr(''); setBErr('');
-    // Tự động chuyển submitted → under_review khi Editor mở ra
+    setPendingPin(null);
+    setLocalPins([]);
     if (m.status === 'submitted') {
       startReviewMutation.mutate(m.id);
     }
   };
 
+  // Khi Editor click lên trang trong PageGridAnnotator → thêm vào pendingPins
+  // Sau đó Editor điền form text → submit → annotateMutation gửi lên backend
   const handleAnnotate = (msId: string) => {
     setAErr('');
     if (!aForm.comment.trim()) { setAErr('Vui lòng nhập nội dung'); return; }
     const tag = ANNOTATION_TAGS.find(t => t.value === aForm.tag);
-    const note = `[${tag?.label ?? aForm.tag}]${aForm.pageNumber ? ` Trang ${aForm.pageNumber}` : ''}: ${aForm.comment}`;
-    annotateMutation.mutate({ id: msId, note });
+    const note = `[${tag?.label ?? aForm.tag}]${aForm.pageNumber ? ` Trang ${aForm.pageNumber}` : ''}${
+      pendingPin ? ` @(${pendingPin.x}%,${pendingPin.y}%)` : ''
+    }: ${aForm.comment}`;
+    annotateMutation.mutate({
+      id: msId, note,
+      x: pendingPin?.x, y: pendingPin?.y,
+      tag: aForm.tag,
+      pageNumber: aForm.pageNumber || undefined,
+    });
   };
 
   const handleReturn = (msId: string) => {
@@ -392,44 +507,122 @@ const ManuscriptReview = () => {
 
                           <ManuscriptInfo m={m} parsed={parsed} />
 
-                          {/* Annotate */}
-                          <div className="rounded-xl border border-amber-500/15 bg-amber-500/4 p-4 space-y-3">
-                            <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                              <Pen className="w-3.5 h-3.5" />Thêm ghi chú đánh dấu
-                            </p>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {ANNOTATION_TAGS.map(t => (
-                                <button key={t.value}
-                                  onClick={() => setAForm(f => ({ ...f, tag:t.value }))}
-                                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all ${
-                                    aForm.tag === t.value ? t.color : 'bg-white/3 border-white/6 text-zinc-600 hover:text-zinc-300'
-                                  }`}>{t.label}</button>
-                              ))}
-                              <input type="number" min="1" placeholder="Số trang"
-                                value={aForm.pageNumber}
-                                onChange={e => setAForm(f => ({ ...f, pageNumber:e.target.value }))}
-                                className="w-20 bg-white/5 border border-white/8 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500/40" />
+                          {/* ── Annotation trực tiếp lên bản thảo ── */}
+                          <div className="rounded-xl border border-amber-500/20 bg-amber-500/4 overflow-hidden">
+                            <div className="px-4 py-2.5 border-b border-amber-500/10">
+                              <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                <Pen className="w-3.5 h-3.5" />Bản thảo sơ bộ — click để đặt pin đánh dấu
+                              </p>
+                              <p className="text-[10px] text-zinc-600 mt-0.5">
+                                Click trực tiếp lên vị trí cần chỉnh sửa để đặt pin
+                              </p>
                             </div>
-                            <textarea rows={3} value={aForm.comment}
-                              onChange={e => setAForm(f => ({ ...f, comment:e.target.value }))}
-                              placeholder="Nội dung cần chỉnh sửa (thoại, kịch bản, layout...)..."
-                              className={inputCls} />
-                            {aErr && <p className="text-xs text-red-400">{aErr}</p>}
-                            <button onClick={() => handleAnnotate(m.id)} disabled={annotateMutation.isPending}
-                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600/20 border border-amber-500/25 text-amber-300 text-sm font-semibold hover:bg-amber-600/30 disabled:opacity-50 transition-all">
-                              {annotateMutation.isPending
-                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</>
-                                : <><Send className="w-3.5 h-3.5"/>Gửi ghi chú</>}
-                            </button>
+                            <div className="p-4 space-y-3">
+                              {m.fileUrl ? (
+                                /\.(jpg|jpeg|png|gif|webp)$/i.test(m.fileUrl) ? (
+                                  // ── Ảnh: click-to-pin ──
+                                  <AnnotationCanvas
+                                    imageUrl={m.fileUrl}
+                                    pins={localPins}
+                                    pendingPin={pendingPin}
+                                    onClickImage={pin => { setPendingPin(pin); setAErr(''); }}
+                                  />
+                                ) : (
+                                  // ── PDF / file khác: embed + ghi chú text ──
+                                  <div className="space-y-2">
+                                    <div className="rounded-xl overflow-hidden border border-white/8">
+                                      <div className="flex items-center justify-between px-4 py-2.5 bg-white/3 border-b border-white/5">
+                                        <span className="text-[11px] font-semibold text-zinc-400 flex items-center gap-1.5">
+                                          <FileText className="w-3.5 h-3.5 text-amber-400" />File bản thảo
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                          <a href={m.fileUrl} download
+                                            className="text-[11px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
+                                            <Download className="w-3 h-3" />Tải về
+                                          </a>
+                                          <a href={m.fileUrl} target="_blank" rel="noopener noreferrer"
+                                            className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
+                                            <ExternalLink className="w-3 h-3" />Mở tab mới
+                                          </a>
+                                        </div>
+                                      </div>
+                                      {/\.pdf$/i.test(m.fileUrl) ? (
+                                        <iframe src={m.fileUrl} className="w-full h-[500px]" title="Bản thảo PDF" />
+                                      ) : (
+                                        <div className="flex items-center gap-3 px-4 py-6 justify-center">
+                                          <FileText className="w-8 h-8 text-amber-400" />
+                                          <p className="text-sm text-zinc-400">Định dạng không xem trực tiếp được</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-zinc-600 flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" />
+                                      File không phải ảnh — dùng form bên dưới để ghi chú theo số trang
+                                    </p>
+                                  </div>
+                                )
+                              ) : (
+                                <div className="flex items-center gap-2.5 px-3.5 py-4 bg-white/3 border border-white/8 rounded-xl">
+                                  <AlertCircle className="w-4 h-4 text-zinc-600 flex-shrink-0" />
+                                  <p className="text-[11px] text-zinc-500">Mangaka chưa đính kèm file bản thảo</p>
+                                </div>
+                              )}
+
+                              {/* Pin status */}
+                              {pendingPin && (
+                                <div className="flex items-center justify-between px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                                    <p className="text-[11px] text-amber-300">
+                                      Pin tại ({pendingPin.x}%, {pendingPin.y}%) — điền nội dung bên dưới
+                                    </p>
+                                  </div>
+                                  <button onClick={() => setPendingPin(null)}
+                                    className="text-[10px] text-zinc-600 hover:text-white flex items-center gap-0.5 transition-colors">
+                                    <X className="w-3 h-3" />Hủy
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Tag + page + comment */}
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {ANNOTATION_TAGS.map(t => (
+                                  <button key={t.value}
+                                    onClick={() => setAForm(f => ({ ...f, tag:t.value }))}
+                                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all ${
+                                      aForm.tag === t.value ? t.color : 'bg-white/3 border-white/6 text-zinc-600 hover:text-zinc-300'
+                                    }`}>{t.label}</button>
+                                ))}
+                                {!/\.(jpg|jpeg|png|gif|webp)$/i.test(m.fileUrl ?? '') && (
+                                  <input type="number" min="1" placeholder="Trang"
+                                    value={aForm.pageNumber}
+                                    onChange={e => setAForm(f => ({ ...f, pageNumber:e.target.value }))}
+                                    className="w-16 bg-white/5 border border-white/8 rounded-lg px-2.5 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-amber-500/40" />
+                                )}
+                              </div>
+                              <textarea rows={3} value={aForm.comment}
+                                onChange={e => setAForm(f => ({ ...f, comment:e.target.value }))}
+                                placeholder={pendingPin
+                                  ? 'Mô tả vấn đề tại vị trí đã đánh dấu...'
+                                  : 'Nội dung cần chỉnh sửa (thoại, kịch bản, layout...)...'}
+                                className={inputCls} />
+                              {aErr && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{aErr}</p>}
+                              <button onClick={() => handleAnnotate(m.id)} disabled={annotateMutation.isPending}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600/20 border border-amber-500/25 text-amber-300 text-sm font-semibold hover:bg-amber-600/30 disabled:opacity-50 transition-all">
+                                {annotateMutation.isPending
+                                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</>
+                                  : <><Send className="w-3.5 h-3.5"/>{pendingPin ? 'Gửi ghi chú có pin' : 'Gửi ghi chú'}</>}
+                              </button>
+                            </div>
                           </div>
 
                           {/* Existing annotations */}
-                          <ExistingAnnotations annotations={m.annotations} />
+                          <ExistingAnnotations annotations={m.annotations} localPins={localPins} />
 
                           {/* Actions */}
                           <div className="grid grid-cols-2 gap-3 pt-1">
                             <ReturnBox m={m} rForm={rForm} setRForm={setRForm} rErr={rErr} onSubmit={() => handleReturn(m.id)} isPending={returnMutation.isPending} />
-                            <BoardBox quick onQuickBoard={() => { setBErr(''); boardMutation.mutate({ id:m.id, data:bForm }); }}/>
+                            <BoardBox m={m} onApprove={() => approveMutation.mutate(m.id)} isPending={approveMutation.isPending} />
                           </div>
                         </div>
                       )}
@@ -547,21 +740,61 @@ const ManuscriptInfo = ({ m, parsed }: { m: any; parsed: ReturnType<typeof parse
   </div>
 );
 
-const ExistingAnnotations = ({ annotations }: { annotations?: any[] }) => {
-  if (!annotations?.length) return null;
+const ExistingAnnotations = ({
+  annotations, localPins
+}: {
+  annotations?: any[];
+  localPins?: { x:number; y:number; tag:string; comment:string; index:number; color:string }[];
+}) => {
+  // Parse coordinate từ note string: @(x%,y%)
+  const parseCoord = (note: string) => {
+    const m = note.match(/@\((\d+\.?\d*)%,(\d+\.?\d*)%\)/);
+    return m ? { x: parseFloat(m[1]), y: parseFloat(m[2]) } : null;
+  };
+
+  const hasContent = (annotations?.length ?? 0) > 0 || (localPins?.length ?? 0) > 0;
+  if (!hasContent) return null;
+
   return (
     <div>
       <p className="text-[11px] font-bold text-zinc-700 uppercase tracking-wider mb-2">
-        Ghi chú đã có ({annotations.length})
+        Ghi chú đã có ({(annotations?.length ?? 0) + (localPins?.length ?? 0)})
       </p>
       <div className="space-y-1.5">
-        {annotations.map((a: any, i: number) => {
-          const tag = ANNOTATION_TAGS.find(t => t.label === a.tag || t.value === a.tag);
+        {(annotations ?? []).map((a: any, i: number) => {
+          const tag   = ANNOTATION_TAGS.find(t => t.label === a.tag || t.value === a.tag);
+          const coord = parseCoord(a.note ?? a.comment ?? '');
+          const cleanNote = (a.note ?? a.comment ?? '').replace(/@\(\d+\.?\d*%,\d+\.?\d*%\)/g, '').trim();
           return (
             <div key={i} className="flex items-start gap-2 p-2.5 bg-white/3 border border-white/5 rounded-xl">
+              {coord && (
+                <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white border-2 border-white"
+                  style={{ backgroundColor: PIN_COLORS[i % PIN_COLORS.length] }}>
+                  {i + 1}
+                </div>
+              )}
               {tag && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex-shrink-0 ${tag.color}`}>{tag.label}</span>}
-              <p className="text-[12px] text-zinc-400 flex-1">{a.note ?? a.comment}</p>
-              {a.pageNumber && <span className="text-[10px] text-zinc-700 flex-shrink-0">tr.{a.pageNumber}</span>}
+              <p className="text-[12px] text-zinc-400 flex-1">{cleanNote}</p>
+              <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                {a.pageNumber && <span className="text-[10px] text-zinc-700">tr.{a.pageNumber}</span>}
+                {coord && <span className="text-[10px] text-zinc-700">📍{Math.round(coord.x)}%,{Math.round(coord.y)}%</span>}
+              </div>
+            </div>
+          );
+        })}
+        {/* Local pins (chưa reload) */}
+        {(localPins ?? []).map((pin, i) => {
+          const tag = ANNOTATION_TAGS.find(t => t.value === pin.tag);
+          const globalIdx = (annotations?.length ?? 0) + i;
+          return (
+            <div key={`local-${i}`} className="flex items-start gap-2 p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-xl">
+              <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[9px] font-black text-white border-2 border-white"
+                style={{ backgroundColor: pin.color }}>
+                {globalIdx + 1}
+              </div>
+              {tag && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border flex-shrink-0 ${tag.color}`}>{tag.label}</span>}
+              <p className="text-[12px] text-zinc-400 flex-1">{pin.comment.replace(/@\(\d+\.?\d*%,\d+\.?\d*%\)/g,'').replace(/\[[^\]]+\][^:]*:/,'').trim()}</p>
+              <span className="text-[10px] text-zinc-700 flex-shrink-0">📍{Math.round(pin.x)}%,{Math.round(pin.y)}%</span>
             </div>
           );
         })}
@@ -606,19 +839,28 @@ const ReturnBox = ({ m, rForm, setRForm, rErr, onSubmit, isPending }: any) => (
   </div>
 );
 
-const BoardBox = ({ quick, onQuickBoard }: { quick?: boolean; onQuickBoard?: () => void }) => (
-  <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/4 p-4 flex flex-col justify-between gap-3">
+const BoardBox = ({ m, onApprove, isPending }: {
+  m: any;
+  onApprove: () => void;
+  isPending: boolean;
+}) => (
+  <div className="rounded-xl border border-emerald-500/15 bg-emerald-500/4 p-4 flex flex-col gap-3">
     <div>
       <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
         <ArrowUpRight className="w-3.5 h-3.5" />Nộp lên Board
       </p>
-      <p className="text-[11px] text-zinc-600 leading-relaxed">
-        Bản thảo đủ chất lượng? Chuyển sang tab <span className="text-emerald-400">"Sẵn sàng"</span> để điền hồ sơ và nộp Board.
+      <p className="text-[11px] text-zinc-500 leading-relaxed">
+        Bản thảo đã đạt yêu cầu? Đánh dấu <span className="text-emerald-400 font-semibold">"Sẵn sàng"</span> để mở form nộp lên Hội đồng biên tập.
       </p>
     </div>
-    <p className="text-[10px] text-zinc-700 leading-relaxed">
-      Sau khi approve, series sẽ hiện trong filter "Sẵn sàng" với form đầy đủ.
-    </p>
+    <button
+      onClick={onApprove}
+      disabled={isPending}
+      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600/80 to-teal-600/80 border border-emerald-500/30 text-white text-sm font-bold hover:from-emerald-600 hover:to-teal-600 hover:shadow-lg hover:shadow-emerald-600/20 disabled:opacity-50 transition-all">
+      {isPending
+        ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang cập nhật...</>
+        : <><CheckCircle2 className="w-3.5 h-3.5"/>Đánh dấu Sẵn sàng</>}
+    </button>
   </div>
 );
 
