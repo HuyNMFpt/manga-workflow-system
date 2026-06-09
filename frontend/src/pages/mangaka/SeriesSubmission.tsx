@@ -77,20 +77,26 @@ const SeriesSubmission = () => {
         seriesId = createRes.data.data?.id ?? createRes.data.data;
       }
 
-      // Submit manuscript/submission
-      const payload = {
-        seriesId,
-        fileUrl:             uploadedFiles[0] ? URL.createObjectURL(uploadedFiles[0].file) : '',
-        description:         formData.synopsis,
-        targetAudience:      formData.targetAudience,
-        // ✅ Gửi "weekly" cố định — Board sẽ set lịch thật sau khi approve
-        publicationSchedule: 'weekly',
-        characterSummary:    formData.characterSummary,
-        plotSummary:         formData.plotSummary,
-        coverLetter:         formData.coverLetter,
-      };
+      // Submit manuscript — gửi multipart/form-data để backend lưu file thật
+      // Backend: POST /api/manuscripts/submit (multipart/form-data)
+      // Fields: seriesId, file (binary), description, targetAudience,
+      //         publicationSchedule, characterSummary, plotSummary, coverLetter
+      const msForm = new FormData();
+      msForm.append('seriesId',            seriesId);
+      msForm.append('description',         formData.synopsis);
+      msForm.append('targetAudience',      formData.targetAudience);
+      msForm.append('publicationSchedule', 'weekly');
+      msForm.append('characterSummary',    formData.characterSummary);
+      msForm.append('plotSummary',         formData.plotSummary || '');
+      msForm.append('coverLetter',         formData.coverLetter || '');
+      // Đính kèm file thật — backend sẽ lưu và trả về fileUrl thật
+      if (uploadedFiles[0]) {
+        msForm.append('file', uploadedFiles[0].file);
+      }
 
-      await api.post('/manuscripts/submit', payload);
+      await api.post('/manuscripts/submit', msForm, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
     },
     onSuccess: () => setStep('success'),
   });
