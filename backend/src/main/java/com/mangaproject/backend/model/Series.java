@@ -42,6 +42,9 @@ public class Series {
     @Column(name = "publish_schedule")
     private PublishSchedule publishSchedule;
 
+    @Column(name = "publish_schedule_id")
+    private String publishScheduleId;
+
     @Column(name = "cover_image_url")
     private String coverUrl;
 

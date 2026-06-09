@@ -33,6 +33,9 @@ public class User {
     @Column(nullable = false)
     private UserRole role;
 
+    @Column(name = "role_id")
+    private String roleId;
+
     @Column(name = "avatar_url")
     private String avatarUrl;
 

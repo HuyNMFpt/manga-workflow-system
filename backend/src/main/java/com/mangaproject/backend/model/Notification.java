@@ -23,6 +23,9 @@ public class Notification {
     @Column(nullable = false)
     private NotificationType type;
 
+    @Column(name = "notification_type_id")
+    private String notificationTypeId;
+
     @Column(name = "reference_id")
     private String referenceId;
 

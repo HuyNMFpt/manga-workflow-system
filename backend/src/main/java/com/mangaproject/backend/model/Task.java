@@ -37,12 +37,18 @@ public class Task {
     @Column(name = "task_type", nullable = false)
     private TaskType taskType;
 
+    @Column(name = "task_type_id")
+    private String taskTypeId;
+
     @Column(name = "panel_region", columnDefinition = "JSON")
     private String panelRegion;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Priority priority = Priority.normal;
+
+    @Column(name = "priority_id")
+    private String priorityId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
