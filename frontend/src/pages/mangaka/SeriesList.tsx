@@ -155,12 +155,6 @@ export default function SeriesList() {
       {selectedSeries && (
         <SeriesDetailModal series={selectedSeries} onClose={() => setSelectedSeries(null)} />
       )}
-      {selectedSeries && (
-        <SeriesDetailModal
-          series={selectedSeries}
-          onClose={() => setSelectedSeries(null)}
-        />
-      )}
     </div>
   )
 }
