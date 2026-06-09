@@ -123,7 +123,8 @@ public class ManuscriptService {
                 m.getDescription(), m.getStatus().name(),
                 m.getRejectionReason(),
                 m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
-                m.getCreatedAt() != null ? m.getCreatedAt().toString() : null
+                m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
+                null
         );
     }
 

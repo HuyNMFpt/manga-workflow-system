@@ -331,6 +331,7 @@ public class EditorService {
                 manuscript.getDescription(), manuscript.getStatus().name(),
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
-                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null
+                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                null
         );
     }}

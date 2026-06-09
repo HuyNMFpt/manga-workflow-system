@@ -28,10 +28,10 @@ public class ManuscriptAnnotation {
     @Column(length = 50)
     private String tag; // story | dialogue | art | pacing | layout
 
-    @Column(precision = 5, scale = 2)
+    @Column
     private Double x; // % horizontal từ trái ảnh
 
-    @Column(precision = 5, scale = 2)
+    @Column
     private Double y; // % vertical từ trên ảnh
 
     @Column(name = "page_number")

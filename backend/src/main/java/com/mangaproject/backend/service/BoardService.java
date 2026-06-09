@@ -24,6 +24,7 @@ public class BoardService {
     private final ReaderPollRepository readerPollRepository;
     private final UserRepository userRepository;
     private final BoardVoteRepository boardVoteRepository;
+    private final NotificationRepository notificationRepository;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
@@ -183,6 +184,30 @@ public class BoardService {
                 // Rejected
                 submission.setStatus(Submission.SubmissionStatus.rejected);
                 submission.setDecidedAt(LocalDateTime.now());
+
+                // Cập nhật series → cancelled
+                Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
+                if (ms != null) {
+                    Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
+                    if (series != null) {
+                        series.setStatus(Series.SeriesStatus.cancelled);
+                        seriesRepository.save(series);
+
+                        // Gửi notification cho Mangaka
+                        Notification notification = new Notification();
+                        notification.setUserId(series.getMangakaId());
+                        notification.setType(Notification.NotificationType.submission_result);
+                        notification.setReferenceId(series.getId());
+                        notification.setReferenceType("series");
+                        notification.setMessage(String.format(
+                                "Series \"%s\" đã bị Hội đồng biên tập từ chối. Bạn có thể cập nhật và nộp lại.",
+                                series.getTitle()
+                        ));
+                        notificationRepository.save(notification);
+                    }
+                    ms.setStatus(Manuscript.ManuscriptStatus.rejected);
+                    manuscriptRepository.save(ms);
+                }
             }
         }
 
