@@ -2,8 +2,10 @@ package com.mangaproject.backend.service;
 
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.PasswordResetToken;
+import com.mangaproject.backend.model.Role;
 import com.mangaproject.backend.model.User;
 import com.mangaproject.backend.repository.PasswordResetTokenRepository;
+import com.mangaproject.backend.repository.RoleRepository;
 import com.mangaproject.backend.repository.UserRepository;
 import com.mangaproject.backend.security.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +28,7 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final PasswordResetTokenRepository resetTokenRepository;
     private final EmailService emailService;
+    private final RoleRepository roleRepository;
 
     @Value("${app.frontend-url:http://localhost:5173}")
     private String frontendUrl;
@@ -48,11 +51,24 @@ public class AuthService {
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.save(user);
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        String refreshToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
+        String refreshToken = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
 
         UserDTO userDTO = mapToDTO(user);
         return new LoginResponse(userDTO, token, refreshToken);
+    }
+
+    public void changePassword(String email, ChangePasswordRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new RuntimeException("Mật khẩu hiện tại không đúng");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        log.info("Password changed for user: {}", email);
     }
 
     public LoginResponse register(RegisterRequest request) {
@@ -68,13 +84,17 @@ public class AuthService {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setName(request.getName());
-        user.setRole(User.UserRole.valueOf(request.getRole()));
+
+        // Lấy roleId từ bảng roles
+        Role role = roleRepository.findByName(request.getRole())
+                .orElseThrow(() -> new RuntimeException("Invalid role: " + request.getRole()));
+        user.setRoleId(role.getId());
         user.setIsActive(true);
 
         user = userRepository.save(user);
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
-        String refreshToken = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
+        String refreshToken = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
 
         UserDTO userDTO = mapToDTO(user);
         return new LoginResponse(userDTO, token, refreshToken);
@@ -190,7 +210,7 @@ public class AuthService {
                 user.getId(),
                 user.getEmail(),
                 user.getName(),
-                user.getRole().name(),
+                user.getRoleName(),
                 user.getAvatarUrl(),
                 user.getCreatedAt().toString()
         );

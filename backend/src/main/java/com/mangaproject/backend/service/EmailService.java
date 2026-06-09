@@ -24,4 +24,6 @@ public interface EmailService {
      * @throws Exception if email sending fails
      */
     void sendWelcomeEmail(String toEmail, String userName) throws Exception;
+}    void sendAccountCreatedEmail(String toEmail, String name, String role, String tempPassword) throws Exception;
+    void sendPasswordResetByAdminEmail(String toEmail, String name, String tempPassword) throws Exception;
 }

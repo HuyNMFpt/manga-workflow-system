@@ -31,9 +31,18 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    @Operation(summary = "Register", description = "Create new user account")
-    public ApiResponse<LoginResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ApiResponse.success(authService.register(request));
+    @Operation(summary = "Register", description = "Disabled - Only admin can create accounts")
+    public ApiResponse<Void> register() {
+        throw new RuntimeException("Đăng ký trực tiếp không được phép. Vui lòng liên hệ Admin để được cấp tài khoản.");
+    }
+
+    @PutMapping("/change-password")
+    @Operation(summary = "Change Password", description = "User changes their password after first login")
+    public ApiResponse<Void> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication) {
+        authService.changePassword(authentication.getName(), request);
+        return ApiResponse.success(null, "Đổi mật khẩu thành công!");
     }
 
     @GetMapping("/me")
@@ -51,7 +60,7 @@ public class AuthController {
                 user.getId(),
                 user.getEmail(),
                 user.getName(),
-                user.getRole().name(),
+                user.getRoleName(),
                 user.getAvatarUrl(),
                 user.getCreatedAt().toString()
         );
