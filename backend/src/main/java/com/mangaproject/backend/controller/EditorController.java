@@ -45,11 +45,10 @@ public class EditorController {
     @PostMapping("/manuscripts/{id}/annotate")
     public ApiResponse<ManuscriptDTO> addAnnotation(
             @PathVariable String id,
-            @RequestBody Map<String, String> body,
+            @RequestBody AnnotateRequest request,
             Authentication authentication) {
         User user = getUser(authentication);
-        String note = body.get("note");
-        return ApiResponse.success(editorService.addAnnotation(id, user.getId(), note));
+        return ApiResponse.success(editorService.addAnnotation(id, user.getId(), request));
     }
 
     @PostMapping("/manuscripts/{id}/submit-to-board")

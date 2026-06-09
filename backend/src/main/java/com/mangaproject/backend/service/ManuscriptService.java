@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -23,6 +24,16 @@ public class ManuscriptService {
     private final ManuscriptRepository manuscriptRepository;
     private final SubmissionRepository submissionRepository;
     private final SeriesRepository seriesRepository;
+    private final FileStorageService fileStorageService;
+
+    public String uploadManuscriptFile(MultipartFile file) {
+        try {
+            return fileStorageService.storeFile(file, "manuscripts");
+        } catch (Exception e) {
+            log.error("Failed to upload manuscript file", e);
+            throw new RuntimeException("Không thể upload file bản thảo: " + e.getMessage());
+        }
+    }
 
     @Transactional
     public SubmissionDTO createAndSubmit(CreateManuscriptRequest request, String userId) {

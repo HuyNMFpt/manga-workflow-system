@@ -18,6 +18,7 @@ public class EditorService {
 
     private final SeriesRepository seriesRepository;
     private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptAnnotationRepository annotationRepository;
     private final ChapterRepository chapterRepository;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
@@ -135,15 +136,27 @@ public class EditorService {
 
         for (Series series : mySeries) {
             manuscriptRepository.findBySeriesIdOrderByVersionDesc(series.getId()).stream()
-                    // Trả về TẤT CẢ status — frontend tự filter
-                    .map(m -> new ManuscriptDTO(
-                            m.getId(), m.getSeriesId(), series.getTitle(),
-                            m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
-                            m.getDescription(), m.getStatus().name(),
-                            m.getRejectionReason(),
-                            m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
-                            m.getCreatedAt() != null ? m.getCreatedAt().toString() : null
-                    ))
+                    .map(m -> {
+                        List<AnnotationDTO> annotations = annotationRepository
+                                .findByManuscriptIdOrderByCreatedAtAsc(m.getId()).stream()
+                                .map(a -> new AnnotationDTO(
+                                        a.getId(), a.getNote(), a.getTag(),
+                                        a.getX(), a.getY(), a.getPageNumber(),
+                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                                ))
+                                .collect(Collectors.toList());
+
+                        ManuscriptDTO dto = new ManuscriptDTO(
+                                m.getId(), m.getSeriesId(), series.getTitle(),
+                                m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
+                                m.getDescription(), m.getStatus().name(),
+                                m.getRejectionReason(),
+                                m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
+                                m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
+                                annotations
+                        );
+                        return dto;
+                    })
                     .forEach(result::add);
         }
 
@@ -151,17 +164,36 @@ public class EditorService {
     }
 
     // ── Editor thêm annotation/comment lên manuscript ────────────
-    public ManuscriptDTO addAnnotation(String manuscriptId, String editorId, String note) {
+    public ManuscriptDTO addAnnotation(String manuscriptId, String editorId, AnnotateRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
 
-        String existing = manuscript.getDescription() != null ? manuscript.getDescription() : "";
-        manuscript.setDescription(existing + "\n[Editor note]: " + note);
+        // Lưu annotation vào bảng riêng
+        ManuscriptAnnotation annotation = new ManuscriptAnnotation();
+        annotation.setManuscriptId(manuscriptId);
+        annotation.setEditorId(editorId);
+        annotation.setNote(request.getNote() != null ? request.getNote() : "");
+        annotation.setTag(request.getTag());
+        annotation.setX(request.getX());
+        annotation.setY(request.getY());
+        annotation.setPageNumber(request.getPageNumber());
+        annotationRepository.save(annotation);
+
+        // Cập nhật status manuscript → under_review
         manuscript.setStatus(Manuscript.ManuscriptStatus.under_review);
         manuscript = manuscriptRepository.save(manuscript);
 
         Series series = seriesRepository.findById(manuscript.getSeriesId()).orElse(null);
         String seriesTitle = series != null ? series.getTitle() : "";
+
+        List<AnnotationDTO> annotations = annotationRepository
+                .findByManuscriptIdOrderByCreatedAtAsc(manuscriptId).stream()
+                .map(a -> new AnnotationDTO(
+                        a.getId(), a.getNote(), a.getTag(),
+                        a.getX(), a.getY(), a.getPageNumber(),
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                ))
+                .collect(Collectors.toList());
 
         return new ManuscriptDTO(
                 manuscript.getId(), manuscript.getSeriesId(), seriesTitle,
@@ -169,7 +201,8 @@ public class EditorService {
                 manuscript.getDescription(), manuscript.getStatus().name(),
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
-                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null
+                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                annotations
         );
     }
 
@@ -269,23 +302,25 @@ public class EditorService {
         manuscript.setReviewedAt(LocalDateTime.now());
         manuscript = manuscriptRepository.save(manuscript);
 
-        // Series về draft để Mangaka sửa lại
-        series.setStatus(Series.SeriesStatus.draft);
-        seriesRepository.save(series);
+        // Chỉ về draft khi trả lại Mangaka sửa, KHÔNG về draft khi approved
+        if (newStatus == Manuscript.ManuscriptStatus.revision_requested) {
+            series.setStatus(Series.SeriesStatus.draft);
+            seriesRepository.save(series);
 
-        // Gửi notification cho Mangaka
-        if (notificationRepository != null) {
-            Notification notification = new Notification();
-            notification.setUserId(series.getMangakaId());
-            notification.setType(Notification.NotificationType.revision_requested);
-            notification.setReferenceId(manuscriptId);
-            notification.setReferenceType("manuscript");
-            notification.setMessage(String.format(
-                    "Editor yêu cầu chỉnh sửa bản thảo [%s]: %s",
-                    series.getTitle(),
-                    request.getReason() != null ? request.getReason() : "Vui lòng xem lại bản thảo"
-            ));
-            notificationRepository.save(notification);
+            // Gửi notification cho Mangaka
+            if (notificationRepository != null) {
+                Notification notification = new Notification();
+                notification.setUserId(series.getMangakaId());
+                notification.setType(Notification.NotificationType.revision_requested);
+                notification.setReferenceId(manuscriptId);
+                notification.setReferenceType("manuscript");
+                notification.setMessage(String.format(
+                        "Editor yêu cầu chỉnh sửa bản thảo [%s]: %s",
+                        series.getTitle(),
+                        request.getReason() != null ? request.getReason() : "Vui lòng xem lại bản thảo"
+                ));
+                notificationRepository.save(notification);
+            }
         }
 
         log.info("Editor requested revision: manuscriptId={}, editorId={}, status={}", manuscriptId, editorId, newStatus);

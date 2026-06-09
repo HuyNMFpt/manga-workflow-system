@@ -22,12 +22,41 @@ public class ManuscriptController {
      * Mangaka tạo manuscript + submit lên board trong 1 bước
      * Frontend SeriesSubmission gọi endpoint này khi bấm "Nộp hồ sơ"
      */
-    @PostMapping("/submit")
+    @PostMapping(value = "/submit", consumes = {"multipart/form-data", "application/json"})
     public ApiResponse<SubmissionDTO> submitManuscript(
-            @RequestBody CreateManuscriptRequest request,
+            @RequestParam(value = "seriesId") String seriesId,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "targetAudience", required = false) String targetAudience,
+            @RequestParam(value = "publicationSchedule", required = false) String publicationSchedule,
+            @RequestParam(value = "characterSummary", required = false) String characterSummary,
+            @RequestParam(value = "plotSummary", required = false) String plotSummary,
+            @RequestParam(value = "coverLetter", required = false) String coverLetter,
+            @RequestParam(value = "fileUrl", required = false) String fileUrl,
+            @RequestParam(value = "file", required = false) org.springframework.web.multipart.MultipartFile file,
             Authentication authentication) {
 
         User user = getUser(authentication);
+
+        CreateManuscriptRequest request = new CreateManuscriptRequest();
+        request.setSeriesId(seriesId);
+        request.setDescription(description);
+        request.setTargetAudience(targetAudience);
+        request.setPublicationSchedule(publicationSchedule);
+        request.setCharacterSummary(characterSummary);
+        request.setPlotSummary(plotSummary);
+        request.setCoverLetter(coverLetter);
+
+        // Xử lý file upload
+        if (file != null && !file.isEmpty()) {
+            String uploadedUrl = manuscriptService.uploadManuscriptFile(file);
+            request.setFileUrl(uploadedUrl);
+        } else if (fileUrl != null && !fileUrl.startsWith("blob:")) {
+            // Chỉ dùng fileUrl nếu không phải blob URL
+            request.setFileUrl(fileUrl);
+        } else {
+            request.setFileUrl("pending_upload");
+        }
+
         SubmissionDTO result = manuscriptService.createAndSubmit(request, user.getId());
         return ApiResponse.success(result, "Nộp hồ sơ thành công! Hội đồng biên tập sẽ xem xét trong 7 ngày.");
     }

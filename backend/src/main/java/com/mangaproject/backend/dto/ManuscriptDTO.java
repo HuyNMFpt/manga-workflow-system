@@ -1,6 +1,7 @@
 package com.mangaproject.backend.dto;
 
 import lombok.*;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -17,4 +18,5 @@ public class ManuscriptDTO {
     private String rejectionReason;
     private String submittedAt;
     private String createdAt;
+    private List<AnnotationDTO> annotations;
 }
