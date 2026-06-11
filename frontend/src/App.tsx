@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import AppLayout from "@/components/layout/AppLayout"
 import ProtectedRoute from "@/components/shared/ProtectedRoute"
 import LoginPage from "@/pages/auth/LoginPage"
-import UnauthorizedPage from "@/pages/auth/UnauthorizedPage"
 import SignupPage from "@/pages/auth/SignupPage"
 import ForgotPasswordPage from "@/pages/auth/ForgotPasswordPage"
 import ResetPasswordPage from "@/pages/auth/ResetPasswordPage"
+import UnauthorizedPage from "@/pages/auth/UnauthorizedPage"
+import AdminPortal from "@/pages/admin/AdminPortal"
 
 // Mangaka Pages
 import MangakaDashboard from "@/pages/mangaka/MangakaDashboard"
@@ -91,6 +92,11 @@ export default function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />
+
+          {/* Admin Routes */}
+          <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+            <Route path="/admin" element={<AdminPortal />} />
+          </Route>
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>

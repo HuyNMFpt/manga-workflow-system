@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import {
   BookOpen, LayoutDashboard, ListTodo, FileText,
   BarChart2, Users, Bell, LogOut, Layers, X, CheckCheck, Clock,
-  PenTool, Feather, Film, Trophy, Star
+  PenTool, Feather, Film, Trophy, Star, KeyRound, Eye, EyeOff, CheckCircle2
 } from "lucide-react"
 
 const NAV_ITEMS = {
@@ -88,14 +88,42 @@ const ROLE_THEME: Record<string, {
 
 export default function AppLayout() {
   const { user, logout } = useAuthStore()
-  const { unreadCount } = useNotificationStore()
-  const navigate = useNavigate()
-
-
-  const qc = useQueryClient()
   const { setNotifications, markAsRead, markAllAsRead, notifications, unreadCount } = useNotificationStore()
-  const [showNotif, setShowNotif] = useState(false)
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const [showNotif,  setShowNotif]  = useState(false)
+  const [showChangePw, setShowChangePw] = useState(false)
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwErr,  setPwErr]  = useState('')
+  const [pwOk,   setPwOk]   = useState(false)
+  const [showCur, setShowCur] = useState(false)
+  const [showNew, setShowNew] = useState(false)
   const bellRef = useRef<HTMLDivElement>(null)
+
+  // PUT /api/auth/change-password
+  const changePwMutation = useMutation({
+    mutationFn: () => api.put('/auth/change-password', {
+      currentPassword: pwForm.current,
+      newPassword:     pwForm.next,
+    }).then(r => r.data),
+    onSuccess: () => { setPwOk(true); setPwErr('') },
+    onError: (e: any) => setPwErr(e.response?.data?.message ?? 'Đổi mật khẩu thất bại'),
+  })
+
+  const handleChangePw = () => {
+    setPwErr('')
+    if (!pwForm.current)          { setPwErr('Nhập mật khẩu hiện tại'); return }
+    if (pwForm.next.length < 6)   { setPwErr('Mật khẩu mới cần ít nhất 6 ký tự'); return }
+    if (pwForm.next !== pwForm.confirm) { setPwErr('Mật khẩu xác nhận không khớp'); return }
+    changePwMutation.mutate()
+  }
+
+  const closePw = () => {
+    setShowChangePw(false)
+    setPwForm({ current:'', next:'', confirm:'' })
+    setPwErr(''); setPwOk(false)
+    setShowCur(false); setShowNew(false)
+  }
 
   // Fetch notifications từ backend
   // GET /api/notifications → res.data.data = Notification[]
@@ -206,6 +234,10 @@ export default function AppLayout() {
               <p className="text-[11px] text-gray-500 truncate leading-tight">{user.email}</p>
             </div>
           </div>
+          <button onClick={() => setShowChangePw(true)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] text-gray-500 hover:bg-white/5 hover:text-white transition-colors">
+            <KeyRound className="w-3 h-3" />Đổi mật khẩu
+          </button>
           <button onClick={handleLogout}
             className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] text-gray-500 hover:bg-red-500/10 hover:text-red-400 transition-colors">
             <LogOut className="w-3 h-3" />Đăng xuất
@@ -291,5 +323,84 @@ export default function AppLayout() {
         </main>
       </div>
     </div>
+
+    {/* ── Change Password Modal ── */}
+    {showChangePw && (
+      <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="w-full max-w-sm bg-[#111118] border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-violet-400" />
+              <h2 className="text-[13px] font-bold text-white">Đổi mật khẩu</h2>
+            </div>
+            <button onClick={closePw}
+              className="w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-white transition-colors">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            {pwOk ? (
+              <div className="flex flex-col items-center py-6 gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                </div>
+                <p className="text-sm font-semibold text-white">Đổi mật khẩu thành công!</p>
+                <button onClick={closePw}
+                  className="px-4 py-2 rounded-xl bg-emerald-600/20 border border-emerald-500/25 text-emerald-300 text-sm">
+                  Đóng
+                </button>
+              </div>
+            ) : (
+              <>
+                {[
+                  { key:'current', label:'Mật khẩu hiện tại', show: showCur, toggle: ()=>setShowCur(v=>!v) },
+                  { key:'next',    label:'Mật khẩu mới',      show: showNew, toggle: ()=>setShowNew(v=>!v) },
+                  { key:'confirm', label:'Xác nhận mật khẩu mới', show: showNew, toggle: ()=>setShowNew(v=>!v) },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">
+                      {f.label}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={f.show ? 'text' : 'password'}
+                        value={(pwForm as any)[f.key]}
+                        onChange={e => setPwForm(p => ({ ...p, [f.key]: e.target.value }))}
+                        className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 pr-10 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/40 transition-all"
+                        placeholder="••••••••"
+                      />
+                      <button type="button" onClick={f.toggle}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-300 transition-colors">
+                        {f.show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {pwErr && (
+                  <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/15 rounded-xl px-3 py-2">
+                    {pwErr}
+                  </p>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={closePw}
+                    className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors">
+                    Huỷ
+                  </button>
+                  <button onClick={handleChangePw} disabled={changePwMutation.isPending}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                    {changePwMutation.isPending
+                      ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin inline-block" />Đang đổi...</>
+                      : 'Xác nhận'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
   )
 }

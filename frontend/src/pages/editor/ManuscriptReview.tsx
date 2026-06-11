@@ -523,7 +523,26 @@ const ManuscriptReview = () => {
                                   // ── Ảnh: click-to-pin ──
                                   <AnnotationCanvas
                                     imageUrl={m.fileUrl}
-                                    pins={localPins}
+                                    pins={[
+                                      // Pins đã lưu từ backend (m.annotations có x, y)
+                                      ...(m.annotations ?? [])
+                                        .filter((a: any) => a.x != null && a.y != null)
+                                        .map((a: any, i: number) => ({
+                                          x:     a.x,
+                                          y:     a.y,
+                                          index: i,
+                                          color: PIN_COLORS[i % PIN_COLORS.length],
+                                        })),
+                                      // Pins vừa tạo trong session (chưa reload)
+                                      ...localPins.map((p, i) => ({
+                                        ...p,
+                                        index: (m.annotations?.filter((a:any) => a.x != null)?.length ?? 0) + i,
+                                        color: PIN_COLORS[
+                                          ((m.annotations?.filter((a:any) => a.x != null)?.length ?? 0) + i)
+                                          % PIN_COLORS.length
+                                        ],
+                                      })),
+                                    ]}
                                     pendingPin={pendingPin}
                                     onClickImage={pin => { setPendingPin(pin); setAErr(''); }}
                                   />

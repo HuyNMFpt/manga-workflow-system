@@ -3,7 +3,7 @@
 // ============================================================
 
 // ✅ Backend roles: mangaka | assistant | editor | board_member
-export type UserRole = "mangaka" | "assistant" | "editor" | "board_member"
+export type UserRole = "mangaka" | "assistant" | "editor" | "board_member" | "admin"
 
 export interface User {
   id: string
