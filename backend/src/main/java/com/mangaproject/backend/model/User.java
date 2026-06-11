@@ -5,7 +5,6 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
-
 @Entity
 @Table(name = "users")
 @Data
@@ -29,12 +28,12 @@ public class User {
     @Column(name = "display_name")
     private String name;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private UserRole role;
-
-    @Column(name = "role_id")
+    @Column(name = "role_id", insertable = false, updatable = false)
     private String roleId;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "role_id")
+    private Role role;
 
     @Column(name = "avatar_url")
     private String avatarUrl;
@@ -58,5 +57,9 @@ public class User {
 
     public enum UserRole {
         mangaka, assistant, editor, board_member, admin
+    }
+
+    public String getRoleName() {
+        return role != null ? role.getName() : null;
     }
 }
