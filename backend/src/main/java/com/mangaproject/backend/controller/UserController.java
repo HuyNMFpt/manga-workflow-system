@@ -22,7 +22,7 @@ public class UserController {
     @GetMapping("/assistants")
     public ApiResponse<List<AssistantDTO>> getAssistants() {
         List<AssistantDTO> assistants = userRepository
-                .findByRole(User.UserRole.assistant).stream()
+                .findByRole_Name("assistant").stream()
                 .map(u -> new AssistantDTO(
                         u.getId(),
                         u.getName() != null ? u.getName() : u.getUsername(),
@@ -37,7 +37,7 @@ public class UserController {
     @GetMapping("/editors")
     public ApiResponse<List<EditorDTO>> getEditors() {
         List<EditorDTO> editors = userRepository
-                .findByRole(User.UserRole.editor).stream()
+                .findByRole_Name("editor").stream()
                 .map(u -> new EditorDTO(
                         u.getId(),
                         u.getName() != null ? u.getName() : u.getUsername(),
