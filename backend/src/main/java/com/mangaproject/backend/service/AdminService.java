@@ -36,7 +36,6 @@ public class AdminService {
             throw new RuntimeException("Email đã tồn tại trong hệ thống");
         }
 
-        // Không cho tạo account admin qua endpoint này
         if ("admin".equals(request.getRole())) {
             throw new RuntimeException("Không thể tạo tài khoản Admin qua endpoint này");
         }
@@ -44,8 +43,8 @@ public class AdminService {
         Role role = roleRepository.findByName(request.getRole())
                 .orElseThrow(() -> new RuntimeException("Role không hợp lệ: " + request.getRole()));
 
-        // Generate mật khẩu tạm ngẫu nhiên
-        String tempPassword = generateTempPassword();
+        // Dùng password Admin nhập thay vì random
+        String tempPassword = request.getTempPassword();
 
         String username = request.getEmail().split("@")[0] + "_" + System.currentTimeMillis() % 10000;
 
@@ -59,20 +58,24 @@ public class AdminService {
 
         user = userRepository.save(user);
 
-        // Gửi email thông tin đăng nhập
+        // Gửi email đến personalEmail nếu có, nếu không thì gửi đến email công ty
+        String emailTarget = (request.getPersonalEmail() != null && !request.getPersonalEmail().isBlank())
+                ? request.getPersonalEmail()
+                : request.getEmail();
+
         try {
             emailService.sendAccountCreatedEmail(
-                    request.getEmail(),
+                    emailTarget,
                     request.getName(),
                     request.getRole(),
                     tempPassword
             );
         } catch (Exception e) {
-            log.error("Failed to send account creation email to {}: {}", request.getEmail(), e.getMessage());
+            log.error("Failed to send account creation email to {}: {}", emailTarget, e.getMessage());
         }
 
         log.info("Admin created user: email={}, role={}", request.getEmail(), request.getRole());
-        return mapToDTO(user);
+        return mapToDTOWithPassword(user, tempPassword);
     }
 
     public UserDTO updateUser(String id, CreateUserRequest request) {
@@ -80,6 +83,7 @@ public class AdminService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (request.getName() != null) user.setName(request.getName());
+        if (request.getEmail() != null) user.setEmail(request.getEmail());
         if (request.getRole() != null) {
             Role role = roleRepository.findByName(request.getRole())
                     .orElseThrow(() -> new RuntimeException("Role không hợp lệ"));
@@ -88,6 +92,16 @@ public class AdminService {
 
         user = userRepository.save(user);
         return mapToDTO(user);
+    }
+
+    public void deleteUser(String id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if ("admin".equals(user.getRoleName())) {
+            throw new RuntimeException("Không thể xóa tài khoản Admin");
+        }
+        userRepository.delete(user);
+        log.info("Admin deleted user: id={}, email={}", id, user.getEmail());
     }
 
     public UserDTO toggleActive(String id) {
@@ -134,7 +148,20 @@ public class AdminService {
                 user.getName(),
                 user.getRoleName(),
                 user.getAvatarUrl(),
-                user.getCreatedAt() != null ? user.getCreatedAt().toString() : null
+                user.getCreatedAt() != null ? user.getCreatedAt().toString() : null,
+                null
+        );
+    }
+
+    private UserDTO mapToDTOWithPassword(User user, String tempPassword) {
+        return new UserDTO(
+                user.getId(),
+                user.getEmail(),
+                user.getName(),
+                user.getRoleName(),
+                user.getAvatarUrl(),
+                user.getCreatedAt() != null ? user.getCreatedAt().toString() : null,
+                tempPassword
         );
     }
 }

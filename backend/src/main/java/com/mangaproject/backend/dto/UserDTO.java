@@ -14,4 +14,5 @@ public class UserDTO {
     private String role;
     private String avatarUrl;
     private String createdAt;
+    private String tempPassword; // chỉ trả về khi tạo mới
 }

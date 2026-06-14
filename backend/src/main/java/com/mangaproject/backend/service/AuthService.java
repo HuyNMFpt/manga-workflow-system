@@ -212,7 +212,8 @@ public class AuthService {
                 user.getName(),
                 user.getRoleName(),
                 user.getAvatarUrl(),
-                user.getCreatedAt().toString()
+                user.getCreatedAt().toString(),
+                null
         );
     }
 }

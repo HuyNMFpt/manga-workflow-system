@@ -48,6 +48,15 @@ public class AdminController {
     }
 
     // PUT /api/admin/users/{id}/toggle-active — Kích hoạt/vô hiệu hóa account
+    @DeleteMapping("/users/{id}")
+    public ApiResponse<Void> deleteUser(
+            @PathVariable String id,
+            Authentication authentication) {
+        checkAdmin(authentication);
+        adminService.deleteUser(id);
+        return ApiResponse.success(null, "Đã xóa tài khoản");
+    }
+
     @PutMapping("/users/{id}/toggle-active")
     public ApiResponse<UserDTO> toggleActive(
             @PathVariable String id,

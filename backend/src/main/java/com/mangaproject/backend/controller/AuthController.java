@@ -62,7 +62,8 @@ public class AuthController {
                 user.getName(),
                 user.getRoleName(),
                 user.getAvatarUrl(),
-                user.getCreatedAt().toString()
+                user.getCreatedAt().toString(),
+                null
         );
 
         return ApiResponse.success(userDTO);
