@@ -67,8 +67,7 @@ export default function AdminPortal() {
   })
 
   // ── POST /api/admin/users ─────────────────────────────────
-  // Backend: CreateUserRequest { email, name, role, tempPassword?, personalEmail? }
-  // NOTE: backend cần thêm 2 fields: tempPassword (string), personalEmail (string?)
+  // Backend: POST /api/admin/users — CreateUserRequest
   const createMutation = useMutation({
     mutationFn: () => api.post('/admin/users', {
       email:         form.companyEmail.trim(),
@@ -108,7 +107,6 @@ export default function AdminPortal() {
   })
 
   // ── DELETE /api/admin/users/{id} ─────────────────────────
-  // NOTE: backend cần thêm endpoint DELETE /api/admin/users/{id}
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/users/${id}`).then(r => r.data),
     onSuccess: () => {
@@ -119,9 +117,20 @@ export default function AdminPortal() {
   })
 
   // ── PUT /api/admin/users/{id}/toggle-active ───────────────
+  // Backend trả về UserDTO với isActive đã đổi → optimistic update ngay
   const toggleMutation = useMutation({
     mutationFn: (id: string) => api.put(`/admin/users/${id}/toggle-active`).then(r => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin','users'] }),
+    onSuccess: (res) => {
+      const updated = res.data
+      if (updated?.id) {
+        // Update cache ngay không cần refetch
+        qc.setQueryData(['admin', 'users'], (old: any[]) =>
+          old?.map(u => u.id === updated.id ? { ...u, isActive: updated.isActive } : u) ?? []
+        )
+      } else {
+        qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+      }
+    },
   })
 
   // ── POST /api/admin/users/{id}/reset-password ─────────────
