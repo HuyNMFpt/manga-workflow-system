@@ -33,6 +33,7 @@ export const ROLE_HOME: Record<UserRole, string> = {
   assistant: "/assistant",
   editor: "/editor",
   board_member: "/board",
+  admin: "/admin",
 }
 
 export const GENRE_OPTIONS = [

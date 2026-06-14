@@ -167,6 +167,7 @@ export default function AppLayout() {
   const handleLogout = () => { logout(); navigate("/login") }
 
   return (
+    <>
     <div className={cn(
       "flex h-screen overflow-hidden font-['Instrument_Sans']",
       "bg-gradient-to-br from-[#080810] via-[#0d0d18] to-[#060612]"
@@ -402,5 +403,6 @@ export default function AppLayout() {
         </div>
       </div>
     )}
+    </>
   )
 }

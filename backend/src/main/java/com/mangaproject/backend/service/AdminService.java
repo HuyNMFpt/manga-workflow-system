@@ -54,7 +54,7 @@ public class AdminService {
         user.setEmail(request.getEmail());
         user.setPassword(passwordEncoder.encode(tempPassword));
         user.setName(request.getName());
-        user.setRoleId(role.getId());
+        user.setRole(role);
         user.setIsActive(true);
 
         user = userRepository.save(user);
@@ -83,7 +83,7 @@ public class AdminService {
         if (request.getRole() != null) {
             Role role = roleRepository.findByName(request.getRole())
                     .orElseThrow(() -> new RuntimeException("Role không hợp lệ"));
-            user.setRoleId(role.getId());
+            user.setRole(role);
         }
 
         user = userRepository.save(user);
