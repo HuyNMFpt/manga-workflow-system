@@ -55,6 +55,9 @@ public class User {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(name = "personal_email")
+    private String personalEmail;
+
     public enum UserRole {
         mangaka, assistant, editor, board_member, admin
     }

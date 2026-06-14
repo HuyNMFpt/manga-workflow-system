@@ -206,14 +206,14 @@ public class AuthService {
     }
 
     private UserDTO mapToDTO(User user) {
-        return new UserDTO(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getRoleName(),
-                user.getAvatarUrl(),
-                user.getCreatedAt().toString(),
-                null
-        );
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId());
+        dto.setEmail(user.getEmail());
+        dto.setName(user.getName());
+        dto.setRole(user.getRoleName());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+        dto.setIsActive(user.getIsActive());
+        return dto;
     }
 }

@@ -1,6 +1,7 @@
 package com.mangaproject.backend.service;
 
 import com.mangaproject.backend.dto.CreateUserRequest;
+import com.mangaproject.backend.service.GmailEmailService;
 import com.mangaproject.backend.dto.UserDTO;
 import com.mangaproject.backend.model.Role;
 import com.mangaproject.backend.model.User;
@@ -55,6 +56,9 @@ public class AdminService {
         user.setName(request.getName());
         user.setRole(role);
         user.setIsActive(true);
+        if (request.getPersonalEmail() != null && !request.getPersonalEmail().isBlank()) {
+            user.setPersonalEmail(request.getPersonalEmail());
+        }
 
         user = userRepository.save(user);
 
@@ -64,12 +68,22 @@ public class AdminService {
                 : request.getEmail();
 
         try {
-            emailService.sendAccountCreatedEmail(
-                    emailTarget,
-                    request.getName(),
-                    request.getRole(),
-                    tempPassword
-            );
+            if (emailService instanceof GmailEmailService gmailService) {
+                gmailService.sendAccountCreatedEmail(
+                        emailTarget,           // nơi nhận
+                        request.getEmail(),    // email công ty hiển thị trong nội dung
+                        request.getName(),
+                        request.getRole(),
+                        tempPassword
+                );
+            } else {
+                emailService.sendAccountCreatedEmail(
+                        emailTarget,
+                        request.getName(),
+                        request.getRole(),
+                        tempPassword
+                );
+            }
         } catch (Exception e) {
             log.error("Failed to send account creation email to {}: {}", emailTarget, e.getMessage());
         }
@@ -120,14 +134,17 @@ public class AdminService {
         user.setPassword(passwordEncoder.encode(tempPassword));
         userRepository.save(user);
 
+        String resetTarget = (user.getPersonalEmail() != null && !user.getPersonalEmail().isBlank())
+                ? user.getPersonalEmail()
+                : user.getEmail();
         try {
             emailService.sendPasswordResetByAdminEmail(
-                    user.getEmail(),
+                    resetTarget,
                     user.getName(),
                     tempPassword
             );
         } catch (Exception e) {
-            log.error("Failed to send reset email to {}: {}", user.getEmail(), e.getMessage());
+            log.error("Failed to send reset email to {}: {}", resetTarget, e.getMessage());
         }
     }
 
@@ -142,26 +159,30 @@ public class AdminService {
     }
 
     private UserDTO mapToDTO(User user) {
-        return new UserDTO(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getRoleName(),
-                user.getAvatarUrl(),
-                user.getCreatedAt() != null ? user.getCreatedAt().toString() : null,
-                null
-        );
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId());
+        dto.setEmail(user.getEmail());
+        dto.setName(user.getName());
+        dto.setRole(user.getRoleName());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+        dto.setIsActive(user.getIsActive());
+        dto.setTempPassword(null);
+        dto.setPersonalEmail(user.getPersonalEmail());
+        return dto;
     }
 
     private UserDTO mapToDTOWithPassword(User user, String tempPassword) {
-        return new UserDTO(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getRoleName(),
-                user.getAvatarUrl(),
-                user.getCreatedAt() != null ? user.getCreatedAt().toString() : null,
-                tempPassword
-        );
+        UserDTO dto = new UserDTO();
+        dto.setId(user.getId());
+        dto.setEmail(user.getEmail());
+        dto.setName(user.getName());
+        dto.setRole(user.getRoleName());
+        dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+        dto.setIsActive(user.getIsActive());
+        dto.setTempPassword(tempPassword);
+        dto.setPersonalEmail(user.getPersonalEmail());
+        return dto;
     }
 }

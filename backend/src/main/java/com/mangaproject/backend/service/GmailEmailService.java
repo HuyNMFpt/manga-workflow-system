@@ -106,6 +106,11 @@ public class GmailEmailService implements EmailService {
 
     @Override
     public void sendAccountCreatedEmail(String toEmail, String name, String role, String tempPassword) throws Exception {
+        // Gọi overload mới, dùng toEmail làm cả nơi nhận lẫn email hiển thị
+        sendAccountCreatedEmail(toEmail, toEmail, name, role, tempPassword);
+    }
+
+    public void sendAccountCreatedEmail(String toEmail, String companyEmail, String name, String role, String tempPassword) throws Exception {
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
@@ -128,17 +133,17 @@ public class GmailEmailService implements EmailService {
                     <p>Tài khoản của bạn đã được tạo với vai trò <strong>%s</strong>.</p>
                     <p>Thông tin đăng nhập:</p>
                     <ul>
-                        <li><strong>Email:</strong> %s</li>
+                        <li><strong>Email đăng nhập:</strong> %s</li>
                         <li><strong>Mật khẩu tạm:</strong> <code>%s</code></li>
                     </ul>
                     <p style="color: red;"><strong>Vui lòng đổi mật khẩu ngay sau khi đăng nhập lần đầu!</strong></p>
                     <p>Truy cập: <a href="http://localhost:5173">http://localhost:5173</a></p>
                 </div>
-                """.formatted(name, roleDisplay, toEmail, tempPassword);
+                """.formatted(name, roleDisplay, companyEmail, tempPassword);
 
             helper.setText(htmlContent, true);
             mailSender.send(message);
-            log.info("Account created email sent to: {}", toEmail);
+            log.info("Account created email sent to: {} (company email: {})", toEmail, companyEmail);
         } catch (Exception e) {
             log.error("Failed to send account created email to: {}", toEmail, e);
             throw new Exception("Failed to send account created email", e);

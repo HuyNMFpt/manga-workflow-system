@@ -56,15 +56,14 @@ public class AuthController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        UserDTO userDTO = new UserDTO(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getRoleName(),
-                user.getAvatarUrl(),
-                user.getCreatedAt().toString(),
-                null
-        );
+        UserDTO userDTO = new UserDTO();
+        userDTO.setId(user.getId());
+        userDTO.setEmail(user.getEmail());
+        userDTO.setName(user.getName());
+        userDTO.setRole(user.getRoleName());
+        userDTO.setAvatarUrl(user.getAvatarUrl());
+        userDTO.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+        userDTO.setIsActive(user.getIsActive());
 
         return ApiResponse.success(userDTO);
     }
