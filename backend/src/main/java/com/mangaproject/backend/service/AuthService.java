@@ -47,6 +47,11 @@ public class AuthService {
             throw new RuntimeException("Invalid credentials");
         }
 
+        // Check tài khoản có bị vô hiệu hóa không
+        if (Boolean.FALSE.equals(user.getIsActive())) {
+            throw new RuntimeException("Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ Admin.");
+        }
+
         // Update last login
         user.setLastLoginAt(LocalDateTime.now());
         userRepository.save(user);
