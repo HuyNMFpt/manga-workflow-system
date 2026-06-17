@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, MousePointer, Trash2, Send, CheckCircle2, AlertCircle, Loader2, ChevronDown, Crosshair } from 'lucide-react';
 import api from '@/lib/axios';
@@ -29,6 +30,7 @@ const TASK_TYPES: {value:TaskType;label:string;color:string;dot:string}[] = [
 
 const TaskAssignment = () => {
   const qc = useQueryClient();
+  const location = useLocation();
   const [selectedSeriesId,   setSelectedSeriesId]   = useState('');
   const [selectedChapterId,  setSelectedChapterId]  = useState('');
   const [selectedPageNum,    setSelectedPageNum]    = useState(1);
@@ -40,6 +42,13 @@ const TaskAssignment = () => {
   const [tempTask,           setTempTask]           = useState<Partial<LocalTask>|null>(null);
   const [submitSuccess,      setSubmitSuccess]      = useState(false);
   const [submitError,        setSubmitError]        = useState('');
+
+  // Auto-select series + chapter nếu được navigate từ ChapterManager
+  useEffect(() => {
+    const state = location.state as { seriesId?: string; chapterId?: string } | null;
+    if (state?.seriesId)  setSelectedSeriesId(state.seriesId);
+    if (state?.chapterId) setSelectedChapterId(state.chapterId);
+  }, [location.state]);
 
   const { data:allSeries=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
 

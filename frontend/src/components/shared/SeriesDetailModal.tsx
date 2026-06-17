@@ -12,7 +12,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   X, Feather, AlertTriangle, Trash2, RefreshCw,
   Send, CheckCircle2, Loader2, BookOpen, Clock,
-  XCircle, PenLine, Info
+  XCircle, PenLine, Info, Calendar
 } from 'lucide-react'
 import api from '@/lib/axios'
 import CreateSeriesModal from '@/components/shared/CreateSeriesModal'
@@ -42,7 +42,13 @@ const STATUS_INFO: Record<string, { label: string; color: string; dot: string; d
   cancelled:   { label: 'Đã hủy',     color: 'text-red-400',     dot: 'bg-red-500',     desc: 'Series đã bị hủy hoặc không được duyệt'},
 }
 
-export default function SeriesDetailModal({ series, onClose }: Props) {
+// ── Schedule label ─────────────────────────────────────────────────
+const SCHEDULE_LABEL: Record<string, { label: string; desc: string }> = {
+  weekly:   { label: 'Hàng tuần',  desc: '~4 chapter/tháng' },
+  biweekly: { label: '2 tuần/lần', desc: '~2 chapter/tháng' },
+  monthly:  { label: 'Hàng tháng', desc: '1 chapter/tháng'  },
+}
+const scheduleInfo = (s?: string) => s ? (SCHEDULE_LABEL[s] ?? { label: s, desc: '' }) : null
   const qc = useQueryClient()
   const st = STATUS_INFO[series.status] ?? STATUS_INFO.draft
 
@@ -226,6 +232,21 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
               {/* ── PUBLISHING actions ────────────────────── */}
               {series.status === 'publishing' && (
                 <div className="space-y-2">
+                  {/* Lịch xuất bản */}
+                  {scheduleInfo(series.schedule) && (
+                    <div className="flex items-center gap-3 px-4 py-3 bg-violet-500/8 border border-violet-500/15 rounded-xl">
+                      <Calendar className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-0.5">Lịch xuất bản</p>
+                        <p className="text-sm font-semibold text-violet-300">
+                          {scheduleInfo(series.schedule)!.label}
+                          <span className="text-[11px] text-zinc-500 font-normal ml-2">
+                            {scheduleInfo(series.schedule)!.desc}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Thao tác</p>
                   <button onClick={() => setView('message')}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-500/8 border border-violet-500/15 hover:bg-violet-500/12 transition-all text-left">
@@ -286,12 +307,28 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
 
               {/* ── APPROVED ─────────────────────────────── */}
               {series.status === 'approved' && (
-                <div className="flex items-start gap-2.5 p-3 bg-emerald-500/8 border border-emerald-500/15 rounded-xl">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-semibold text-emerald-300">Series đã được duyệt!</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">Tantou Editor sẽ tiếp nhận và bắt đầu quản lý sản xuất.</p>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2.5 p-3 bg-emerald-500/8 border border-emerald-500/15 rounded-xl">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-300">Series đã được duyệt!</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Tantou Editor sẽ tiếp nhận và bắt đầu quản lý sản xuất.</p>
+                    </div>
                   </div>
+                  {scheduleInfo(series.schedule) && (
+                    <div className="flex items-center gap-3 px-4 py-3 bg-emerald-500/5 border border-emerald-500/12 rounded-xl">
+                      <Calendar className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-0.5">Lịch xuất bản Board quyết định</p>
+                        <p className="text-sm font-semibold text-emerald-300">
+                          {scheduleInfo(series.schedule)!.label}
+                          <span className="text-[11px] text-zinc-500 font-normal ml-2">
+                            {scheduleInfo(series.schedule)!.desc}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>

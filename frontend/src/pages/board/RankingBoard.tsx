@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TrendingUp, TrendingDown, Minus, Upload, BarChart2, Loader2 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Upload, BarChart2, Loader2, ChevronDown, AlertCircle } from 'lucide-react';
 import api from '@/lib/axios';
 
 const RankingBoard = () => {
@@ -15,6 +15,17 @@ const RankingBoard = () => {
     rankPosition:'', voteCount:'', readerScore:'', notes:'',
     pollDate: new Date().toISOString().split('T')[0],
   });
+
+  // GET /api/series → plain list SeriesDTO[]
+  // Board cần fetch tất cả series để chọn theo tên thay vì nhập UUID thủ công
+  const { data: seriesData = [] } = useQuery({
+    queryKey: ['series', 'all'],
+    queryFn: async () => {
+      const r = await api.get('/series');
+      return r.data.data ?? [];
+    },
+  });
+  const allSeries: any[] = Array.isArray(seriesData) ? seriesData : [];
 
   const { data: rankData, isLoading } = useQuery({
     queryKey: ['board','rankings'],
@@ -39,7 +50,7 @@ const RankingBoard = () => {
   const handleSubmitInput = () => {
     setInputError('');
     if (!form.seriesId || !form.rankPosition || !form.voteCount || !form.pollPeriod) {
-      setInputError('Vui lòng điền đầy đủ: Series ID, kỳ, hạng, votes');
+      setInputError('Vui lòng điền đầy đủ: Series, kỳ, hạng, votes');
       return;
     }
     inputMutation.mutate({
@@ -84,8 +95,25 @@ const RankingBoard = () => {
           <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-6 space-y-4">
             <p className="text-sm font-bold text-white">Nhập dữ liệu bình chọn kỳ này</p>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {/* Series dropdown — thay thế UUID text input */}
+              <div className="md:col-span-3">
+                <label className="block text-[10px] font-bold tracking-[0.1em] uppercase text-zinc-600 mb-1">Series *</label>
+                <div className="relative">
+                  <select
+                    value={form.seriesId}
+                    onChange={e => setForm(prev => ({ ...prev, seriesId: e.target.value }))}
+                    className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:border-teal-500/40 transition-all">
+                    <option value="" className="bg-[#0a0a12]">-- Chọn series --</option>
+                    {allSeries.map((s: any) => (
+                      <option key={s.id} value={s.id} className="bg-[#0a0a12]">
+                        {s.title}{s.status ? ` (${s.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-zinc-600 pointer-events-none" />
+                </div>
+              </div>
               {[
-                { key:'seriesId',    label:'Series ID *',  type:'text',   placeholder:'UUID của series' },
                 { key:'pollPeriod',  label:'Kỳ * (1-12)',  type:'number', placeholder:'VD: 6'           },
                 { key:'pollYear',    label:'Năm *',        type:'number', placeholder:'VD: 2026'         },
                 { key:'rankPosition',label:'Hạng *',       type:'number', placeholder:'VD: 1'            },
