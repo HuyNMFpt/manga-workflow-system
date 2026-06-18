@@ -208,8 +208,20 @@ const ManuscriptReview = () => {
   });
   const allMs: any[] = Array.isArray(msData)
     ? msData : (msData?.content ?? msData?.items ?? []);
+
+  // Dedup theo seriesId — chỉ giữ version mới nhất của mỗi series
+  // Backend trả về tất cả version, frontend chỉ hiện version cao nhất
+  const latestBySeriesId = allMs.reduce((acc: Record<string, any>, m: any) => {
+    const existing = acc[m.seriesId];
+    if (!existing || (m.version ?? 0) > (existing.version ?? 0)) {
+      acc[m.seriesId] = m;
+    }
+    return acc;
+  }, {});
+  const dedupedMs: any[] = Object.values(latestBySeriesId);
+
   const manuscripts = activeFilter === 'all'
-    ? allMs : allMs.filter(m => m.status === activeFilter);
+    ? dedupedMs : dedupedMs.filter((m: any) => m.status === activeFilter);
 
   // ── Mutations ────────────────────────────────────────────────
 
@@ -382,8 +394,8 @@ const ManuscriptReview = () => {
         <div className="flex items-center gap-1 flex-wrap">
           {FILTERS.map(f => {
             const count = f.id === 'all'
-              ? allMs.length
-              : allMs.filter(m => m.status === f.id).length;
+              ? dedupedMs.length
+              : dedupedMs.filter((m: any) => m.status === f.id).length;
             return (
               <button key={f.id} onClick={() => setActiveFilter(f.id)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${

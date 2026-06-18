@@ -114,16 +114,17 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   // ── Mutation 2: Submit manuscript ───────────────────────────
   const submitMsMutation = useMutation({
     mutationFn: async () => {
-      const fileUrl = draftFile ? URL.createObjectURL(draftFile) : ''
-      await api.post('/manuscripts/submit', {
-        seriesId:            createdSeriesId,
-        fileUrl,
-        description:         msForm.description,
-        targetAudience:      msForm.targetAudience,
-        publicationSchedule: 'weekly',
-        characterSummary:    msForm.characterSummary,
-        plotSummary:         msForm.plotSummary,
-        coverLetter:         msForm.coverLetter,
+      const fd = new FormData()
+      fd.append('seriesId',            createdSeriesId ?? '')
+      fd.append('description',         msForm.description)
+      fd.append('targetAudience',      msForm.targetAudience)
+      fd.append('publicationSchedule', 'weekly')
+      fd.append('characterSummary',    msForm.characterSummary)
+      fd.append('plotSummary',         msForm.plotSummary || '')
+      fd.append('coverLetter',         msForm.coverLetter || '')
+      if (draftFile) fd.append('file', draftFile)
+      await api.post('/manuscripts/submit', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       })
     },
     onSuccess: () => {

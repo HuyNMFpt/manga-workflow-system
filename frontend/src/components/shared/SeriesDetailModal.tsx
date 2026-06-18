@@ -8,11 +8,11 @@
 //   approved   → (Board approved, chờ Editor assign)
 
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   X, Feather, AlertTriangle, Trash2, RefreshCw,
   Send, CheckCircle2, Loader2, BookOpen, Clock,
-  XCircle, PenLine, Info, Calendar
+  XCircle, PenLine, Info, Calendar, RotateCcw, MessageSquare, MapPin
 } from 'lucide-react'
 import api from '@/lib/axios'
 import CreateSeriesModal from '@/components/shared/CreateSeriesModal'
@@ -49,6 +49,8 @@ const SCHEDULE_LABEL: Record<string, { label: string; desc: string }> = {
   monthly:  { label: 'Hàng tháng', desc: '1 chapter/tháng'  },
 }
 const scheduleInfo = (s?: string) => s ? (SCHEDULE_LABEL[s] ?? { label: s, desc: '' }) : null
+
+export default function SeriesDetailModal({ series, onClose }: Props) {
   const qc = useQueryClient()
   const st = STATUS_INFO[series.status] ?? STATUS_INFO.draft
 
@@ -57,7 +59,20 @@ const scheduleInfo = (s?: string) => s ? (SCHEDULE_LABEL[s] ?? { label: s, desc:
   const [reasonError,  setReasonError]  = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
 
-  // ── Mutations ─────────────────────────────────────────────────
+  // ── Fetch manuscript mới nhất của series — để xem lý do Editor trả về
+  // GET /api/manuscripts/series/{seriesId} → ManuscriptDTO[]
+  const { data: manuscripts = [] } = useQuery({
+    queryKey: ['manuscripts', 'series', series.id],
+    queryFn: async () => {
+      const r = await api.get(`/manuscripts/series/${series.id}`)
+      return r.data.data ?? []
+    },
+    enabled: series.status === 'draft', // chỉ fetch khi cần
+  })
+  // Lấy manuscript mới nhất có rejectionReason (Editor vừa trả về)
+  const latestRevision = (manuscripts as any[])
+    .filter((m: any) => m.rejectionReason)
+    .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
   // PUT /api/series/{id}/status
   const updateStatus = useMutation({
     mutationFn: (newStatus: string) =>
@@ -189,14 +204,86 @@ const scheduleInfo = (s?: string) => s ? (SCHEDULE_LABEL[s] ?? { label: s, desc:
 
               {/* ── DRAFT actions ─────────────────────────── */}
               {series.status === 'draft' && (
-                <div className="space-y-2">
+                <div className="space-y-3">
+
+                  {/* ── Nếu có lý do trả về từ Editor ── */}
+                  {latestRevision && (
+                    <div className="space-y-2.5">
+                      <p className="text-[11px] font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <RotateCcw className="w-3.5 h-3.5" />Editor yêu cầu chỉnh sửa
+                      </p>
+
+                      {/* Lý do */}
+                      <div className="bg-orange-500/8 border border-orange-500/20 rounded-xl px-4 py-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">Lý do từ Editor</p>
+                        <p className="text-[13px] text-orange-200 leading-relaxed">{latestRevision.rejectionReason}</p>
+                      </div>
+
+                      {/* Annotations nếu có */}
+                      {latestRevision.annotations?.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />Ghi chú đánh dấu ({latestRevision.annotations.length})
+                          </p>
+                          <div className="space-y-1.5">
+                            {latestRevision.annotations.map((a: any, i: number) => (
+                              <div key={i} className="flex items-start gap-2.5 px-3 py-2.5 bg-white/3 border border-white/6 rounded-xl">
+                                {/* Pin số */}
+                                <div className="w-5 h-5 rounded-full bg-amber-500 flex-shrink-0 flex items-center justify-center text-[9px] font-black text-black mt-0.5">
+                                  {i + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {a.tag && (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                                        {a.tag === 'story'    ? 'Kịch bản'   :
+                                         a.tag === 'dialogue' ? 'Thoại'      :
+                                         a.tag === 'art'      ? 'Nghệ thuật' :
+                                         a.tag === 'pacing'   ? 'Nhịp độ'   :
+                                         a.tag === 'layout'   ? 'Bố cục'    : a.tag}
+                                      </span>
+                                    )}
+                                    {a.pageNumber && (
+                                      <span className="text-[10px] text-zinc-600">Trang {a.pageNumber}</span>
+                                    )}
+                                    {a.x != null && a.y != null && (
+                                      <span className="text-[10px] text-zinc-700">📍{Math.round(a.x)}%, {Math.round(a.y)}%</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[12px] text-zinc-300 mt-0.5 leading-relaxed">
+                                    {a.note?.replace(/\[[^\]]+\][^:]*:/g, '').trim() || a.note}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* File bản thảo để xem lại */}
+                      {latestRevision.fileUrl && (
+                        <a href={latestRevision.fileUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/3 border border-white/6 text-[12px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
+                          <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
+                          Xem lại bản thảo đã nộp (v{latestRevision.version})
+                        </a>
+                      )}
+
+                      <div className="h-px bg-white/6" />
+                    </div>
+                  )}
+
                   <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Thao tác</p>
                   <button onClick={() => setShowCreateModal(true)}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/15 transition-all text-left group">
                     <PenLine className="w-4 h-4 text-violet-400 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-violet-300">Tiếp tục nộp series</p>
-                      <p className="text-[11px] text-zinc-600">Điền thông tin còn thiếu và nộp cho Editor</p>
+                      <p className="text-sm font-semibold text-violet-300">
+                        {latestRevision ? 'Chỉnh sửa và nộp lại' : 'Tiếp tục nộp series'}
+                      </p>
+                      <p className="text-[11px] text-zinc-600">
+                        {latestRevision ? 'Cập nhật theo yêu cầu của Editor rồi nộp lại' : 'Điền thông tin còn thiếu và nộp cho Editor'}
+                      </p>
                     </div>
                   </button>
                   <button onClick={() => setView('delete')}

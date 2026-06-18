@@ -61,9 +61,23 @@ const VotingQueue = () => {
     retry: 1,
   });
 
-  const submissions: any[] = Array.isArray(queueData)
-    ? queueData
-    : (queueData?.content ?? queueData?.items ?? []);
+  const submissions: any[] = (() => {
+    const raw: any[] = Array.isArray(queueData)
+      ? queueData
+      : (queueData?.content ?? queueData?.items ?? []);
+
+    // Dedup theo seriesId — chỉ giữ submission mới nhất (submissionRound cao nhất)
+    const latestBySeriesId = raw.reduce((acc: Record<string, any>, s: any) => {
+      const key = s.seriesId;
+      if (!key) return acc;
+      const existing = acc[key];
+      if (!existing || (s.submissionRound ?? 0) > (existing.submissionRound ?? 0)) {
+        acc[key] = s;
+      }
+      return acc;
+    }, {});
+    return Object.values(latestBySeriesId);
+  })();
 
   // ── Vote mutation ──────────────────────────────────────────────
   // Backend: POST /board/vote
@@ -228,8 +242,8 @@ const VotingQueue = () => {
                   <div className="flex items-center gap-1 px-6 py-3 border-b border-white/4 bg-white/[0.01]">
                     {[
                       { id: 'series',       label: 'Series Info',     icon: BookOpen      },
-                      { id: 'manuscript',   label: 'Bản thảo',        icon: ImageIcon     },
                       { id: 'editor-notes', label: 'Đánh giá Editor', icon: FileText      },
+                      { id: 'manuscript',   label: 'Bản thảo',        icon: ImageIcon     },
                       { id: 'vote',         label: 'Bỏ phiếu',        icon: Check         },
                     ].map(t => (
                       <button key={t.id}
@@ -392,19 +406,6 @@ const VotingQueue = () => {
                   {tab === 'editor-notes' && (
                     <div className="px-6 py-5 space-y-4">
 
-                      {/* Info banner */}
-                      {/* NOTE TO BACKEND: các field này cần có trong SubmissionDetailDTO
-                          khi Editor submit-to-board (POST /editor/manuscripts/{id}/submit-to-board)
-                          Fields cần thêm vào SubmissionDetailDTO:
-                            - audienceSummary   (String)
-                            - marketingAngle    (String)
-                            - whyItWillSell     (String)
-                            - recommendedSchedule (String: weekly/biweekly/monthly)
-                            - editorNote        (String)
-                            - editorName        (String — từ User entity)
-                            - submittedAt       (LocalDateTime)
-                      */}
-
                       {(s.audienceSummary || s.marketingAngle || s.whyItWillSell || s.editorNote) ? (
                         <div className="grid grid-cols-2 gap-3">
                           {s.editorName && (
@@ -436,18 +437,16 @@ const VotingQueue = () => {
                         <div className="flex flex-col items-center justify-center py-8 gap-3 text-zinc-700">
                           <FileText className="w-8 h-8 opacity-20" />
                           <p className="text-sm">Chưa có đánh giá từ Editor</p>
-                          {/* Thông báo cho backend */}
-                          <p className="text-[11px] text-zinc-700 text-center max-w-xs leading-relaxed">
-                            ⚠️ Backend cần map các field từ boardSubmission vào SubmissionDetailDTO:
-                            audienceSummary, marketingAngle, whyItWillSell, recommendedSchedule, editorNote
+                          <p className="text-[11px] text-zinc-600 text-center max-w-xs leading-relaxed">
+                            Editor chưa điền thông tin đánh giá khi nộp lên Board
                           </p>
                         </div>
                       )}
 
                       <button
-                        onClick={() => setTab(id, 'vote')}
+                        onClick={() => setTab(id, 'manuscript')}
                         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-teal-600/20 to-emerald-600/20 border border-teal-500/25 text-teal-300 text-sm font-semibold hover:from-teal-600/30 hover:to-emerald-600/30 transition-all">
-                        Tiến hành bỏ phiếu →
+                        Xem bản thảo →
                       </button>
                     </div>
                   )}
