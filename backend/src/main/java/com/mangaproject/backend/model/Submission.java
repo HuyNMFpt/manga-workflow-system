@@ -48,6 +48,22 @@ public class Submission {
     @Column(name = "decided_at")
     private LocalDateTime decidedAt;
 
+    // ── Editor evaluation fields (lưu thẳng vào submission thay vì parse text) ──
+    @Column(name = "audience_summary", columnDefinition = "TEXT")
+    private String audienceSummary;
+
+    @Column(name = "marketing_angle", columnDefinition = "TEXT")
+    private String marketingAngle;
+
+    @Column(name = "why_it_will_sell", columnDefinition = "TEXT")
+    private String whyItWillSell;
+
+    @Column(name = "editor_note", columnDefinition = "TEXT")
+    private String editorNote;
+
+    @Column(name = "recommended_schedule")
+    private String recommendedSchedule;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

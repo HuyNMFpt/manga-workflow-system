@@ -28,10 +28,24 @@ public class BoardService {
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
-        int pendingVotes = (int) submissionRepository
-                .findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending).size()
-                + (int) submissionRepository
-                .findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting).size();
+        // Dedup: chỉ đếm 1 submission mới nhất per series
+        List<Submission> allPending = new ArrayList<>();
+        allPending.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
+        allPending.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
+
+        int pendingVotes = (int) allPending.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        sub -> {
+                            Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
+                            return ms != null ? ms.getSeriesId() : sub.getId();
+                        },
+                        sub -> sub,
+                        (existing, incoming) -> incoming.getCreatedAt() != null
+                                && (existing.getCreatedAt() == null
+                                    || incoming.getCreatedAt().isAfter(existing.getCreatedAt()))
+                                ? incoming : existing
+                ))
+                .size();
 
         int totalActive = (int) seriesRepository
                 .findByStatusIn(List.of(Series.SeriesStatus.publishing)).size();
@@ -77,13 +91,21 @@ public class BoardService {
                     .map(u -> u.getName() != null ? u.getName() : u.getUsername())
                     .orElse("Unknown");
 
-            // Parse editor evaluation fields từ description
             String desc = ms != null ? ms.getDescription() : "";
-            String audienceSummary = parseTag(desc, "Audience");
-            String marketingAngle = parseTag(desc, "Marketing");
-            String whyItWillSell = parseTag(desc, "WhySell");
-            String editorNote = parseTag(desc, "EditorNote");
-            String recommendedSchedule = parseTag(sub.getCoverLetter(), "RecommendedSchedule");
+
+            // Đọc evaluation fields trực tiếp từ submission (không parse text)
+            String audienceSummary = sub.getAudienceSummary();
+            String marketingAngle  = sub.getMarketingAngle();
+            String whyItWillSell   = sub.getWhyItWillSell();
+            String editorNote      = sub.getEditorNote();
+            String recommendedSchedule = sub.getRecommendedSchedule();
+
+            // Fallback: parse từ description nếu submission cũ chưa có fields mới
+            if (audienceSummary == null) audienceSummary = parseTag(desc, "Audience");
+            if (marketingAngle  == null) marketingAngle  = parseTag(desc, "Marketing");
+            if (whyItWillSell   == null) whyItWillSell   = parseTag(desc, "WhySell");
+            if (editorNote      == null) editorNote      = parseTag(desc, "EditorNote");
+            if (recommendedSchedule == null) recommendedSchedule = parseTag(sub.getCoverLetter(), "RecommendedSchedule");
 
             SubmissionDetailDTO dto = new SubmissionDetailDTO();
             dto.setSubmissionId(sub.getId());

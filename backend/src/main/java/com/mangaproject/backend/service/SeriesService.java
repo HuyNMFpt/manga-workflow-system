@@ -106,13 +106,13 @@ public class SeriesService {
         Series series = seriesRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
-        if (!series.getMangakaId().equals(mangakaId)) {
+        if (series.getMangakaId() == null || !series.getMangakaId().equals(mangakaId)) {
             throw new RuntimeException("Bạn không có quyền xóa series này");
         }
 
         if (series.getStatus() != Series.SeriesStatus.draft
                 && series.getStatus() != Series.SeriesStatus.cancelled) {
-            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft hoặc cancelled");
+            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft hoặc cancelled (hiện tại: " + series.getStatus() + ")");
         }
 
         seriesRepository.delete(series);
