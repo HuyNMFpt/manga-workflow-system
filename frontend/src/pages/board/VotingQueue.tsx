@@ -85,13 +85,39 @@ const VotingQueue = () => {
   // VoteRequest.justification min 50 ký tự
   const voteMutation = useMutation({
     mutationFn: (data: any) => api.post('/board/vote', data).then(r => r.data),
-    onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
-      qc.invalidateQueries({ queryKey: ['board', 'stats'] });
-      setSubmitted(prev => [...prev, vars.submissionId]);
+    onSuccess: (res, vars) => {
+      const updated = res.data; // SubmissionDTO với voteYes/status mới
+
+      // Nếu submission đã được approve (đủ phiếu) → ẩn row khỏi queue
+      const isApproved = updated?.status === 'approved' || updated?.status === 'rejected';
+      if (isApproved) {
+        setSubmitted(prev => [...prev, vars.submissionId]);
+      }
+
       setExpandedId(null);
       setVoteForm(EMPTY_FORM);
       setSubmitError('');
+
+      // Update voteYes/voteNo trong cache ngay từ response
+      if (updated) {
+        qc.setQueryData(['board', 'voting-queue'], (old: any) => {
+          if (!old) return old;
+          const list: any[] = Array.isArray(old) ? old : (old?.content ?? old?.items ?? []);
+          if (isApproved) {
+            // Đã xong → xóa khỏi list luôn
+            return list.filter((s: any) => (s.submissionId ?? s.id) !== vars.submissionId);
+          }
+          // Chưa đủ phiếu → cập nhật count + hasVoted
+          return list.map((s: any) =>
+            (s.submissionId ?? s.id) === vars.submissionId
+              ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, hasVoted: true }
+              : s
+          );
+        });
+      }
+
+      qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
+      qc.invalidateQueries({ queryKey: ['board', 'stats'] });
     },
     onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });

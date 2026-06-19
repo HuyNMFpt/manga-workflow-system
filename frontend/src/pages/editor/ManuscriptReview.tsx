@@ -252,7 +252,7 @@ const ManuscriptReview = () => {
       setAForm({ tag:'story', comment:'', pageNumber:'' });
       setAErr('');
       // Thêm vào localPins nếu có tọa độ (từ single-image canvas)
-      if (vars.x != null && vars.y != null && !vars.pageId) {
+      if (vars.x != null && vars.y != null) {
         setLocalPins(prev => [...prev, {
           x: vars.x!, y: vars.y!,
           tag: vars.tag ?? 'story',
@@ -260,14 +260,6 @@ const ManuscriptReview = () => {
           index: prev.length,
           color: PIN_COLORS[prev.length % PIN_COLORS.length],
         }]);
-      }
-      // Xóa pending pin từ grid nếu vừa submit
-      if (vars.pageId) {
-        setPendingPins(prev => {
-          const msId = vars.manuscriptId ?? '';
-          const existing = prev[msId] ?? [];
-          return { ...prev, [msId]: existing.filter(p => !(p.pageId === vars.pageId && p.x === vars.x && p.y === vars.y)) };
-        });
       }
       setPendingPin(null);
     },
@@ -313,6 +305,7 @@ const ManuscriptReview = () => {
       setBForm({ audienceSummary:'', marketingAngle:'', whyItWillSell:'', recommendedSchedule:'weekly', editorNote:'' });
       setBErr('');
       setExpandedId(null);
+      setActiveFilter('all'); // reset về all để tránh refetch mở lại expanded
     },
     onError: (e:any) => setBErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });
@@ -329,8 +322,7 @@ const ManuscriptReview = () => {
     }
   };
 
-  // Khi Editor click lên trang trong PageGridAnnotator → thêm vào pendingPins
-  // Sau đó Editor điền form text → submit → annotateMutation gửi lên backend
+  // Khi Editor submit annotation — pins được add vào localPins để hiện ngay không cần reload
   const handleAnnotate = (msId: string) => {
     setAErr('');
     if (!aForm.comment.trim()) { setAErr('Vui lòng nhập nội dung'); return; }

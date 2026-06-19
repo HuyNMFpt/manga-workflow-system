@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, MousePointer, Trash2, Send, CheckCircle2, AlertCircle, Loader2, ChevronDown, Crosshair } from 'lucide-react';
 import api from '@/lib/axios';
@@ -30,7 +29,6 @@ const TASK_TYPES: {value:TaskType;label:string;color:string;dot:string}[] = [
 
 const TaskAssignment = () => {
   const qc = useQueryClient();
-  const location = useLocation();
   const [selectedSeriesId,   setSelectedSeriesId]   = useState('');
   const [selectedChapterId,  setSelectedChapterId]  = useState('');
   const [selectedPageNum,    setSelectedPageNum]    = useState(1);
@@ -42,13 +40,6 @@ const TaskAssignment = () => {
   const [tempTask,           setTempTask]           = useState<Partial<LocalTask>|null>(null);
   const [submitSuccess,      setSubmitSuccess]      = useState(false);
   const [submitError,        setSubmitError]        = useState('');
-
-  // Auto-select series + chapter nếu được navigate từ ChapterManager
-  useEffect(() => {
-    const state = location.state as { seriesId?: string; chapterId?: string } | null;
-    if (state?.seriesId)  setSelectedSeriesId(state.seriesId);
-    if (state?.chapterId) setSelectedChapterId(state.chapterId);
-  }, [location.state]);
 
   const { data:allSeries=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
 
@@ -72,18 +63,29 @@ const TaskAssignment = () => {
   const selectedChapter = (chapters as any[]).find((c:any)=>c.id===selectedChapterId);
   const pageCount = (selectedChapter as any)?.totalPages ?? 5;
   // u2705 T�m u1ea3nh cu1ee7a trang hiu1ec7n tu1ea1i
-  const currentPageImage = (pagesData as any[]).find((p:any) => p.pageNumber === selectedPageNum)?.imageUrl ?? null;
+  // eslint-disable-next-line eqeqeq
+  const currentPageImage = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum)?.imageUrl ?? null;
 
   const createMutation = useMutation({
-    mutationFn: (t:LocalTask) => taskService.create({
-      // ✅ Lấy pageId thật từ pagesData, fallback tạo fake nếu chưa upload
-      pageId: (pagesData as any[]).find((p:any)=>p.pageNumber===selectedPageNum)?.id
-              ?? `${selectedChapterId}_page_${selectedPageNum}`,
-      assignedTo:t.assignedTo!,
-      title:t.title||`${TASK_TYPES.find(x=>x.value===t.type)?.label} - Trang ${selectedPageNum}`,
-      description:t.description, taskType:t.type, priority:t.priority, panelRegion: JSON.stringify(t.zone), // ✅ Backend expects String
-    }),
+    mutationFn: (t:LocalTask) => {
+      // Tìm pageId — dùng == để tránh string/number type mismatch
+      // eslint-disable-next-line eqeqeq
+      const page = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum);
+      if (!page?.id) {
+        return Promise.reject(new Error('Trang này chưa được upload. Vui lòng upload trang trước khi giao task.'));
+      }
+      return taskService.create({
+        pageId:      page.id,
+        assignedTo:  t.assignedTo!,
+        title:       t.title || `${TASK_TYPES.find(x=>x.value===t.type)?.label} - Trang ${selectedPageNum}`,
+        description: t.description,
+        taskType:    t.type,
+        priority:    t.priority,
+        panelRegion: JSON.stringify(t.zone),
+      });
+    },
     onSuccess:()=>qc.invalidateQueries({queryKey:['tasks']}),
+    onError:(e:any)=>setSubmitError(e.message ?? e.response?.data?.message ?? 'Có lỗi khi gửi task. Vui lòng thử lại.'),
   });
 
   const handleMouseDown = (e:React.MouseEvent<HTMLDivElement>) => {
@@ -208,7 +210,8 @@ const TaskAssignment = () => {
                   </div>
                   <div className="flex gap-1">
                     {Array.from({length:Math.min(pageCount,8)},(_,i)=>i+1).map(n=>{
-                      const hasImage = (pagesData as any[]).some((p:any) => p.pageNumber === n);
+                      // eslint-disable-next-line eqeqeq
+                      const hasImage = (pagesData as any[]).some((p:any) => p.pageNumber == n);
                       return (
                         <button key={n} onClick={()=>setSelectedPageNum(n)}
                           className={`relative w-7 h-7 rounded-lg text-[11px] font-bold transition-all ${
