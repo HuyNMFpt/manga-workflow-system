@@ -48,7 +48,6 @@ public class Submission {
     @Column(name = "decided_at")
     private LocalDateTime decidedAt;
 
-    // ── Editor evaluation fields (lưu thẳng vào submission thay vì parse text) ──
     @Column(name = "audience_summary", columnDefinition = "TEXT")
     private String audienceSummary;
 

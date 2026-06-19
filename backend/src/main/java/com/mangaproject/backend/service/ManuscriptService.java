@@ -4,7 +4,6 @@ import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Manuscript;
 import com.mangaproject.backend.model.Series;
 import com.mangaproject.backend.model.Submission;
-import com.mangaproject.backend.repository.ManuscriptAnnotationRepository;
 import com.mangaproject.backend.repository.ManuscriptRepository;
 import com.mangaproject.backend.repository.SeriesRepository;
 import com.mangaproject.backend.repository.SubmissionRepository;
@@ -26,7 +25,7 @@ public class ManuscriptService {
     private final SubmissionRepository submissionRepository;
     private final SeriesRepository seriesRepository;
     private final FileStorageService fileStorageService;
-    private final ManuscriptAnnotationRepository annotationRepository;
+    private final com.mangaproject.backend.repository.ManuscriptAnnotationRepository annotationRepository;
 
     public String uploadManuscriptFile(MultipartFile file) {
         try {
@@ -120,7 +119,8 @@ public class ManuscriptService {
 
     private ManuscriptDTO mapManuscriptToDTO(Manuscript m, String seriesTitle) {
         List<AnnotationDTO> annotations = annotationRepository
-                .findByManuscriptIdOrderByCreatedAtAsc(m.getId()).stream()
+                .findByManuscriptIdOrderByCreatedAtAsc(m.getId())
+                .stream()
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),

@@ -28,22 +28,16 @@ public class BoardService {
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
-        // Dedup: chỉ đếm 1 submission mới nhất per series
-        List<Submission> allPending = new ArrayList<>();
-        allPending.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
-        allPending.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
+        // Chờ vote: dedup theo seriesId — mỗi series chỉ tính 1 lần dù có nhiều submission (nộp lại nhiều lần)
+        List<Submission> pendingOrVoting = new ArrayList<>();
+        pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
+        pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
 
-        int pendingVotes = (int) allPending.stream()
-                .collect(java.util.stream.Collectors.toMap(
-                        sub -> {
-                            Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
-                            return ms != null ? ms.getSeriesId() : sub.getId();
-                        },
+        int pendingVotes = (int) pendingOrVoting.stream()
+                .collect(Collectors.toMap(
+                        this::getSeriesIdFromSubmission,
                         sub -> sub,
-                        (existing, incoming) -> incoming.getCreatedAt() != null
-                                && (existing.getCreatedAt() == null
-                                    || incoming.getCreatedAt().isAfter(existing.getCreatedAt()))
-                                ? incoming : existing
+                        (existing, incoming) -> incoming.getCreatedAt().isAfter(existing.getCreatedAt()) ? incoming : existing
                 ))
                 .size();
 
@@ -54,16 +48,29 @@ public class BoardService {
                 .filter(s -> s.getCancellationRisk() != null && s.getCancellationRisk())
                 .count();
 
-        // Quyết định tháng này (editorial actions) — dùng submissions decided tháng này
+        // Quyết định tháng này (editorial actions) — dedup theo seriesId
         LocalDateTime startOfMonth = LocalDateTime.now().withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0);
         int decisionsThisMonth = (int) submissionRepository.findAll().stream()
                 .filter(s -> (s.getStatus() == Submission.SubmissionStatus.approved
                         || s.getStatus() == Submission.SubmissionStatus.rejected)
                         && s.getDecidedAt() != null
                         && s.getDecidedAt().isAfter(startOfMonth))
-                .count();
+                .collect(Collectors.toMap(
+                        this::getSeriesIdFromSubmission,
+                        sub -> sub,
+                        (existing, incoming) -> incoming.getDecidedAt().isAfter(existing.getDecidedAt()) ? incoming : existing
+                ))
+                .size();
 
         return new BoardStatsDTO(pendingVotes, totalActive, atRisk, decisionsThisMonth);
+    }
+
+    // Lấy seriesId của một submission thông qua manuscript liên kết.
+    // Fallback về sub.getId() nếu không tìm thấy manuscript/series, để không gộp nhầm các submission rời rạc.
+    private String getSeriesIdFromSubmission(Submission sub) {
+        return manuscriptRepository.findById(sub.getManuscriptId())
+                .map(Manuscript::getSeriesId)
+                .orElse(sub.getId());
     }
 
     // ── Voting Queue — danh sách submissions chờ vote ────────────
@@ -72,12 +79,17 @@ public class BoardService {
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
 
-        // Dedup: chỉ lấy submission mới nhất theo manuscriptId
-        Map<String, Submission> latestByManuscript = new LinkedHashMap<>();
+        // Dedup: chỉ lấy submission mới nhất theo seriesId (không phải manuscriptId — mỗi lần
+        // Mangaka nộp lại sẽ tạo manuscript mới với id khác, nên dedup theo manuscriptId không
+        // gộp được các submission của cùng 1 series)
+        Map<String, Submission> latestBySeriesId = new LinkedHashMap<>();
         for (Submission sub : allSubmissions) {
-            latestByManuscript.putIfAbsent(sub.getManuscriptId(), sub);
+            String seriesId = getSeriesIdFromSubmission(sub);
+            if (seriesId == null) continue;
+            // allSubmissions đã sort Desc theo createdAt nên phần tử đầu tiên gặp là mới nhất
+            latestBySeriesId.putIfAbsent(seriesId, sub);
         }
-        List<Submission> submissions = new ArrayList<>(latestByManuscript.values());
+        List<Submission> submissions = new ArrayList<>(latestBySeriesId.values());
 
         return submissions.stream().map(sub -> {
             Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
@@ -92,20 +104,6 @@ public class BoardService {
                     .orElse("Unknown");
 
             String desc = ms != null ? ms.getDescription() : "";
-
-            // Đọc evaluation fields trực tiếp từ submission (không parse text)
-            String audienceSummary = sub.getAudienceSummary();
-            String marketingAngle  = sub.getMarketingAngle();
-            String whyItWillSell   = sub.getWhyItWillSell();
-            String editorNote      = sub.getEditorNote();
-            String recommendedSchedule = sub.getRecommendedSchedule();
-
-            // Fallback: parse từ description nếu submission cũ chưa có fields mới
-            if (audienceSummary == null) audienceSummary = parseTag(desc, "Audience");
-            if (marketingAngle  == null) marketingAngle  = parseTag(desc, "Marketing");
-            if (whyItWillSell   == null) whyItWillSell   = parseTag(desc, "WhySell");
-            if (editorNote      == null) editorNote      = parseTag(desc, "EditorNote");
-            if (recommendedSchedule == null) recommendedSchedule = parseTag(sub.getCoverLetter(), "RecommendedSchedule");
 
             SubmissionDetailDTO dto = new SubmissionDetailDTO();
             dto.setSubmissionId(sub.getId());
@@ -128,23 +126,16 @@ public class BoardService {
             dto.setCreatedAt(sub.getCreatedAt() != null ? sub.getCreatedAt().toString() : null);
             dto.setHasVoted(boardVoteRepository.existsBySubmissionIdAndVoterId(sub.getId(), boardMemberId));
             dto.setEditorName(editorName);
-            dto.setAudienceSummary(audienceSummary);
-            dto.setMarketingAngle(marketingAngle);
-            dto.setWhyItWillSell(whyItWillSell);
-            dto.setRecommendedSchedule(recommendedSchedule);
-            dto.setEditorNote(editorNote);
+            // Đọc trực tiếp từ Submission thay vì parse text từ manuscript.description —
+            // đáng tin cậy hơn vì không phụ thuộc việc manuscriptId của submission có
+            // đúng version đã được editor đánh giá hay không.
+            dto.setAudienceSummary(sub.getAudienceSummary());
+            dto.setMarketingAngle(sub.getMarketingAngle());
+            dto.setWhyItWillSell(sub.getWhyItWillSell());
+            dto.setRecommendedSchedule(sub.getRecommendedSchedule());
+            dto.setEditorNote(sub.getEditorNote());
             return dto;
         }).collect(Collectors.toList());
-    }
-
-    private String parseTag(String text, String tag) {
-        if (text == null) return null;
-        String marker = "[" + tag + "]: ";
-        int start = text.indexOf(marker);
-        if (start == -1) return null;
-        start += marker.length();
-        int end = text.indexOf("\n", start);
-        return end == -1 ? text.substring(start).trim() : text.substring(start, end).trim();
     }
 
     // ── Vote ─────────────────────────────────────────────────────

@@ -220,6 +220,18 @@ public class EditorService {
             throw new RuntimeException("Bạn không phụ trách series này");
         }
 
+        // Build editor evaluation note vào description
+        StringBuilder evalNote = new StringBuilder(manuscript.getDescription() != null ? manuscript.getDescription() : "");
+        if (request.getAudienceSummary() != null)
+            evalNote.append("\n[Audience]: ").append(request.getAudienceSummary());
+        if (request.getMarketingAngle() != null)
+            evalNote.append("\n[Marketing]: ").append(request.getMarketingAngle());
+        if (request.getWhyItWillSell() != null)
+            evalNote.append("\n[WhySell]: ").append(request.getWhyItWillSell());
+        if (request.getEditorNote() != null)
+            evalNote.append("\n[EditorNote]: ").append(request.getEditorNote());
+
+        manuscript.setDescription(evalNote.toString());
         manuscript.setStatus(Manuscript.ManuscriptStatus.approved);
         manuscript.setReviewedAt(LocalDateTime.now());
         manuscriptRepository.save(manuscript);
@@ -235,7 +247,8 @@ public class EditorService {
         submission.setStatus(Submission.SubmissionStatus.pending);
         submission.setVotingDeadline(LocalDateTime.now().plusDays(7));
 
-        // Lưu evaluation fields trực tiếp vào submission (không parse text)
+        // Lưu evaluation fields trực tiếp trên Submission (không phụ thuộc parse text từ
+        // manuscript.description — manuscript có thể bị thay thế bởi version mới khi Mangaka nộp lại)
         submission.setAudienceSummary(request.getAudienceSummary());
         submission.setMarketingAngle(request.getMarketingAngle());
         submission.setWhyItWillSell(request.getWhyItWillSell());
