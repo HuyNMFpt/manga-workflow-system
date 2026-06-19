@@ -2,7 +2,9 @@ package com.mangaproject.backend.service;
 
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Task;
+import com.mangaproject.backend.repository.PriorityLookupRepository;
 import com.mangaproject.backend.repository.TaskRepository;
+import com.mangaproject.backend.repository.TaskTypeLookupRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,8 @@ import java.util.stream.Collectors;
 public class TaskService {
 
     private final TaskRepository taskRepository;
+    private final PriorityLookupRepository priorityLookupRepository;
+    private final TaskTypeLookupRepository taskTypeLookupRepository;
 
     public PaginatedResponse<TaskDTO> getMyTasks(String userId, String status, int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
@@ -65,10 +69,21 @@ public class TaskService {
         task.setAssignedBy(request.getAssignedBy());
         task.setTitle(request.getTitle());
         task.setDescription(request.getDescription());
-        task.setTaskType(Task.TaskType.valueOf(request.getTaskType()));
+
+        String taskTypeName = request.getTaskType();
+        task.setTaskType(Task.TaskType.valueOf(taskTypeName));
+        task.setTaskTypeId(taskTypeLookupRepository.findByName(taskTypeName)
+                .orElseThrow(() -> new RuntimeException("Loại task không hợp lệ: " + taskTypeName))
+                .getId());
+
         task.setPanelRegion(request.getPanelRegion());
-        task.setPriority(Task.Priority.valueOf(
-                request.getPriority() != null ? request.getPriority() : "normal"));
+
+        String priorityName = request.getPriority() != null ? request.getPriority() : "normal";
+        task.setPriority(Task.Priority.valueOf(priorityName));
+        task.setPriorityId(priorityLookupRepository.findByName(priorityName)
+                .orElseThrow(() -> new RuntimeException("Độ ưu tiên không hợp lệ: " + priorityName))
+                .getId());
+
         task.setStatus(Task.TaskStatus.pending);
         if (request.getDueDate() != null) {
             task.setDueDate(LocalDateTime.parse(request.getDueDate()));
