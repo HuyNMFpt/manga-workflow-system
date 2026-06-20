@@ -1,21 +1,24 @@
 import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText, MessageSquare, CheckCircle2, Loader2, AlertCircle,
   Eye, Tag, BookOpen, Users, TrendingUp, ArrowUpRight, RotateCcw,
-  Pen, ChevronDown, ChevronUp, Send, X, Clock, AlertTriangle,
+  Pen, ChevronDown, ChevronUp, Send, X, Clock, AlertTriangle, BarChart2,
   ExternalLink, Download
 } from 'lucide-react';
 import api from '@/lib/axios';
 
 // ─── Status enum từ backend ───────────────────────────────────────
 // ManuscriptStatus: draft | submitted | under_review | approved | rejected | revision_requested
+// Series status sau Board approve → publishing
 const FILTERS = [
   { id: 'all',                label: 'Tất cả'   },
   { id: 'submitted',          label: 'Chờ xét'  },
   { id: 'under_review',       label: 'Đang xét' },
   { id: 'revision_requested', label: 'Cần sửa'  },
   { id: 'approved',           label: 'Sẵn sàng' },
+  { id: 'publishing',         label: 'Xuất bản' },
 ];
 
 const STATUS_META: Record<string, {
@@ -45,6 +48,12 @@ const STATUS_META: Record<string, {
     pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
     bg:'bg-emerald-500/5', border:'border-emerald-500/15',
     desc:'Đủ chất lượng — chờ nộp lên Board.',
+  },
+  publishing: {
+    label:'Đang xuất bản', dot:'bg-violet-400',
+    pill:'bg-violet-500/10 text-violet-300 border-violet-500/20',
+    bg:'bg-violet-500/5', border:'border-violet-500/15',
+    desc:'Board đã duyệt — series đang trong giai đoạn sản xuất và xuất bản.',
   },
   rejected: {
     label:'Từ chối', dot:'bg-red-500',
@@ -175,6 +184,7 @@ const InfoBlock = ({ label, value, span, red }: { label:string; value:string; sp
 // ═══════════════════════════════════════════════════════════════
 const ManuscriptReview = () => {
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const [activeFilter, setActiveFilter] = useState('all');
   const [expandedId,   setExpandedId]   = useState<string|null>(null);
@@ -209,19 +219,23 @@ const ManuscriptReview = () => {
   const allMs: any[] = Array.isArray(msData)
     ? msData : (msData?.content ?? msData?.items ?? []);
 
-  // Dedup theo seriesId — chỉ giữ version mới nhất của mỗi series
-  // Backend trả về tất cả version, frontend chỉ hiện version cao nhất
+  // Dedup theo seriesId — giữ version mới nhất
   const latestBySeriesId = allMs.reduce((acc: Record<string, any>, m: any) => {
-    const existing = acc[m.seriesId];
-    if (!existing || (m.version ?? 0) > (existing.version ?? 0)) {
-      acc[m.seriesId] = m;
-    }
+    const key = m.seriesId ?? m.id;
+    const existing = acc[key];
+    if (!existing || (m.version ?? 0) > (existing.version ?? 0)) acc[key] = m;
     return acc;
   }, {});
   const dedupedMs: any[] = Object.values(latestBySeriesId);
 
+  // Filter:
+  // - "publishing" tab: seriesStatus = publishing (Board đã approve)
+  // - Các tab khác: theo manuscript status như cũ
   const manuscripts = activeFilter === 'all'
-    ? dedupedMs : dedupedMs.filter((m: any) => m.status === activeFilter);
+    ? dedupedMs
+    : activeFilter === 'publishing'
+      ? dedupedMs.filter((m: any) => m.seriesStatus === 'publishing')
+      : dedupedMs.filter((m: any) => m.status === activeFilter && m.seriesStatus !== 'publishing');
 
   // ── Mutations ────────────────────────────────────────────────
 
@@ -252,7 +266,7 @@ const ManuscriptReview = () => {
       setAForm({ tag:'story', comment:'', pageNumber:'' });
       setAErr('');
       // Thêm vào localPins nếu có tọa độ (từ single-image canvas)
-      if (vars.x != null && vars.y != null) {
+      if (vars.x != null && vars.y != null && !vars.pageId) {
         setLocalPins(prev => [...prev, {
           x: vars.x!, y: vars.y!,
           tag: vars.tag ?? 'story',
@@ -260,6 +274,14 @@ const ManuscriptReview = () => {
           index: prev.length,
           color: PIN_COLORS[prev.length % PIN_COLORS.length],
         }]);
+      }
+      // Xóa pending pin từ grid nếu vừa submit
+      if (vars.pageId) {
+        setPendingPins(prev => {
+          const msId = vars.manuscriptId ?? '';
+          const existing = prev[msId] ?? [];
+          return { ...prev, [msId]: existing.filter(p => !(p.pageId === vars.pageId && p.x === vars.x && p.y === vars.y)) };
+        });
       }
       setPendingPin(null);
     },
@@ -305,7 +327,6 @@ const ManuscriptReview = () => {
       setBForm({ audienceSummary:'', marketingAngle:'', whyItWillSell:'', recommendedSchedule:'weekly', editorNote:'' });
       setBErr('');
       setExpandedId(null);
-      setActiveFilter('all'); // reset về all để tránh refetch mở lại expanded
     },
     onError: (e:any) => setBErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });
@@ -322,7 +343,8 @@ const ManuscriptReview = () => {
     }
   };
 
-  // Khi Editor submit annotation — pins được add vào localPins để hiện ngay không cần reload
+  // Khi Editor click lên trang trong PageGridAnnotator → thêm vào pendingPins
+  // Sau đó Editor điền form text → submit → annotateMutation gửi lên backend
   const handleAnnotate = (msId: string) => {
     setAErr('');
     if (!aForm.comment.trim()) { setAErr('Vui lòng nhập nội dung'); return; }
@@ -387,7 +409,9 @@ const ManuscriptReview = () => {
           {FILTERS.map(f => {
             const count = f.id === 'all'
               ? dedupedMs.length
-              : dedupedMs.filter((m: any) => m.status === f.id).length;
+              : f.id === 'publishing'
+                ? dedupedMs.filter((m: any) => m.seriesStatus === 'publishing').length
+                : dedupedMs.filter((m: any) => m.status === f.id && m.seriesStatus !== 'publishing').length;
             return (
               <button key={f.id} onClick={() => setActiveFilter(f.id)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
@@ -685,11 +709,46 @@ const ManuscriptReview = () => {
                             </div>
                           </div>
                           <ManuscriptInfo m={m} parsed={parsed} />
-                          <FullBoardForm
-                            bForm={bForm} setBForm={setBForm} bErr={bErr}
-                            onSubmit={() => handleBoard(m.id)}
-                            isPending={boardMutation.isPending}
-                          />
+                          {/* Chặn nộp lại nếu series đã được submit (tránh spam) */}
+                          {m.seriesStatus === 'submitted' ? (
+                            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/6 border border-amber-500/15">
+                              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[12px] font-semibold text-amber-300">Đã nộp lên Board — đang chờ xét duyệt</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+                                  Series đang trong hàng chờ bình duyệt. Không thể nộp lại cho đến khi có kết quả từ Board.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <FullBoardForm
+                              bForm={bForm} setBForm={setBForm} bErr={bErr}
+                              onSubmit={() => handleBoard(m.id)}
+                              isPending={boardMutation.isPending}
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {/* ══ STATUS: publishing → "Đang xuất bản" ══ */}
+                      {m.status === 'publishing' && (
+                        <div className="px-6 py-5 space-y-4">
+                          <div className="flex items-start gap-3 p-4 rounded-xl bg-violet-500/6 border border-violet-500/15">
+                            <CheckCircle2 className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-[12px] font-semibold text-violet-300 mb-0.5">Board đã duyệt — series đang xuất bản</p>
+                              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                                Hội đồng biên tập đã phê duyệt. Series đang trong giai đoạn sản xuất và xuất bản định kỳ.
+                              </p>
+                            </div>
+                          </div>
+                          <ManuscriptInfo m={m} parsed={parsed} />
+                          <button
+                            onClick={() => navigate('/editor/studio')}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-500/25 text-violet-300 text-sm font-semibold hover:bg-violet-500/25 transition-all">
+                            <BarChart2 className="w-4 h-4" />
+                            Xem tiến độ Studio →
+                          </button>
                         </div>
                       )}
 

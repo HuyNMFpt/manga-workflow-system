@@ -164,7 +164,12 @@ export default function AppLayout() {
   const nav    = NAV_ITEMS[role] ?? []
   const theme  = ROLE_THEME[role] ?? ROLE_THEME.mangaka
 
-  const handleLogout = () => { logout(); navigate("/login") }
+  const handleLogout = () => {
+    // Clear toàn bộ React Query cache để tránh hiện data của user cũ
+    qc.clear()
+    logout()
+    navigate('/login')
+  }
 
   return (
     <>

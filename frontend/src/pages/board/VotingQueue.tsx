@@ -76,7 +76,12 @@ const VotingQueue = () => {
       }
       return acc;
     }, {});
-    return Object.values(latestBySeriesId);
+
+    // Filter bỏ series đã publishing (Board đã approve trước đó)
+    // Backend cần thêm seriesStatus vào SubmissionDetailDTO để filter chính xác
+    return Object.values(latestBySeriesId).filter(
+      (s: any) => s.seriesStatus !== 'publishing' && s.seriesStatus !== 'cancelled'
+    );
   })();
 
   // ── Vote mutation ──────────────────────────────────────────────

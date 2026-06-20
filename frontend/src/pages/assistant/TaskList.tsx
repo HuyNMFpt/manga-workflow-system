@@ -5,6 +5,17 @@ import {
   FileImage, Download, Play, ChevronRight, Eye, RotateCcw,
   FileText, Layers, AlertTriangle
 } from 'lucide-react';
+
+// Màu pin theo task type — đồng bộ với TaskAssignment
+const PIN_COLORS: Record<string, string> = {
+  background: '#60a5fa',
+  shading:    '#a78bfa',
+  effect:     '#fb923c',
+  screentone: '#34d399',
+  dialog:     '#facc15',
+  touch_up:   '#f472b6',
+  other:      '#71717a',
+};
 import api from '@/lib/axios';
 import { taskService } from '@/services/taskService';
 
@@ -52,62 +63,72 @@ const parseRegion = (s?: string) => {
   try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
 };
 
-// ─── PanelHighlight: overlay vùng được đánh dấu trên ảnh trang ───
-const PanelHighlight = ({ imageUrl, region, label }: { imageUrl?: string; region: any; label?: string }) => (
-  <div className="relative w-full overflow-hidden rounded-xl border border-white/8 bg-black/30">
-    {imageUrl ? (
-      <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[320px]" draggable={false} />
-    ) : (
-      <div className="h-32 flex items-center justify-center">
-        <Layers className="w-8 h-8 text-zinc-700 opacity-30" />
-      </div>
-    )}
-    {/* Vùng highlight */}
-    {region && (
-      <div
-        className="absolute border-2 border-blue-400 bg-blue-400/10 pointer-events-none transition-all"
-        style={{
-          left:   `${region.x}%`,
-          top:    `${region.y}%`,
-          width:  `${region.width}%`,
-          height: `${region.height}%`,
-        }}>
-        {label && (
-          <span className="absolute -top-5 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded font-bold whitespace-nowrap">
-            {label}
-          </span>
-        )}
-      </div>
-    )}
-  </div>
-);
-
-// ─── RevisionHighlight: vùng Mangaka đánh dấu cần sửa ────────────
-const RevisionHighlight = ({ imageUrl, region }: { imageUrl?: string; region: any }) => (
-  <div className="relative w-full overflow-hidden rounded-xl border border-orange-500/20 bg-black/30">
-    {imageUrl ? (
-      <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[300px]" draggable={false} />
-    ) : (
-      <div className="h-28 flex items-center justify-center">
-        <Layers className="w-7 h-7 text-zinc-700 opacity-30" />
-      </div>
-    )}
-    {region && (
-      <div
-        className="absolute border-2 border-orange-400 bg-orange-400/12 pointer-events-none animate-pulse"
-        style={{
-          left:   `${region.x}%`,
-          top:    `${region.y}%`,
-          width:  `${region.width}%`,
-          height: `${region.height}%`,
-        }}>
-        <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
-          <AlertTriangle className="w-2 h-2 text-white" />
+// ─── PanelPin: hiện pin trên ảnh trang — đồng bộ với TaskAssignment ───
+const PanelPin = ({ imageUrl, region, taskType, label, index = 0 }: {
+  imageUrl?: string; region: any; taskType?: string; label?: string; index?: number;
+}) => {
+  const color = PIN_COLORS[taskType ?? 'other'] ?? '#71717a';
+  const isPinStyle = region && (region.width === 0 || region.height === 0);
+  return (
+    <div className="relative w-full overflow-hidden rounded-xl border border-white/8 bg-black/30">
+      {imageUrl
+        ? <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[320px]" draggable={false}/>
+        : <div className="h-32 flex items-center justify-center"><Layers className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
+      {region && isPinStyle && (
+        // Pin mode (x, y = vị trí %, width=height=0)
+        <div className="absolute pointer-events-none" style={{ left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex:10 }}>
+          <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg">
+            <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2"/>
+            <path d="M14 27 L14 36" stroke={color} strokeWidth="3" strokeLinecap="round"/>
+            <text x="14" y="19" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">{index+1}</text>
+          </svg>
+          {label && (
+            <div className="absolute left-8 top-1 bg-[#0e0e1a] border border-white/15 rounded-lg px-2 py-1 text-[10px] font-bold text-white whitespace-nowrap">
+              {label}
+            </div>
+          )}
         </div>
-      </div>
-    )}
-  </div>
-);
+      )}
+      {region && !isPinStyle && (
+        // Legacy rectangle mode (backward compat)
+        <div className="absolute border-2 border-blue-400 bg-blue-400/10 pointer-events-none"
+          style={{ left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
+          {label && <span className="absolute -top-5 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded font-bold whitespace-nowrap">{label}</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── RevisionPin: pin cần sửa từ Mangaka ─────────────────────────
+const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region: any; taskType?: string }) => {
+  const color = '#fb923c'; // màu cam cố định cho revision
+  const isPinStyle = region && (region.width === 0 || region.height === 0);
+  return (
+    <div className="relative w-full overflow-hidden rounded-xl border border-orange-500/20 bg-black/30">
+      {imageUrl
+        ? <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[300px]" draggable={false}/>
+        : <div className="h-28 flex items-center justify-center"><Layers className="w-7 h-7 text-zinc-700 opacity-30"/></div>}
+      {region && isPinStyle && (
+        <div className="absolute pointer-events-none" style={{ left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex:10 }}>
+          <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg animate-bounce">
+            <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2"/>
+            <path d="M14 27 L14 36" stroke={color} strokeWidth="3" strokeLinecap="round"/>
+            <text x="14" y="19" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold">!</text>
+          </svg>
+        </div>
+      )}
+      {region && !isPinStyle && (
+        <div className="absolute border-2 border-orange-400 bg-orange-400/12 pointer-events-none animate-pulse"
+          style={{ left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
+          <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
+            <AlertTriangle className="w-2 h-2 text-white"/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ─── Hook: load page image ────────────────────────────────────────
 const usePageImage = (pageId?: string) =>
@@ -419,14 +440,15 @@ const TaskList = () => {
                   {region && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-2">Vùng cần xử lý</p>
-                      <PanelHighlight
+                      <PanelPin
                         imageUrl={imageUrl}
                         region={region}
+                        taskType={selectedTask.taskType}
                         label={TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
+                        index={0}
                       />
                       <p className="text-[10px] text-zinc-700 mt-1.5">
-                        Vùng xanh = khu vực bạn cần làm
-                        {` (${Math.round(region.width)}% × ${Math.round(region.height)}%)`}
+                        Pin đánh dấu vị trí Mangaka yêu cầu xử lý
                       </p>
                     </div>
                   )}
@@ -491,7 +513,7 @@ const TaskList = () => {
                   {region && imageUrl && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">Vùng cần xử lý</p>
-                      <PanelHighlight imageUrl={imageUrl} region={region} />
+                      <PanelPin imageUrl={imageUrl} region={region} taskType={selectedTask.taskType} index={0}/>
                     </div>
                   )}
 
@@ -569,8 +591,8 @@ const TaskList = () => {
                   {region && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-2">Vùng cần sửa</p>
-                      <RevisionHighlight imageUrl={imageUrl} region={region} />
-                      <p className="text-[10px] text-orange-400/70 mt-1.5">Vùng cam = khu vực Mangaka yêu cầu sửa</p>
+                      <RevisionPin imageUrl={imageUrl} region={region} taskType={selectedTask.taskType}/>
+                      <p className="text-[10px] text-orange-400/70 mt-1.5">Pin cam = vị trí Mangaka yêu cầu chỉnh sửa</p>
                     </div>
                   )}
 

@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Activity, AlertTriangle, RefreshCw, Loader2, Send, X, CheckCircle2, BookOpen } from 'lucide-react';
 import api from '@/lib/axios';
 
 const StudioProgress = () => {
+  const qc = useQueryClient();
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [selectedSeries, setSelectedSeries] = useState<any>(null);
+  const [publishTarget, setPublishTarget] = useState<any>(null);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['editor','studio-progress'],
@@ -12,6 +15,31 @@ const StudioProgress = () => {
     refetchInterval: 60_000,
   });
   useEffect(() => { if (data) setLastUpdated(new Date()); }, [data]);
+
+  // GET /chapters/series/{seriesId} — lấy chapter list khi chọn series
+  const { data: chaptersData = [] } = useQuery({
+    queryKey: ['chapters', selectedSeries?.seriesId],
+    queryFn: async () => {
+      const r = await api.get(`/chapters/series/${selectedSeries.seriesId}`);
+      return r.data.data ?? [];
+    },
+    enabled: !!selectedSeries?.seriesId,
+  });
+  const chapters: any[] = Array.isArray(chaptersData) ? chaptersData : [];
+  // Chapter có thể publish: status = approved (tất cả task done, Mangaka đã duyệt)
+  const publishableChapters = chapters.filter((c: any) => c.status === 'approved');
+
+  // PUT /chapters/{id}/status → published
+  const publishMutation = useMutation({
+    mutationFn: (chapterId: string) =>
+      api.put(`/chapters/${chapterId}/status`, { status: 'published' }).then(r => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['chapters', selectedSeries?.seriesId] });
+      qc.invalidateQueries({ queryKey: ['editor', 'studio-progress'] });
+      setPublishTarget(null);
+    },
+    onError: (e: any) => alert(e.response?.data?.message ?? 'Xuất bản thất bại'),
+  });
 
   const series = Array.isArray(data) ? data : (data?.studios ?? data?.series ?? []);
 
@@ -105,11 +133,119 @@ const StudioProgress = () => {
                     ))}
                   </div>
                 )}
+
+                {/* Nút Xuất bản — chỉ Editor thấy */}
+                <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
+                  <span className="text-[10px] text-zinc-700">
+                    {selectedSeries?.seriesId === s.seriesId
+                      ? publishableChapters.length > 0
+                        ? `${publishableChapters.length} chapter sẵn sàng xuất bản`
+                        : 'Chưa có chapter nào sẵn sàng'
+                      : ''}
+                  </span>
+                  <button
+                    onClick={() => setSelectedSeries(selectedSeries?.seriesId === s.seriesId ? null : s)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                      selectedSeries?.seriesId === s.seriesId
+                        ? 'bg-teal-500/20 border border-teal-500/30 text-teal-300'
+                        : 'bg-white/5 border border-white/8 text-zinc-400 hover:text-white hover:bg-white/8'
+                    }`}>
+                    <BookOpen className="w-3 h-3" />
+                    {selectedSeries?.seriesId === s.seriesId ? 'Ẩn chapters' : 'Xem chapters'}
+                  </button>
+                </div>
+
+                {/* Chapter list khi expand */}
+                {selectedSeries?.seriesId === s.seriesId && (
+                  <div className="mt-2 space-y-1.5">
+                    {chapters.length === 0 ? (
+                      <p className="text-[11px] text-zinc-700 text-center py-2">Chưa có chapter nào</p>
+                    ) : chapters.map((c: any) => (
+                      <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-white/3 border border-white/5 rounded-xl">
+                        <div>
+                          <span className="text-[12px] font-semibold text-white">
+                            Chapter {c.chapterNumber}{c.title ? `: ${c.title}` : ''}
+                          </span>
+                          <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${
+                            c.status === 'published' ? 'bg-teal-500/15 text-teal-400' :
+                            c.status === 'approved'  ? 'bg-emerald-500/15 text-emerald-400' :
+                            'bg-zinc-500/15 text-zinc-500'
+                          }`}>
+                            {c.status === 'published' ? 'Đã xuất bản' :
+                             c.status === 'approved'  ? 'Sẵn sàng' :
+                             c.status === 'in_progress' ? 'Đang làm' : c.status}
+                          </span>
+                        </div>
+                        {c.status === 'approved' && (
+                          <button
+                            onClick={() => setPublishTarget(c)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/25 text-teal-300 text-[11px] font-semibold hover:bg-teal-500/25 transition-all">
+                            <Send className="w-3 h-3" />Xuất bản
+                          </button>
+                        )}
+                        {c.status === 'published' && (
+                          <CheckCircle2 className="w-4 h-4 text-teal-500/60" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* ════ PUBLISH CONFIRM MODAL ════ */}
+      {publishTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-[#0e0e1a] border border-teal-900/30 rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
+              <div className="flex items-center gap-2">
+                <Send className="w-4 h-4 text-teal-400" />
+                <h2 className="text-[13px] font-bold text-white">Xác nhận xuất bản</h2>
+              </div>
+              <button onClick={() => setPublishTarget(null)}
+                className="w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-white transition-colors">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <div className="bg-white/3 border border-white/6 rounded-xl px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1">Chapter sắp xuất bản</p>
+                <p className="text-sm font-semibold text-white">
+                  Chapter {publishTarget.chapterNumber}{publishTarget.title ? `: ${publishTarget.title}` : ''}
+                </p>
+                {publishTarget.totalPages && (
+                  <p className="text-[11px] text-zinc-500 mt-0.5">{publishTarget.totalPages} trang</p>
+                )}
+              </div>
+              <div className="flex items-start gap-2.5 bg-amber-500/6 border border-amber-500/15 rounded-xl px-4 py-3">
+                <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[11px] font-semibold text-amber-300 mb-0.5">Không thể hoàn tác</p>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Sau khi xuất bản, chapter sẽ được phát hành. Đảm bảo đã kiểm tra lịch xuất bản và toàn bộ nội dung.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => setPublishTarget(null)} disabled={publishMutation.isPending}
+                  className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors disabled:opacity-50">
+                  Huỷ
+                </button>
+                <button onClick={() => publishMutation.mutate(publishTarget.id)}
+                  disabled={publishMutation.isPending}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                  {publishMutation.isPending
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang xuất bản...</>
+                    : <><Send className="w-3.5 h-3.5" />Xác nhận xuất bản</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

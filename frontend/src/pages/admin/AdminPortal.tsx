@@ -55,7 +55,11 @@ export default function AdminPortal() {
   const [editForm, setEditForm] = useState({ name:'', email:'', role:'' })
   const [editErr,  setEditErr]  = useState('')
 
-  const handleLogout = () => { logout(); navigate('/login') }
+  const handleLogout = () => {
+    qc.clear()
+    logout()
+    navigate('/login')
+  }
 
   // ── GET /api/admin/users ──────────────────────────────────
   const { data: users = [], isLoading, isError, refetch } = useQuery({
