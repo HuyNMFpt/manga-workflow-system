@@ -9,7 +9,9 @@ public class TaskDTO {
     private String id;
     private String pageId;
     private String assignedTo;
+    private String assignedToName;  // tên assistant
     private String assignedBy;
+    private String assignedByName;  // tên mangaka
     private String title;
     private String description;
     private String taskType;

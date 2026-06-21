@@ -26,7 +26,7 @@ public class ChapterService {
     public List<ChapterDTO> getChaptersBySeries(String seriesId) {
         List<Chapter> chapters = chapterRepository.findBySeries_IdOrderByChapterNumberAsc(seriesId);
         return chapters.stream()
-                .map(this::mapToDTO)
+                .map(this::mapToDTOWithPages)  // include pages[] để frontend map task → chapter
                 .collect(Collectors.toList());
     }
 

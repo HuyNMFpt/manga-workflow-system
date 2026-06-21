@@ -223,18 +223,7 @@ public class EditorService {
             throw new RuntimeException("Bạn không phụ trách series này");
         }
 
-        // Build editor evaluation note vào description
-        StringBuilder evalNote = new StringBuilder(manuscript.getDescription() != null ? manuscript.getDescription() : "");
-        if (request.getAudienceSummary() != null)
-            evalNote.append("\n[Audience]: ").append(request.getAudienceSummary());
-        if (request.getMarketingAngle() != null)
-            evalNote.append("\n[Marketing]: ").append(request.getMarketingAngle());
-        if (request.getWhyItWillSell() != null)
-            evalNote.append("\n[WhySell]: ").append(request.getWhyItWillSell());
-        if (request.getEditorNote() != null)
-            evalNote.append("\n[EditorNote]: ").append(request.getEditorNote());
-
-        manuscript.setDescription(evalNote.toString());
+        // Không append vào description — evaluation đã lưu trực tiếp vào Submission fields
         manuscript.setStatus(Manuscript.ManuscriptStatus.approved);
         manuscript.setReviewedAt(LocalDateTime.now());
         manuscriptRepository.save(manuscript);

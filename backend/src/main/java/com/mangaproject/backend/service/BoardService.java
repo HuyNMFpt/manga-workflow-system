@@ -34,11 +34,19 @@ public class BoardService {
         pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
         pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
 
+        // Cache seriesId để tránh N+1 queries
+        Map<String, String> subToSeriesId = new HashMap<>();
+        pendingOrVoting.forEach(sub -> subToSeriesId.computeIfAbsent(sub.getId(),
+                k -> getSeriesIdFromSubmission(sub)));
+
         int pendingVotes = (int) pendingOrVoting.stream()
                 .collect(Collectors.toMap(
-                        this::getSeriesIdFromSubmission,
+                        sub -> subToSeriesId.getOrDefault(sub.getId(), sub.getId()),
                         sub -> sub,
-                        (existing, incoming) -> incoming.getCreatedAt().isAfter(existing.getCreatedAt()) ? incoming : existing
+                        (existing, incoming) -> incoming.getCreatedAt() != null
+                                && (existing.getCreatedAt() == null
+                                || incoming.getCreatedAt().isAfter(existing.getCreatedAt()))
+                                ? incoming : existing
                 ))
                 .size();
 
@@ -49,17 +57,19 @@ public class BoardService {
                 .filter(s -> s.getCancellationRisk() != null && s.getCancellationRisk())
                 .count();
 
-        // Quyết định tháng này (editorial actions) — dedup theo seriesId
+        // Quyết định tháng này — dùng query có filter thay vì findAll() (tối ưu)
         LocalDateTime startOfMonth = LocalDateTime.now().withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0);
-        int decisionsThisMonth = (int) submissionRepository.findAll().stream()
-                .filter(s -> (s.getStatus() == Submission.SubmissionStatus.approved
-                        || s.getStatus() == Submission.SubmissionStatus.rejected)
-                        && s.getDecidedAt() != null
-                        && s.getDecidedAt().isAfter(startOfMonth))
+        List<Submission> decidedThisMonth = submissionRepository.findByStatusInAndDecidedAtAfter(
+                List.of(Submission.SubmissionStatus.approved, Submission.SubmissionStatus.rejected),
+                startOfMonth);
+        int decisionsThisMonth = (int) decidedThisMonth.stream()
                 .collect(Collectors.toMap(
                         this::getSeriesIdFromSubmission,
                         sub -> sub,
-                        (existing, incoming) -> incoming.getDecidedAt().isAfter(existing.getDecidedAt()) ? incoming : existing
+                        (existing, incoming) -> incoming.getDecidedAt() != null
+                                && (existing.getDecidedAt() == null
+                                || incoming.getDecidedAt().isAfter(existing.getDecidedAt()))
+                                ? incoming : existing
                 ))
                 .size();
 
@@ -90,19 +100,44 @@ public class BoardService {
             // allSubmissions đã sort Desc theo createdAt nên phần tử đầu tiên gặp là mới nhất
             latestBySeriesId.putIfAbsent(seriesId, sub);
         }
-        List<Submission> submissions = new ArrayList<>(latestBySeriesId.values());
+        // Batch load series để filter + dùng trong stream (tránh N+1 queries)
+        Map<String, Series> seriesMap = seriesRepository.findAllById(latestBySeriesId.keySet()).stream()
+                .collect(Collectors.toMap(Series::getId, s -> s));
+
+        // Filter: bỏ series đã publishing hoặc cancelled
+        List<Submission> submissions = latestBySeriesId.entrySet().stream()
+                .filter(e -> {
+                    Series s = seriesMap.get(e.getKey());
+                    return s != null
+                            && s.getStatus() != Series.SeriesStatus.publishing
+                            && s.getStatus() != Series.SeriesStatus.cancelled;
+                })
+                .map(Map.Entry::getValue)
+                .collect(Collectors.toList());
+
+        // Batch load manuscripts
+        Set<String> manuscriptIds = submissions.stream()
+                .map(Submission::getManuscriptId).collect(Collectors.toSet());
+        Map<String, Manuscript> msMap = manuscriptRepository.findAllById(manuscriptIds).stream()
+                .collect(Collectors.toMap(Manuscript::getId, m -> m));
+
+        Set<String> userIds = new java.util.HashSet<>();
+        seriesMap.values().forEach(s -> { if (s.getMangakaId() != null) userIds.add(s.getMangakaId()); });
+        submissions.forEach(s -> { if (s.getSubmittedBy() != null) userIds.add(s.getSubmittedBy()); });
+        Map<String, com.mangaproject.backend.model.User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(com.mangaproject.backend.model.User::getId, u -> u));
 
         return submissions.stream().map(sub -> {
-            Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
-            Series series = ms != null ? seriesRepository.findById(ms.getSeriesId()).orElse(null) : null;
-            String mangakaName = series != null ? userRepository.findById(series.getMangakaId())
-                    .map(u -> u.getName() != null ? u.getName() : u.getUsername())
-                    .orElse("Unknown") : "Unknown";
-
-            // Editor name — submittedBy của submission là editor
-            String editorName = userRepository.findById(sub.getSubmittedBy())
-                    .map(u -> u.getName() != null ? u.getName() : u.getUsername())
-                    .orElse("Unknown");
+            Manuscript ms = msMap.get(sub.getManuscriptId());
+            Series series = ms != null ? seriesMap.get(ms.getSeriesId()) : null;
+            com.mangaproject.backend.model.User mangakaUser = series != null ? userMap.get(series.getMangakaId()) : null;
+            String mangakaName = mangakaUser != null
+                    ? (mangakaUser.getName() != null ? mangakaUser.getName() : mangakaUser.getUsername())
+                    : "Unknown";
+            com.mangaproject.backend.model.User editorUser = userMap.get(sub.getSubmittedBy());
+            String editorName = editorUser != null
+                    ? (editorUser.getName() != null ? editorUser.getName() : editorUser.getUsername())
+                    : "Unknown";
 
             String desc = ms != null ? ms.getDescription() : "";
 
