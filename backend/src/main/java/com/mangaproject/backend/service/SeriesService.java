@@ -21,6 +21,7 @@ public class SeriesService {
     private final SeriesRepository seriesRepository;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final LookupResolverService lookupResolverService;
 
     public SeriesDTO createSeries(CreateSeriesRequest request, String mangakaId) {
         Series series = new Series();
@@ -34,6 +35,7 @@ public class SeriesService {
 
         if (request.getSchedule() != null) {
             series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
+            series.setPublishScheduleId(lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
         }
 
         if (request.getEditorId() != null) {
@@ -152,6 +154,8 @@ public class SeriesService {
             Notification notification = new Notification();
             notification.setUserId(series.getEditorId());
             notification.setType(Notification.NotificationType.series_at_risk);
+            notification.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
             notification.setReferenceId(series.getId());
             notification.setReferenceType("series");
             notification.setMessage(String.format(

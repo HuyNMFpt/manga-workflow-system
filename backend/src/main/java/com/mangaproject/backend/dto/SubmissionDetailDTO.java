@@ -11,6 +11,7 @@ public class SubmissionDetailDTO {
     private String seriesId;
     private String seriesTitle;
     private String seriesGenre;
+    private String seriesStatus;    // publishing|cancelled|draft — frontend filter VotingQueue
     private String synopsis;
     private String mangakaId;
     private String mangakaName;

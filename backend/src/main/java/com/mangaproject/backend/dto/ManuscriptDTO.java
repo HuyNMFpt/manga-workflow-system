@@ -10,6 +10,7 @@ public class ManuscriptDTO {
     private String id;
     private String seriesId;
     private String seriesTitle;
+    private String seriesStatus;    // draft|submitted|publishing|cancelled — frontend cần để filter
     private String submittedBy;
     private Integer version;
     private String fileUrl;

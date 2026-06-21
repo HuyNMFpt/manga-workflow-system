@@ -25,6 +25,7 @@ public class BoardService {
     private final UserRepository userRepository;
     private final BoardVoteRepository boardVoteRepository;
     private final NotificationRepository notificationRepository;
+    private final LookupResolverService lookupResolverService;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
@@ -111,6 +112,7 @@ public class BoardService {
             dto.setSeriesId(series != null ? series.getId() : "");
             dto.setSeriesTitle(series != null ? series.getTitle() : "");
             dto.setSeriesGenre(series != null ? series.getGenre() : "");
+            dto.setSeriesStatus(series != null ? series.getStatus().name() : null);
             dto.setSynopsis(series != null ? series.getSynopsis() : "");
             dto.setMangakaId(series != null ? series.getMangakaId() : "");
             dto.setMangakaName(mangakaName);
@@ -186,6 +188,8 @@ public class BoardService {
                         if (request.getSchedule() != null) {
                             try {
                                 series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
+                                series.setPublishScheduleId(
+                                        lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
                             } catch (IllegalArgumentException ignored) {}
                         }
                         seriesRepository.save(series);
@@ -210,6 +214,8 @@ public class BoardService {
                         Notification notification = new Notification();
                         notification.setUserId(series.getMangakaId());
                         notification.setType(Notification.NotificationType.submission_result);
+                        notification.setNotificationTypeId(
+                                lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.submission_result));
                         notification.setReferenceId(series.getId());
                         notification.setReferenceType("series");
                         notification.setMessage(String.format(
@@ -295,6 +301,8 @@ public class BoardService {
                 if (request.getNewSchedule() != null) {
                     try {
                         series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getNewSchedule()));
+                        series.setPublishScheduleId(
+                                lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
                     } catch (IllegalArgumentException ignored) {}
                 }
             }

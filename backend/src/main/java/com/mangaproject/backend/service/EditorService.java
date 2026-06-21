@@ -24,6 +24,7 @@ public class EditorService {
     private final UserRepository userRepository;
     private final SubmissionRepository submissionRepository;
     private final NotificationRepository notificationRepository;
+    private final LookupResolverService lookupResolverService;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public EditorStatsDTO getStats(String editorId) {
@@ -148,6 +149,7 @@ public class EditorService {
 
                         ManuscriptDTO dto = new ManuscriptDTO(
                                 m.getId(), m.getSeriesId(), series.getTitle(),
+                                series.getStatus().name(),
                                 m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
                                 m.getDescription(), m.getStatus().name(),
                                 m.getRejectionReason(),
@@ -197,6 +199,7 @@ public class EditorService {
 
         return new ManuscriptDTO(
                 manuscript.getId(), manuscript.getSeriesId(), seriesTitle,
+                series != null ? series.getStatus().name() : null,
                 manuscript.getSubmittedBy(), manuscript.getVersion(), manuscript.getFileUrl(),
                 manuscript.getDescription(), manuscript.getStatus().name(),
                 manuscript.getRejectionReason(),
@@ -314,6 +317,8 @@ public class EditorService {
                 Notification notification = new Notification();
                 notification.setUserId(series.getMangakaId());
                 notification.setType(Notification.NotificationType.revision_requested);
+                notification.setNotificationTypeId(
+                        lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.revision_requested));
                 notification.setReferenceId(manuscriptId);
                 notification.setReferenceType("manuscript");
                 notification.setMessage(String.format(
@@ -329,6 +334,7 @@ public class EditorService {
 
         return new ManuscriptDTO(
                 manuscript.getId(), manuscript.getSeriesId(), series.getTitle(),
+                series.getStatus().name(),
                 manuscript.getSubmittedBy(), manuscript.getVersion(), manuscript.getFileUrl(),
                 manuscript.getDescription(), manuscript.getStatus().name(),
                 manuscript.getRejectionReason(),

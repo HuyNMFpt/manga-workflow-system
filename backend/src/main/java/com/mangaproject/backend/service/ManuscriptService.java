@@ -128,8 +128,10 @@ public class ManuscriptService {
                 ))
                 .collect(Collectors.toList());
 
+        Series series = seriesRepository.findById(m.getSeriesId()).orElse(null);
         return new ManuscriptDTO(
                 m.getId(), m.getSeriesId(), seriesTitle,
+                series != null ? series.getStatus().name() : null,
                 m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
                 m.getDescription(), m.getStatus().name(),
                 m.getRejectionReason(),
