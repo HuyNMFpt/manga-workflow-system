@@ -40,6 +40,15 @@ public class BoardService {
                 k -> getSeriesIdFromSubmission(sub)));
 
         int pendingVotes = (int) pendingOrVoting.stream()
+                // Filter bỏ series đã publishing/cancelled — giống getPendingSubmissions()
+                .filter(sub -> {
+                    String sid = subToSeriesId.getOrDefault(sub.getId(), null);
+                    if (sid == null) return false;
+                    Series s = seriesRepository.findById(sid).orElse(null);
+                    return s != null
+                            && s.getStatus() != Series.SeriesStatus.publishing
+                            && s.getStatus() != Series.SeriesStatus.cancelled;
+                })
                 .collect(Collectors.toMap(
                         sub -> subToSeriesId.getOrDefault(sub.getId(), sub.getId()),
                         sub -> sub,
