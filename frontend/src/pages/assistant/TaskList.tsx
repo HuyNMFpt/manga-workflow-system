@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ListTodo, CheckCircle2, AlertCircle, Clock, Upload, X, Loader2,
@@ -52,6 +52,9 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   shading:     'Tô bóng',
   effect:      'Hiệu ứng',
   screentone:  'Screentone',
+  dialog:      'Hộp thoại',
+  touch_up:    'Chỉnh sửa',
+  other:       'Khác',
   text_bubble: 'Bong bóng thoại',
   cleanup:     'Làm sạch',
   color:       'Tô màu',
@@ -63,37 +66,81 @@ const parseRegion = (s?: string) => {
   try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
 };
 
-// ─── PanelPin: hiện pin trên ảnh trang — đồng bộ với TaskAssignment ───
-const PanelPin = ({ imageUrl, region, taskType, label, index = 0 }: {
-  imageUrl?: string; region: any; taskType?: string; label?: string; index?: number;
+// ─── PanelPin: hiện pin + tooltip rõ ràng cho Assistant ───────────
+const PanelPin = ({ imageUrl, region, taskType, label, sublabel, index = 0 }: {
+  imageUrl?: string; region: any; taskType?: string; label?: string; sublabel?: string; index?: number;
 }) => {
   const color = PIN_COLORS[taskType ?? 'other'] ?? '#71717a';
   const isPinStyle = region && (region.width === 0 || region.height === 0);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [imgRect, setImgRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const calcRect = () => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return;
+    const container = img.parentElement!;
+    const cw = container.clientWidth, ch = container.clientHeight;
+    const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+    const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+    setImgRect({ left: (cw - rw) / 2, top: (ch - rh) / 2, width: rw, height: rh });
+  };
+  const pinLeft = imgRect ? imgRect.left + (region?.x / 100) * imgRect.width - 14 : undefined;
+  const pinTop  = imgRect ? imgRect.top  + (region?.y / 100) * imgRect.height - 36 : undefined;
+  const onRight = region?.x > 55;
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-white/8 bg-black/30">
+    <div className="relative w-full aspect-[3/4] overflow-hidden rounded-xl border border-white/8 bg-black/30">
       {imageUrl
-        ? <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[320px]" draggable={false}/>
-        : <div className="h-32 flex items-center justify-center"><Layers className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
+        ? <img ref={imgRef} src={imageUrl} alt="Trang truyện"
+            className="absolute inset-0 w-full h-full object-contain" draggable={false} onLoad={calcRect}/>
+        : <div className="absolute inset-0 flex items-center justify-center"><Layers className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
+
       {region && isPinStyle && (
-        // Pin mode (x, y = vị trí %, width=height=0)
-        <div className="absolute pointer-events-none" style={{ left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex:10 }}>
-          <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg">
-            <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2"/>
+        <div className="absolute" style={
+          pinLeft !== undefined
+            ? { left: pinLeft, top: pinTop, zIndex: 20 }
+            : { left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex: 20 }
+        }
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}>
+          {/* Pin — chỉ hiện số, hover mới hiện tooltip */}
+          <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg cursor-pointer">
+            <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2.5"/>
             <path d="M14 27 L14 36" stroke={color} strokeWidth="3" strokeLinecap="round"/>
             <text x="14" y="19" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">{index+1}</text>
           </svg>
-          {label && (
-            <div className="absolute left-8 top-1 bg-[#0e0e1a] border border-white/15 rounded-lg px-2 py-1 text-[10px] font-bold text-white whitespace-nowrap">
-              {label}
+          {/* Tooltip — chỉ hiện khi hover */}
+          {hovered && (label || sublabel) && (
+            <div className="absolute top-0 pointer-events-none z-30"
+              style={onRight
+                ? { right: '100%', marginRight: 6, minWidth: 150, maxWidth: 220 }
+                : { left: '100%',  marginLeft:  6, minWidth: 150, maxWidth: 220 }}>
+              <div className="rounded-xl px-3 py-2.5 shadow-2xl"
+                style={{ background: '#0e0e1aee', border: `1px solid ${color}50` }}>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }}/>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color }}>
+                    {TASK_TYPE_LABEL[taskType ?? ''] ?? taskType}
+                  </span>
+                </div>
+                {label && <p className="text-[12px] font-semibold text-white leading-snug mb-1">{label}</p>}
+                {sublabel && <p className="text-[11px] text-zinc-400 leading-relaxed">{sublabel}</p>}
+              </div>
             </div>
           )}
         </div>
       )}
+
       {region && !isPinStyle && (
-        // Legacy rectangle mode (backward compat)
-        <div className="absolute border-2 border-blue-400 bg-blue-400/10 pointer-events-none"
-          style={{ left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
-          {label && <span className="absolute -top-5 left-0 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded font-bold whitespace-nowrap">{label}</span>}
+        <div className="absolute border-2 bg-blue-400/10 pointer-events-none"
+          style={imgRect ? {
+            left: imgRect.left + (region.x / 100) * imgRect.width,
+            top:  imgRect.top  + (region.y / 100) * imgRect.height,
+            width:  (region.width / 100) * imgRect.width,
+            height: (region.height / 100) * imgRect.height,
+            borderColor: color,
+          } : { left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%`, borderColor: color }}>
+          {label && <span className="absolute -top-5 left-0 text-[10px] text-white px-1.5 py-0.5 rounded font-bold whitespace-nowrap" style={{ background: color }}>{label}</span>}
         </div>
       )}
     </div>
@@ -102,15 +149,32 @@ const PanelPin = ({ imageUrl, region, taskType, label, index = 0 }: {
 
 // ─── RevisionPin: pin cần sửa từ Mangaka ─────────────────────────
 const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region: any; taskType?: string }) => {
-  const color = '#fb923c'; // màu cam cố định cho revision
+  const color = '#fb923c';
   const isPinStyle = region && (region.width === 0 || region.height === 0);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [imgRect, setImgRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const calcRect = () => {
+    const img = imgRef.current;
+    if (!img || !img.naturalWidth) return;
+    const container = img.parentElement!;
+    const cw = container.clientWidth, ch = container.clientHeight;
+    const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+    const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+    setImgRect({ left: (cw - rw) / 2, top: (ch - rh) / 2, width: rw, height: rh });
+  };
   return (
-    <div className="relative w-full overflow-hidden rounded-xl border border-orange-500/20 bg-black/30">
+    <div className="relative w-full aspect-[3/4] overflow-hidden rounded-xl border border-orange-500/20 bg-black/30">
       {imageUrl
-        ? <img src={imageUrl} alt="Trang truyện" className="w-full object-contain max-h-[300px]" draggable={false}/>
-        : <div className="h-28 flex items-center justify-center"><Layers className="w-7 h-7 text-zinc-700 opacity-30"/></div>}
+        ? <img ref={imgRef} src={imageUrl} alt="Trang truyện"
+            className="absolute inset-0 w-full h-full object-contain" draggable={false}
+            onLoad={calcRect}/>
+        : <div className="absolute inset-0 flex items-center justify-center"><Layers className="w-7 h-7 text-zinc-700 opacity-30"/></div>}
       {region && isPinStyle && (
-        <div className="absolute pointer-events-none" style={{ left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex:10 }}>
+        <div className="absolute pointer-events-none" style={imgRect ? {
+          left: imgRect.left + (region.x / 100) * imgRect.width - 14,
+          top:  imgRect.top  + (region.y / 100) * imgRect.height - 36,
+          zIndex: 10
+        } : { left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex:10 }}>
           <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg animate-bounce">
             <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2"/>
             <path d="M14 27 L14 36" stroke={color} strokeWidth="3" strokeLinecap="round"/>
@@ -120,7 +184,12 @@ const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region
       )}
       {region && !isPinStyle && (
         <div className="absolute border-2 border-orange-400 bg-orange-400/12 pointer-events-none animate-pulse"
-          style={{ left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
+          style={imgRect ? {
+            left:   imgRect.left + (region.x / 100) * imgRect.width,
+            top:    imgRect.top  + (region.y / 100) * imgRect.height,
+            width:  (region.width / 100) * imgRect.width,
+            height: (region.height / 100) * imgRect.height,
+          } : { left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
           <div className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 bg-orange-500 rounded-full flex items-center justify-center">
             <AlertTriangle className="w-2 h-2 text-white"/>
           </div>
@@ -131,12 +200,14 @@ const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region
 };
 
 // ─── Hook: load page image ────────────────────────────────────────
-const usePageImage = (pageId?: string) =>
+const usePageImage = (pageId?: string, pageImageUrl?: string) =>
   useQuery({
     queryKey: ['page', pageId],
     queryFn: async () => {
       if (!pageId) return null;
-      // GET /api/pages/{id} → PageDTO { imageUrl, thumbnailUrl, ... }
+      // Nếu backend đã trả pageImageUrl trong TaskDTO → dùng luôn, không fetch thêm
+      if (pageImageUrl) return { imageUrl: pageImageUrl };
+      // Fallback: GET /api/pages/{id}
       const r = await api.get(`/pages/${pageId}`);
       return r.data.data ?? null;
     },
@@ -191,7 +262,7 @@ const TaskList = () => {
     : (taskData?.content ?? taskData?.items ?? []);
 
   // ── Page image for selected task ───────────────────────────────
-  const { data: pageData } = usePageImage(selectedTask?.pageId);
+  const { data: pageData } = usePageImage(selectedTask?.pageId, selectedTask?.pageImageUrl);
 
   // ── Mutations ──────────────────────────────────────────────────
   const startMutation = useStartTask();
@@ -241,11 +312,24 @@ const TaskList = () => {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setSubmitError('');
     if (!uploadFile) { setSubmitError('Vui lòng chọn file kết quả'); return; }
-    const url = URL.createObjectURL(uploadFile);
-    submitMutation.mutate({ taskId: selectedTask.id, url, n: note });
+    try {
+      // Upload file lên server → lấy URL thật
+      // Backend cần: POST /api/files/upload → { data: { url: "http://localhost:8080/uploads/..." } }
+      const fd = new FormData();
+      fd.append('file', uploadFile);
+      fd.append('folder', 'task-results');
+      const res = await api.post('/files/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const fileUrl = res.data.data?.url ?? res.data.data?.fileUrl ?? '';
+      if (!fileUrl) throw new Error('Upload thất bại — không nhận được URL');
+      submitMutation.mutate({ taskId: selectedTask.id, url: fileUrl, n: note });
+    } catch (e: any) {
+      setSubmitError(e.response?.data?.message ?? e.message ?? 'Có lỗi khi upload file');
+    }
   };
 
   // ── Derived: cùng series/page → nhóm task (để check resource sharing) ─
@@ -444,12 +528,32 @@ const TaskList = () => {
                         imageUrl={imageUrl}
                         region={region}
                         taskType={selectedTask.taskType}
-                        label={TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
+                        label={selectedTask.title || (TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType)}
+                        sublabel={selectedTask.description}
                         index={0}
                       />
-                      <p className="text-[10px] text-zinc-700 mt-1.5">
-                        Pin đánh dấu vị trí Mangaka yêu cầu xử lý
-                      </p>
+                      {/* Mô tả pin bên dưới ảnh — rõ ràng, không chèn lên nhau */}
+                      <div className="mt-2 flex items-start gap-2.5 px-3 py-2.5 rounded-xl"
+                        style={{ background: PIN_COLORS[selectedTask.taskType] + '15', border: `1px solid ${PIN_COLORS[selectedTask.taskType]}30` }}>
+                        <svg width="20" height="26" viewBox="0 0 28 36" className="flex-shrink-0 mt-0.5">
+                          <circle cx="14" cy="14" r="13" fill={PIN_COLORS[selectedTask.taskType] ?? '#71717a'} stroke="white" strokeWidth="2"/>
+                          <path d="M14 27 L14 36" stroke={PIN_COLORS[selectedTask.taskType] ?? '#71717a'} strokeWidth="3" strokeLinecap="round"/>
+                          <text x="14" y="19" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">1</text>
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider"
+                              style={{ color: PIN_COLORS[selectedTask.taskType] ?? '#71717a' }}>
+                              {TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
+                            </span>
+                          </div>
+                          <p className="text-[12px] font-semibold text-white">{selectedTask.title}</p>
+                          {selectedTask.description && (
+                            <p className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">{selectedTask.description}</p>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-zinc-700 mt-1">Hover pin để xem trên ảnh</p>
                     </div>
                   )}
 
@@ -513,7 +617,10 @@ const TaskList = () => {
                   {region && imageUrl && (
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5">Vùng cần xử lý</p>
-                      <PanelPin imageUrl={imageUrl} region={region} taskType={selectedTask.taskType} index={0}/>
+                      <PanelPin imageUrl={imageUrl} region={region} taskType={selectedTask.taskType}
+                        label={selectedTask.title || (TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType)}
+                        sublabel={selectedTask.description}
+                        index={0}/>
                     </div>
                   )}
 

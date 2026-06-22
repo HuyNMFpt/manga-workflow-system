@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import {
@@ -26,17 +26,82 @@ const parseRegion = (s?: string) => {
 };
 
 // ─── ResultPreview ──────────────────────────────────────────────
+const PIN_COLORS_MAP: Record<string, string> = {
+  background:'#60a5fa', shading:'#a78bfa', effect:'#fb923c',
+  screentone:'#34d399', dialog:'#facc15', touch_up:'#f472b6', other:'#71717a',
+};
 const ResultPreview = ({ task, zoom, onZoomIn, onZoomOut }: any) => {
   const [view, setView] = useState<'result'|'original'|'compare'>('result');
   const region = parseRegion(task.panelRegion);
-  const Overlay = () => region ? (
-    <div className="absolute border-2 border-fuchsia-400 bg-fuchsia-400/10 pointer-events-none"
-      style={{ left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%` }}>
-      <span className="absolute -top-5 left-0 bg-fuchsia-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap">
-        {TYPE_LABEL[task.taskType] ?? task.taskType}
-      </span>
-    </div>
-  ) : null;
+  const isPinStyle = region && (region.width === 0 || region.height === 0);
+  const color = PIN_COLORS_MAP[task.taskType] ?? '#e879f9';
+
+  // Tính vị trí ảnh thật trong container (object-contain tạo letterbox)
+  const origImgRef = useRef<HTMLImageElement>(null);
+  const [origRect, setOrigRect] = useState<{left:number;top:number;width:number;height:number}|null>(null);
+  const calcOrigRect = () => {
+    const img = origImgRef.current;
+    if (!img || !img.naturalWidth) return;
+    const c = img.parentElement!;
+    const scale = Math.min(c.clientWidth/img.naturalWidth, c.clientHeight/img.naturalHeight);
+    const rw = img.naturalWidth*scale, rh = img.naturalHeight*scale;
+    setOrigRect({ left:(c.clientWidth-rw)/2, top:(c.clientHeight-rh)/2, width:rw, height:rh });
+  };
+
+  // Pin overlay — hover mới hiện tooltip
+  const PinOverlay = ({ imgRect }: { imgRect: typeof origRect }) => {
+    const [hovered, setHovered] = useState(false);
+    if (!region) return null;
+    if (isPinStyle) {
+      const pinL = imgRect ? imgRect.left + (region.x/100)*imgRect.width  - 14 : undefined;
+      const pinT = imgRect ? imgRect.top  + (region.y/100)*imgRect.height - 36 : undefined;
+      const onRight = region.x > 55;
+      return (
+        <div className="absolute" style={
+          pinL !== undefined
+            ? { left: pinL, top: pinT, zIndex: 20 }
+            : { left:`calc(${region.x}% - 14px)`, top:`calc(${region.y}% - 36px)`, zIndex: 20 }
+        }
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}>
+          <svg width="28" height="36" viewBox="0 0 28 36" className="drop-shadow-lg cursor-pointer">
+            <circle cx="14" cy="14" r="13" fill={color} stroke="white" strokeWidth="2.5"/>
+            <path d="M14 27 L14 36" stroke={color} strokeWidth="3" strokeLinecap="round"/>
+            <text x="14" y="19" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">1</text>
+          </svg>
+          {hovered && (
+            <div className="absolute top-0 pointer-events-none z-30"
+              style={onRight ? { right:'100%', marginRight:6, minWidth:140 } : { left:'100%', marginLeft:6, minWidth:140 }}>
+              <div className="rounded-xl px-2.5 py-2 shadow-2xl" style={{ background:'#0e0e1aee', border:`1px solid ${color}50` }}>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="w-2 h-2 rounded-full" style={{ background: color }}/>
+                  <span className="text-[10px] font-bold uppercase" style={{ color }}>{TYPE_LABEL[task.taskType] ?? task.taskType}</span>
+                </div>
+                {task.title && <p className="text-[11px] font-semibold text-white mb-0.5">{task.title}</p>}
+                {task.description && <p className="text-[10px] text-zinc-400 leading-relaxed">{task.description}</p>}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    // Rectangle mode
+    return (
+      <div className="absolute border-2 pointer-events-none"
+        style={imgRect ? {
+          left:   imgRect.left + (region.x/100)*imgRect.width,
+          top:    imgRect.top  + (region.y/100)*imgRect.height,
+          width:  (region.width/100)*imgRect.width,
+          height: (region.height/100)*imgRect.height,
+          borderColor: color, background: color + '15',
+        } : { left:`${region.x}%`, top:`${region.y}%`, width:`${region.width}%`, height:`${region.height}%`, borderColor: color }}>
+        <span className="absolute -top-5 left-0 text-white text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap" style={{ background: color }}>
+          {TYPE_LABEL[task.taskType] ?? task.taskType}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-1">
@@ -61,23 +126,37 @@ const ResultPreview = ({ task, zoom, onZoomIn, onZoomOut }: any) => {
           <div className="grid grid-cols-2 divide-x divide-white/8">
             <div className="relative">
               <p className="absolute top-2 left-2 z-10 bg-black/60 rounded px-1.5 py-0.5 text-[9px] text-zinc-300">Trang gốc</p>
-              {task.pageImageUrl ? <img src={task.pageImageUrl} alt="Original" className="w-full object-contain max-h-80"/> : <div className="h-48 flex items-center justify-center"><Film className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
-              <Overlay/>
+              {task.pageImageUrl
+                ? <img ref={origImgRef} src={task.pageImageUrl} alt="Original" className="w-full object-contain max-h-80" onLoad={calcOrigRect}/>
+                : <div className="h-48 flex items-center justify-center"><Film className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
+              <PinOverlay imgRect={origRect}/>
             </div>
             <div className="relative">
               <p className="absolute top-2 left-2 z-10 bg-black/60 rounded px-1.5 py-0.5 text-[9px] text-fuchsia-300">Kết quả</p>
-              {task.fileUrl ? <img src={task.fileUrl} alt="Result" className="w-full object-contain max-h-80"/> : <div className="h-48 flex items-center justify-center"><Film className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
+              {task.fileUrl
+                ? <img src={task.fileUrl} alt="Result"
+                    className="w-full object-contain max-h-80"
+                    onError={e => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('hidden'); }}
+                  />
+                : null}
+              <div className="h-48 flex flex-col items-center justify-center gap-2" hidden={!!task.fileUrl}>
+                <Film className="w-8 h-8 text-zinc-700 opacity-30"/>
+                <p className="text-[11px] text-zinc-700">Chưa có file kết quả</p>
+              </div>
             </div>
           </div>
         ) : (
           <div className="relative">
             {(view==='result' ? task.fileUrl : task.pageImageUrl)
-              ? <img src={view==='result'?task.fileUrl:task.pageImageUrl} alt={view} className="w-full object-contain max-h-96" draggable={false}/>
+              ? <img ref={view==='original' ? origImgRef : undefined}
+                  src={view==='result'?task.fileUrl:task.pageImageUrl} alt={view}
+                  className="w-full object-contain max-h-96" draggable={false}
+                  onLoad={view==='original' ? calcOrigRect : undefined}/>
               : <div className="h-48 flex flex-col items-center justify-center gap-2">
                   <Film className="w-8 h-8 text-zinc-700 opacity-20"/>
                   <p className="text-[11px] text-zinc-700">{view==='result'?'Assistant chưa nộp file':'Không có ảnh trang gốc'}</p>
                 </div>}
-            {view==='original' && <Overlay/>}
+            {view==='original' && <PinOverlay imgRect={origRect}/>}
           </div>
         )}
       </div>
@@ -140,7 +219,11 @@ export default function PageReview() {
   // ── Mutations ───────────────────────────────────────────────
   const approveMutation = useMutation({
     mutationFn: (id: string) => taskService.approve(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey:['tasks'] }); closeModal(); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey:['tasks'] });
+      qc.invalidateQueries({ queryKey:['chapters'] }); // chapter có thể auto-approve sau khi task xong
+      closeModal();
+    },
   });
   const revisionMutation = useMutation({
     mutationFn: ({ taskId, note }: { taskId:string; note:string }) => taskService.requestRevision(taskId, note),
@@ -277,7 +360,7 @@ export default function PageReview() {
                             className="grid grid-cols-[2fr_1fr_1.5fr_1fr_5rem] gap-4 px-6 py-3 border-t border-white/4 items-center hover:bg-white/[0.02] transition-colors">
                             <p className="text-[12px] font-semibold text-white truncate">{task.title}</p>
                             <p className="text-[11px] text-zinc-500">{TYPE_LABEL[task.taskType] ?? task.taskType}</p>
-                            <p className="text-[11px] text-zinc-500 truncate">{task.assignedTo}</p>
+                            <p className="text-[11px] text-zinc-500 truncate">{task.assignedToName ?? task.assignedTo}</p>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${st.pill}`}>
                               {st.label}
                             </span>
@@ -324,7 +407,7 @@ export default function PageReview() {
                 </div>
                 <p className="text-[11px] text-zinc-600 mt-0.5">
                   {TYPE_LABEL[selectedTask.taskType]??selectedTask.taskType}
-                  {selectedTask.assignedTo && ` · ${selectedTask.assignedTo}`}
+                  {(selectedTask.assignedToName ?? selectedTask.assignedTo) && ` · ${selectedTask.assignedToName ?? selectedTask.assignedTo}`}
                 </p>
               </div>
               <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors">

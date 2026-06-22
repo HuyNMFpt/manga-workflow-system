@@ -109,10 +109,8 @@ const VotingQueue = () => {
           if (!old) return old;
           const list: any[] = Array.isArray(old) ? old : (old?.content ?? old?.items ?? []);
           if (isApproved) {
-            // Đã xong → xóa khỏi list luôn
             return list.filter((s: any) => (s.submissionId ?? s.id) !== vars.submissionId);
           }
-          // Chưa đủ phiếu → cập nhật count + hasVoted
           return list.map((s: any) =>
             (s.submissionId ?? s.id) === vars.submissionId
               ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, hasVoted: true }
@@ -121,8 +119,12 @@ const VotingQueue = () => {
         });
       }
 
-      qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
+      // Invalidate stats (dashboard) ngay
       qc.invalidateQueries({ queryKey: ['board', 'stats'] });
+      // Invalidate voting queue sau 1.5s để tránh overwrite cache mới vừa set
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
+      }, 1500);
     },
     onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });

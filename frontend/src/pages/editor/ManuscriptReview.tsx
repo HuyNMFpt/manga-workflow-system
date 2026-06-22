@@ -154,12 +154,13 @@ const parseDesc = (raw?: string): ParsedDesc => {
   if (!raw) return { mainText:'', fields:[], editorNotes:[] };
   const fields: { key:string; value:string }[] = [];
   const editorNotes: string[] = [];
-  const tagRegex = /\[([^\]]+?):\s*([^\]]*)\]/g;
+  // Backend lưu format "[Key]: Value\n" — match cả 2 format cũ và mới
+  const tagRegex = /\[([^\]]+?)\]:\s*([^\n\[]*)/g;
   let match: RegExpExecArray | null;
   let cleaned = raw;
   while ((match = tagRegex.exec(raw)) !== null) {
     const key = match[1].trim(), value = match[2].trim();
-    if (key.toLowerCase().includes('editor note')) editorNotes.push(value);
+    if (key.toLowerCase().includes('editor note') || key === 'EditorNote') editorNotes.push(value);
     else fields.push({ key, value });
     cleaned = cleaned.replace(match[0], '');
   }
@@ -228,14 +229,11 @@ const ManuscriptReview = () => {
   }, {});
   const dedupedMs: any[] = Object.values(latestBySeriesId);
 
-  // Filter:
-  // - "publishing" tab: seriesStatus = publishing (Board đã approve)
-  // - Các tab khác: theo manuscript status như cũ
+  // Filter theo manuscript status trực tiếp
+  // Sau khi backend thêm status publishing: không cần check seriesStatus nữa
   const manuscripts = activeFilter === 'all'
     ? dedupedMs
-    : activeFilter === 'publishing'
-      ? dedupedMs.filter((m: any) => m.seriesStatus === 'publishing')
-      : dedupedMs.filter((m: any) => m.status === activeFilter && m.seriesStatus !== 'publishing');
+    : dedupedMs.filter((m: any) => m.status === activeFilter);
 
   // ── Mutations ────────────────────────────────────────────────
 
@@ -409,9 +407,7 @@ const ManuscriptReview = () => {
           {FILTERS.map(f => {
             const count = f.id === 'all'
               ? dedupedMs.length
-              : f.id === 'publishing'
-                ? dedupedMs.filter((m: any) => m.seriesStatus === 'publishing').length
-                : dedupedMs.filter((m: any) => m.status === f.id && m.seriesStatus !== 'publishing').length;
+              : dedupedMs.filter((m: any) => m.status === f.id).length;
             return (
               <button key={f.id} onClick={() => setActiveFilter(f.id)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
@@ -457,7 +453,7 @@ const ManuscriptReview = () => {
 
               return (
                 <div key={m.id}
-                  className={`rounded-2xl border overflow-hidden transition-all ${
+                  className={`rounded-2xl border transition-all ${
                     isExpanded
                       ? `${st.border} bg-white/[0.01]`
                       : 'border-white/5 bg-white/[0.015]'
@@ -709,24 +705,11 @@ const ManuscriptReview = () => {
                             </div>
                           </div>
                           <ManuscriptInfo m={m} parsed={parsed} />
-                          {/* Chặn nộp lại nếu series đã được submit (tránh spam) */}
-                          {m.seriesStatus === 'submitted' ? (
-                            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/6 border border-amber-500/15">
-                              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-[12px] font-semibold text-amber-300">Đã nộp lên Board — đang chờ xét duyệt</p>
-                                <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
-                                  Series đang trong hàng chờ bình duyệt. Không thể nộp lại cho đến khi có kết quả từ Board.
-                                </p>
-                              </div>
-                            </div>
-                          ) : (
-                            <FullBoardForm
+                          <FullBoardForm
                               bForm={bForm} setBForm={setBForm} bErr={bErr}
                               onSubmit={() => handleBoard(m.id)}
                               isPending={boardMutation.isPending}
                             />
-                          )}
                         </div>
                       )}
 
@@ -744,7 +727,7 @@ const ManuscriptReview = () => {
                           </div>
                           <ManuscriptInfo m={m} parsed={parsed} />
                           <button
-                            onClick={() => navigate('/editor/studio')}
+                            onClick={() => navigate('/editor/progress')}
                             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-500/25 text-violet-300 text-sm font-semibold hover:bg-violet-500/25 transition-all">
                             <BarChart2 className="w-4 h-4" />
                             Xem tiến độ Studio →
