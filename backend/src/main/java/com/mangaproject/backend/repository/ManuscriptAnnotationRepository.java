@@ -7,5 +7,6 @@ import java.util.List;
 
 @Repository
 public interface ManuscriptAnnotationRepository extends JpaRepository<ManuscriptAnnotation, String> {
+    void deleteByManuscriptId(String manuscriptId);
     List<ManuscriptAnnotation> findByManuscriptIdOrderByCreatedAtAsc(String manuscriptId);
 }

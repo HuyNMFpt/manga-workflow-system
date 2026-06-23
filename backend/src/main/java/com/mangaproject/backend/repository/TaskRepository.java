@@ -35,4 +35,5 @@ public interface TaskRepository extends JpaRepository<Task, String> {
             "JOIN pages p ON t.page_id = p.id " +
             "WHERE p.chapter_id = :chapterId AND t.status != 'approved'", nativeQuery = true)
     long countNonApprovedByChapterId(@Param("chapterId") String chapterId);
+    void deleteByPageId(String pageId);
 }

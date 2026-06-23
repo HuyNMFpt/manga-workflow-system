@@ -17,4 +17,6 @@ public interface PageRepository extends JpaRepository<Page, String> {
     boolean existsByChapter_IdAndPageNumber(String chapterId, Integer pageNumber);
 
     long countByChapter_Id(String chapterId);
+    List<Page> findByChapterId(String chapterId);
+    void deleteByChapterId(String chapterId);
 }

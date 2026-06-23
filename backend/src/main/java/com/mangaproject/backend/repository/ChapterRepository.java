@@ -22,4 +22,6 @@ public interface ChapterRepository extends JpaRepository<Chapter, String> {
     Optional<Chapter> findByIdWithPages(@Param("id") String id);
 
     long countBySeries_Id(String seriesId);
+    List<Chapter> findBySeriesId(String seriesId);
+    void deleteBySeriesId(String seriesId);
 }
