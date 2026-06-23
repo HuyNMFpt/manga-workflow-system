@@ -57,6 +57,6 @@ public class Manuscript {
     private LocalDateTime deletedAt;
 
     public enum ManuscriptStatus {
-        draft, submitted, under_review, approved, rejected, revision_requested
+        draft, submitted, under_review, approved, rejected, revision_requested, publishing
     }
 }

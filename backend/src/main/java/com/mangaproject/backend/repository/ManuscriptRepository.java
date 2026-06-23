@@ -8,6 +8,8 @@ import java.util.Optional;
 
 @Repository
 public interface ManuscriptRepository extends JpaRepository<Manuscript, String> {
+    List<Manuscript> findBySeriesId(String seriesId);
+    void deleteBySeriesId(String seriesId);
     List<Manuscript> findBySeriesIdOrderByVersionDesc(String seriesId);
     Optional<Manuscript> findTopBySeriesIdOrderByVersionDesc(String seriesId);
     boolean existsBySeriesIdAndStatus(String seriesId, Manuscript.ManuscriptStatus status);

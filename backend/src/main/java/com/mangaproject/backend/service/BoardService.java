@@ -238,7 +238,7 @@ public class BoardService {
                         }
                         seriesRepository.save(series);
                     }
-                    ms.setStatus(Manuscript.ManuscriptStatus.approved);
+                    ms.setStatus(Manuscript.ManuscriptStatus.publishing);
                     manuscriptRepository.save(ms);
                 }
             } else {

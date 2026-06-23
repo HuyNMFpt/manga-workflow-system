@@ -3,9 +3,10 @@ package com.mangaproject.backend.service;
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Notification;
 import com.mangaproject.backend.model.Series;
-import com.mangaproject.backend.repository.NotificationRepository;
-import com.mangaproject.backend.repository.SeriesRepository;
-import com.mangaproject.backend.repository.UserRepository;
+import com.mangaproject.backend.repository.*;
+import com.mangaproject.backend.model.Chapter;
+import com.mangaproject.backend.model.Manuscript;
+import com.mangaproject.backend.model.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,12 @@ public class SeriesService {
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
     private final LookupResolverService lookupResolverService;
+    private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptAnnotationRepository annotationRepository;
+    private final SubmissionRepository submissionRepository;
+    private final ChapterRepository chapterRepository;
+    private final PageRepository pageRepository;
+    private final TaskRepository taskRepository;
 
     public SeriesDTO createSeries(CreateSeriesRequest request, String mangakaId) {
         Series series = new Series();
@@ -120,6 +127,28 @@ public class SeriesService {
             throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft hoặc cancelled");
         }
 
+        // Cascade delete thủ công theo thứ tự FK
+        // 1. Xóa annotations + submissions liên quan đến manuscripts
+        List<Manuscript> manuscripts = manuscriptRepository.findBySeriesId(id);
+        for (Manuscript ms : manuscripts) {
+            annotationRepository.deleteByManuscriptId(ms.getId());
+            submissionRepository.deleteByManuscriptId(ms.getId());
+        }
+        // 2. Xóa manuscripts
+        manuscriptRepository.deleteBySeriesId(id);
+
+        // 3. Xóa tasks → pages → chapters
+        List<Chapter> chapters = chapterRepository.findBySeriesId(id);
+        for (Chapter ch : chapters) {
+            List<Page> pages = pageRepository.findByChapterId(ch.getId());
+            for (Page p : pages) {
+                taskRepository.deleteByPageId(p.getId());
+            }
+            pageRepository.deleteByChapterId(ch.getId());
+        }
+        chapterRepository.deleteBySeriesId(id);
+
+        // 4. Xóa series
         seriesRepository.delete(series);
         log.info("Series deleted: id={}, by mangaka={}", id, mangakaId);
     }
