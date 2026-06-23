@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import {
@@ -100,13 +100,30 @@ export default function TaskAssignment() {
   const getTypeConfig = (type: TaskType) => TASK_TYPES.find(t=>t.value===type) ?? TASK_TYPES[TASK_TYPES.length-1];
 
   // ── Click on image → place pin ──────────────────────────────
+  const imgRef = useRef<HTMLImageElement>(null);
+
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!selectedChapterId) return;
-    // Nếu đang click vào pin thì không tạo pin mới
     if ((e.target as HTMLElement).closest('.pin-element')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    const container = e.currentTarget;
+    const rect = container.getBoundingClientRect();
+    const img = imgRef.current;
+    // Tính tọa độ theo vùng ảnh thật (loại trừ letterbox từ object-contain)
+    let x: number, y: number;
+    if (img && img.naturalWidth) {
+      const cw = rect.width, ch = rect.height;
+      const scale = Math.min(cw / img.naturalWidth, ch / img.naturalHeight);
+      const rw = img.naturalWidth * scale, rh = img.naturalHeight * scale;
+      const offX = (cw - rw) / 2, offY = (ch - rh) / 2;
+      const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+      // Nếu click ngoài vùng ảnh thật → bỏ qua
+      if (cx < offX || cx > offX + rw || cy < offY || cy > offY + rh) return;
+      x = ((cx - offX) / rw) * 100;
+      y = ((cy - offY) / rh) * 100;
+    } else {
+      x = ((e.clientX - rect.left) / rect.width) * 100;
+      y = ((e.clientY - rect.top) / rect.height) * 100;
+    }
     const newTask: Partial<LocalTask> = {
       id: Date.now(), x, y,
       type: selectedTaskType,
@@ -260,7 +277,7 @@ export default function TaskAssignment() {
                   onClick={handleImageClick}>
 
                   {currentPageImage
-                    ? <img src={currentPageImage} alt={`Trang ${selectedPageNum}`} className="absolute inset-0 w-full h-full object-contain" draggable={false}/>
+                    ? <img ref={imgRef} src={currentPageImage} alt={`Trang ${selectedPageNum}`} className="absolute inset-0 w-full h-full object-contain" draggable={false}/>
                     : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
                         <MousePointer className="w-8 h-8"/>
