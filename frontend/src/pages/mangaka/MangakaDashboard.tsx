@@ -1,277 +1,249 @@
-import { 
-  BookOpen, 
-  FileText, 
-  CheckSquare, 
-  Clock,
-  Plus,
-  Upload,
-  Calendar,
-  TrendingUp,
-  Target,
-  ArrowRight,
-  Sparkles
-} from 'lucide-react';
+import { useState } from 'react';
+import { BookOpen, CheckSquare, TrendingUp, AlertTriangle, Plus, Upload, Layers, Trophy, ArrowUpRight, Feather, Sparkles } from 'lucide-react';
+import CreateSeriesModal from '@/components/shared/CreateSeriesModal';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '@/stores/authStore';
+import api from '@/lib/axios';
 
 const MangakaDashboard = () => {
-  // Mock data
-  const stats = [
-    {
-      title: 'Series đang hoạt động',
-      value: '3',
-      change: '+1 tháng này',
-      icon: BookOpen,
-      gradient: 'from-purple-500 to-purple-600',
-      trend: 'up'
-    },
-    {
-      title: 'Tổng số Chapter',
-      value: '47',
-      change: '+5 tuần này',
-      icon: FileText,
-      gradient: 'from-blue-500 to-blue-600',
-      trend: 'up'
-    },
-    {
-      title: 'Công việc chờ xử lý',
-      value: '8',
-      change: '2 hết hạn hôm nay',
-      icon: CheckSquare,
-      gradient: 'from-orange-500 to-orange-600',
-      trend: 'neutral'
-    },
-    {
-      title: 'Deadline sắp tới',
-      value: '4',
-      change: 'Gần nhất: 2 ngày',
-      icon: Clock,
-      gradient: 'from-red-500 to-red-600',
-      trend: 'down'
-    }
-  ];
+  const { user } = useAuthStore();
+  const [showCreate, setShowCreate] = useState(false);
 
-  const recentSeries = [
-    { 
-      name: 'Moonlight Chronicles', 
-      chapters: 18, 
-      totalChapters: 24, 
-      status: 'Đang tiến hành',
-      lastUpdate: '2 ngày trước',
-      progress: 75
+  const { data: seriesData } = useQuery({
+    queryKey: ['series', 'my'],
+    // ✅ /series/my → PaginatedResponse { data: [...], total, page... }
+    queryFn: async () => {
+      const r = await api.get('/series/my');
+      // Backend mới: ApiResponse<PaginatedResponse<SeriesDTO>>
+      // r.data = { data: { data: [...], total, page }, success: true }
+      const d = r.data;
+      if (Array.isArray(d)) return d;
+      if (d?.data && Array.isArray(d.data)) return d.data;         // ApiResponse trả array thẳng
+      if (d?.data?.data && Array.isArray(d.data.data)) return d.data.data; // ApiResponse<PaginatedResponse>
+      return [];
     },
-    { 
-      name: 'Shadow Warrior', 
-      chapters: 12, 
-      totalChapters: 12, 
-      status: 'Hoàn thành',
-      lastUpdate: '1 tuần trước',
-      progress: 100
-    },
-    { 
-      name: 'Starlight Academy', 
-      chapters: 8, 
-      totalChapters: 20, 
-      status: 'Đang tiến hành',
-      lastUpdate: '3 ngày trước',
-      progress: 40
-    }
-  ];
+  });
+  const { data: pendingTasks = [] } = useQuery({
+    queryKey: ['tasks', 'pending-review'],
+    queryFn: async () => { const r = await api.get('/tasks/pending-review'); return r.data.data ?? []; },
+  });
+  const { data: rankings = [] } = useQuery({
+    queryKey: ['rankings', 'my'],
+    queryFn: async () => { const r = await api.get('/rankings/my'); return r.data.data ?? []; },
+  });
 
-  const recentActivity = [
-    { action: 'Chapter 18 được biên tập viên phê duyệt', time: '2 giờ trước', type: 'success' },
-    { action: 'Nhiệm vụ mới: Vẽ nền cho Ch.19', time: '5 giờ trước', type: 'info' },
-    { action: 'Nhắc nhở deadline: Ch.19 còn 2 ngày', time: '1 ngày trước', type: 'warning' },
-    { action: 'Trợ lý Yamada hoàn thành tô màu', time: '1 ngày trước', type: 'success' },
-    { action: 'Chapter 17 đã được xuất bản', time: '3 ngày trước', type: 'success' }
-  ];
+  const series: any[] = Array.isArray(seriesData) ? seriesData : [];
+  const atRiskCount = (rankings as any[]).filter((r: any) => r.isAtRisk).length;
+  const bestRank    = (rankings as any[]).length ? Math.min(...(rankings as any[]).map((r: any) => r.currentRank)) : null;
 
-  const pendingTasks = [
-    { title: 'Hoàn thành phác thảo Chapter 19', assignee: 'Bạn', dueDate: 'Ngày mai', priority: 'high' },
-    { title: 'Kiểm tra bản vẽ của trợ lý', assignee: 'Bạn', dueDate: 'Hôm nay', priority: 'high' },
-    { title: 'Nộp storyboard Chapter 20', assignee: 'Bạn', dueDate: '3 ngày nữa', priority: 'medium' },
-    { title: 'Duyệt chỉnh sửa cuối Ch.18', assignee: 'Biên tập viên Tanaka', dueDate: 'Hôm nay', priority: 'medium' }
-  ];
+  const STATUS_MAP: Record<string, { label: string; dot: string }> = {
+    serializing:     { label: 'Đang đăng',  dot: 'bg-violet-400' },
+    draft:           { label: 'Nháp',        dot: 'bg-zinc-500'   },
+    pending_review:  { label: 'Chờ duyệt',   dot: 'bg-amber-400'  },
+    approved:        { label: 'Được duyệt',  dot: 'bg-emerald-400'},
+    cancelled:       { label: 'Đã huỷ',      dot: 'bg-red-500'    },
+  };
 
-  const quickActions = [
-    { icon: Plus, label: 'Tạo Series mới', gradient: 'from-purple-600 to-purple-700', link: '/mangaka/submit-series' },
-    { icon: Upload, label: 'Upload Chapter', gradient: 'from-blue-600 to-blue-700', link: '/mangaka/chapters' },
-    { icon: CheckSquare, label: 'Giao việc', gradient: 'from-green-600 to-green-700', link: '/mangaka/assign-tasks' },
-    { icon: Calendar, label: 'Xem xếp hạng', gradient: 'from-orange-600 to-orange-700', link: '/mangaka/rankings' }
-  ];
+  const PRIORITY_MAP: Record<string, string> = {
+    urgent: 'text-red-400 bg-red-500/10 border-red-500/20',
+    high:   'text-orange-400 bg-orange-500/10 border-orange-500/20',
+    normal: 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20',
+    low:    'text-zinc-500 bg-zinc-500/8 border-zinc-500/15',
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Welcome Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white mb-2 font-['Syne'] flex items-center gap-3">
-            Chào mừng trở lại, Takehiko
-            <Sparkles className="w-7 h-7 text-purple-400" />
-          </h1>
-          <p className="text-gray-400">Đây là tình hình dự án manga của bạn hôm nay</p>
-        </div>
-      </div>
+    <div className="min-h-full bg-[#0a0a12] text-white">
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={index}
-              className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 hover:border-purple-500/50 transition-all hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/20"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className={`w-12 h-12 bg-gradient-to-br ${stat.gradient} rounded-xl flex items-center justify-center shadow-lg`}>
-                  <Icon className="w-6 h-6 text-white" />
-                </div>
-                {stat.trend === 'up' && <TrendingUp className="w-5 h-5 text-green-400" />}
-                {stat.trend === 'down' && <Target className="w-5 h-5 text-red-400" />}
-              </div>
-              <h3 className="text-3xl font-bold text-white mb-1">{stat.value}</h3>
-              <p className="text-sm text-gray-300 mb-2">{stat.title}</p>
-              <p className="text-xs text-gray-500">{stat.change}</p>
+      {/* ── Hero header ─────────────────────────────────────── */}
+      <div className="relative border-b border-violet-900/30 overflow-hidden">
+        {/* bg glow */}
+        <div className="pointer-events-none absolute -top-24 -left-24 w-96 h-96 rounded-full bg-violet-600/10 blur-3xl" />
+        <div className="pointer-events-none absolute -top-16 left-1/2 w-64 h-64 rounded-full bg-fuchsia-600/8 blur-3xl" />
+
+        <div className="relative px-8 pt-10 pb-8 flex items-end justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Feather className="w-4 h-4 text-violet-400" />
+              <span className="text-[11px] font-semibold tracking-[0.18em] uppercase text-violet-400">Creator Studio</span>
             </div>
-          );
-        })}
-      </div>
+            <h1 className="text-[2rem] font-black leading-none tracking-tight font-['Syne'] mb-1">
+              {user?.name ?? 'Mangaka'}
+            </h1>
+            <p className="text-sm text-zinc-500">Chào mừng trở lại — hôm nay là ngày tốt để sáng tác</p>
+          </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
-          <h2 className="text-xl font-bold text-white font-['Syne']">Thao tác nhanh</h2>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {quickActions.map((action, index) => {
-            const Icon = action.icon;
-            return (
-              <Link
-                key={index}
-                to={action.link}
-                className={`bg-gradient-to-br ${action.gradient} rounded-xl p-5 flex flex-col items-center gap-3 transition-all hover:scale-105 shadow-lg hover:shadow-2xl text-white group`}
-              >
-                <Icon className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                <span className="text-sm font-medium text-center">{action.label}</span>
-              </Link>
-            );
-          })}
+          {/* CTA */}
+          <button onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold shadow-lg shadow-violet-600/30 hover:shadow-violet-600/50 hover:scale-[1.02] transition-all">
+            <Plus className="w-4 h-4" />Tạo Series mới
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* My Series */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
-              <h2 className="text-xl font-bold text-white font-['Syne']">Series của tôi</h2>
-            </div>
-            <Link 
-              to="/mangaka/series"
-              className="text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
-            >
-              Xem tất cả
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-          <div className="space-y-4">
-            {recentSeries.map((series, index) => (
-              <div key={index} className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all cursor-pointer group border border-white/5 hover:border-purple-500/30">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-white mb-1 group-hover:text-purple-400 transition-colors">{series.name}</h3>
-                    <p className="text-sm text-gray-400">
-                      {series.chapters}/{series.totalChapters} chapters • {series.lastUpdate}
-                    </p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                    series.status === 'Hoàn thành' 
-                      ? 'bg-green-500/10 text-green-400 border-green-500/30' 
-                      : 'bg-blue-500/10 text-blue-400 border-blue-500/30'
-                  }`}>
-                    {series.status}
-                  </span>
-                </div>
-                <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
-                  <div 
-                    className="bg-gradient-to-r from-purple-500 to-purple-600 h-2 rounded-full transition-all duration-500 shadow-lg shadow-purple-500/50"
-                    style={{ width: `${series.progress}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-500 mt-2">{series.progress}% hoàn thành</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="px-8 py-8 space-y-10">
 
-        {/* Pending Tasks */}
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
-              <h2 className="text-xl font-bold text-white font-['Syne']">Công việc chờ xử lý</h2>
-            </div>
-            <Link
-              to="/mangaka/review-pages"
-              className="text-sm text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
-            >
-              Xem tất cả
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {pendingTasks.map((task, index) => (
-              <div key={index} className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all group cursor-pointer border border-white/5 hover:border-purple-500/30">
-                <div className="flex items-start gap-3">
-                  <input 
-                    type="checkbox" 
-                    className="mt-1 w-4 h-4 rounded border-gray-600 bg-white/5 text-purple-600 focus:ring-purple-500 cursor-pointer" 
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-white text-sm mb-1.5 group-hover:text-purple-400 transition-colors">{task.title}</h3>
-                    <div className="flex items-center gap-2 text-xs text-gray-400 flex-wrap">
-                      <span>{task.assignee}</span>
-                      <span>•</span>
-                      <span>{task.dueDate}</span>
-                      <span className={`px-2 py-0.5 rounded-full font-medium border ${
-                        task.priority === 'high' 
-                          ? 'bg-red-500/10 text-red-400 border-red-500/30' 
-                          : 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
-                      }`}>
-                        {task.priority === 'high' ? 'Ưu tiên cao' : 'Trung bình'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+        {/* ── Stats row ───────────────────────────────────────── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[
+            {
+              label: 'Series',
+              value: series.length,
+              sub: `${series.filter((s:any)=>s.status==='serializing').length} đang đăng`,
+              icon: BookOpen,
+              color: 'text-violet-400',
+              ring: 'ring-violet-500/20',
+              bg: 'bg-violet-500/8',
+            },
+            {
+              label: 'Chờ duyệt',
+              value: (pendingTasks as any[]).length,
+              sub: (pendingTasks as any[]).length > 0 ? 'Cần xem xét' : 'Tất cả ổn',
+              icon: CheckSquare,
+              color: 'text-amber-400',
+              ring: 'ring-amber-500/20',
+              bg: 'bg-amber-500/8',
+            },
+            {
+              label: 'Hạng tốt nhất',
+              value: bestRank ? `#${bestRank}` : '—',
+              sub: bestRank && bestRank <= 10 ? 'Top 10 🔥' : 'Tiếp tục cố gắng',
+              icon: Trophy,
+              color: 'text-yellow-400',
+              ring: 'ring-yellow-500/20',
+              bg: 'bg-yellow-500/8',
+            },
+            {
+              label: 'Nguy hiểm',
+              value: atRiskCount,
+              sub: atRiskCount > 0 ? 'Cần cải thiện gấp' : 'An toàn',
+              icon: AlertTriangle,
+              color: atRiskCount > 0 ? 'text-red-400' : 'text-emerald-400',
+              ring: atRiskCount > 0 ? 'ring-red-500/20' : 'ring-emerald-500/20',
+              bg: atRiskCount > 0 ? 'bg-red-500/8' : 'bg-emerald-500/8',
+            },
+          ].map((s, i) => (
+            <div key={i} className={`rounded-2xl ring-1 ${s.ring} ${s.bg} p-5 flex flex-col gap-3`}>
+              <div className={`w-9 h-9 rounded-xl bg-black/30 flex items-center justify-center ${s.color}`}>
+                <s.icon className="w-4.5 h-4.5" strokeWidth={1.8} />
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-        <div className="flex items-center gap-2 mb-5">
-          <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
-          <h2 className="text-xl font-bold text-white font-['Syne']">Hoạt động gần đây</h2>
-        </div>
-        <div className="space-y-4">
-          {recentActivity.map((activity, index) => (
-            <div key={index} className="flex items-start gap-4 group cursor-pointer hover:bg-white/5 p-3 -mx-3 rounded-lg transition-all">
-              <div className={`w-2 h-2 mt-2 rounded-full flex-shrink-0 ${
-                activity.type === 'success' ? 'bg-green-400 shadow-lg shadow-green-400/50' :
-                activity.type === 'warning' ? 'bg-yellow-400 shadow-lg shadow-yellow-400/50' :
-                'bg-blue-400 shadow-lg shadow-blue-400/50'
-              }`}></div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-white group-hover:text-purple-400 transition-colors">{activity.action}</p>
-                <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
+              <div>
+                <div className={`text-3xl font-black tracking-tight font-['Syne'] ${s.color}`}>{s.value}</div>
+                <div className="text-[11px] text-zinc-500 mt-0.5">{s.label}</div>
               </div>
+              <div className="text-[11px] text-zinc-600 mt-auto">{s.sub}</div>
             </div>
           ))}
         </div>
+
+        {/* ── Quick actions ────────────────────────────────────── */}
+        <div>
+          <h2 className="text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-4">Thao tác nhanh</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { icon: Plus,    label: 'Tạo Series',    sub: 'Nộp lên hội đồng',   to: null, onClick: () => setShowCreate(true), color: 'from-violet-600/20 to-fuchsia-600/20', border: 'border-violet-500/20', text: 'text-violet-300' },
+              { icon: Upload,  label: 'Upload Chapter', sub: 'Thêm trang mới',      to: '/mangaka/chapters',      color: 'from-blue-600/20 to-cyan-600/20',     border: 'border-blue-500/20',   text: 'text-blue-300'   },
+              { icon: Layers,  label: 'Giao việc',     sub: 'Phân công trợ lý',    to: '/mangaka/assign-tasks',  color: 'from-emerald-600/20 to-teal-600/20',  border: 'border-emerald-500/20',text: 'text-emerald-300'},
+              { icon: Trophy,  label: 'Xếp hạng',      sub: 'Theo dõi thứ hạng',   to: '/mangaka/rankings',      color: 'from-amber-600/20 to-yellow-600/20',  border: 'border-amber-500/20',  text: 'text-amber-300'  },
+            ].map((a, i) => (
+              <Link key={i} to={a.to}
+                className={`group bg-gradient-to-br ${a.color} border ${a.border} rounded-2xl p-5 flex flex-col gap-3 hover:scale-[1.02] transition-all`}>
+                <div className={`w-9 h-9 rounded-xl bg-black/30 flex items-center justify-center ${a.text}`}>
+                  <a.icon className="w-4.5 h-4.5" strokeWidth={1.8} />
+                </div>
+                <div>
+                  <div className={`text-sm font-bold ${a.text}`}>{a.label}</div>
+                  <div className="text-[11px] text-zinc-600 mt-0.5">{a.sub}</div>
+                </div>
+                <ArrowUpRight className={`w-3.5 h-3.5 ${a.text} opacity-0 group-hover:opacity-100 self-end transition-opacity`} />
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Bottom two-col ───────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* Series list */}
+          <div className="rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+              <span className="text-sm font-bold text-white">Series của tôi</span>
+              <Link to="/mangaka/series" className="text-[11px] text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors">
+                Xem tất cả <ArrowUpRight className="w-3 h-3" />
+              </Link>
+            </div>
+
+            {series.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 gap-3 text-zinc-600">
+                <BookOpen className="w-8 h-8 opacity-30" />
+                <p className="text-sm">Chưa có series nào</p>
+                <button onClick={() => setShowCreate(true)}
+                  className="text-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 px-3 py-1.5 rounded-lg transition-colors">
+                  + Bắt đầu ngay
+                </button>
+              </div>
+            ) : (
+              <ul className="divide-y divide-white/4">
+                {series.slice(0,4).map((s:any) => {
+                  const st = STATUS_MAP[s.status] ?? { label: s.status, dot: 'bg-zinc-500' };
+                  return (
+                    <li key={s.id} className="px-6 py-4 flex items-center gap-4 hover:bg-white/[0.03] transition-colors group">
+                      {/* mini cover */}
+                      <div className="w-8 h-11 rounded-md bg-gradient-to-br from-violet-900/50 to-fuchsia-900/30 border border-violet-500/10 flex items-center justify-center flex-shrink-0">
+                        {s.coverUrl
+                          ? <img src={s.coverUrl} className="w-full h-full object-cover rounded-md" />
+                          : <Feather className="w-3 h-3 text-violet-400/50" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-white truncate group-hover:text-violet-300 transition-colors">{s.title}</p>
+                        <p className="text-[11px] text-zinc-600">{s.genre}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                        <span className="text-[11px] text-zinc-500">{st.label}</span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Pending tasks */}
+          <div className="rounded-2xl border border-white/5 bg-white/[0.02] overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
+              <span className="text-sm font-bold text-white">Chờ duyệt từ trợ lý</span>
+              <Link to="/mangaka/review-pages" className="text-[11px] text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors">
+                Xem tất cả <ArrowUpRight className="w-3 h-3" />
+              </Link>
+            </div>
+
+            {(pendingTasks as any[]).length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 gap-2 text-zinc-600">
+                <Sparkles className="w-8 h-8 opacity-30" />
+                <p className="text-sm">Không có task nào chờ duyệt</p>
+              </div>
+            ) : (
+              <ul className="divide-y divide-white/4">
+                {(pendingTasks as any[]).slice(0,4).map((t:any) => (
+                  <li key={t.id} className="px-6 py-4 flex items-center gap-4 hover:bg-white/[0.03] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-semibold text-white truncate">{t.title}</p>
+                      <p className="text-[11px] text-zinc-600">{t.taskType}</p>
+                    </div>
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PRIORITY_MAP[t.priority] ?? PRIORITY_MAP.normal}`}>
+                      {t.priority === 'urgent' ? 'KHẨN' : t.priority === 'high' ? 'CAO' : 'TB'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       </div>
+
+      {/* ✅ Create Series Modal */}
+      {showCreate && <CreateSeriesModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 };

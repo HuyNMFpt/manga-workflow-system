@@ -7,21 +7,21 @@ public interface EmailService {
 
     /**
      * Send password reset email with token
-     *
-     * @param toEmail Recipient email address
-     * @param userName Recipient name
-     * @param resetToken Password reset token
-     * @param resetUrl Full reset URL (e.g., http://localhost:5173/reset-password?token=xxx)
-     * @throws Exception if email sending fails
      */
     void sendPasswordResetEmail(String toEmail, String userName, String resetToken, String resetUrl) throws Exception;
 
     /**
-     * Send welcome email after registration (optional - for future)
-     *
-     * @param toEmail Recipient email address
-     * @param userName Recipient name
-     * @throws Exception if email sending fails
+     * Send welcome email after registration
      */
     void sendWelcomeEmail(String toEmail, String userName) throws Exception;
+
+    /**
+     * Admin tạo account mới — gửi thông tin đăng nhập tạm
+     */
+    void sendAccountCreatedEmail(String toEmail, String name, String role, String tempPassword) throws Exception;
+
+    /**
+     * Admin reset password — gửi mật khẩu tạm mới
+     */
+    void sendPasswordResetByAdminEmail(String toEmail, String name, String tempPassword) throws Exception;
 }

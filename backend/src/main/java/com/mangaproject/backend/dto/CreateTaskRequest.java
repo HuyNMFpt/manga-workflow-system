@@ -9,21 +9,22 @@ public class CreateTaskRequest {
     private String pageId;
 
     @NotBlank
-    private String chapterId;
-
-    @NotBlank
-    private String seriesId;
-
-    @NotBlank
     private String assignedTo;
+
+    // Set by Controller from JWT token, không cần validate
+    private String assignedBy;
+
+    @NotBlank
+    private String title;
+
+    private String description;
 
     @NotBlank
     private String taskType;
 
-    private String regionData;
+    private String panelRegion;
 
-    private String instructions;
+    private String priority;
 
-    @NotBlank
-    private String deadline;
+    private String dueDate;
 }

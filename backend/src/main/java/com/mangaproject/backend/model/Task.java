@@ -3,10 +3,12 @@ package com.mangaproject.backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "tasks")
+@Table(name = "panel_tasks")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -16,50 +18,80 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "page_id", nullable = false)
     private String pageId;
 
-    @Column(nullable = false)
-    private String chapterId;
-
-    @Column(nullable = false)
-    private String seriesId;
-
-    @Column(nullable = false)
+    @Column(name = "assigned_to", nullable = false)
     private String assignedTo;
 
-    @Enumerated(EnumType.STRING)
+    @Column(name = "assigned_by", nullable = false)
+    private String assignedBy;
+
     @Column(nullable = false)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "task_type", nullable = false)
     private TaskType taskType;
 
-    @Column(columnDefinition = "JSON")
-    private String regionData;
+    @Column(name = "task_type_id")
+    private String taskTypeId;
 
-    @Column(columnDefinition = "TEXT")
-    private String instructions;
+    @Column(name = "panel_region", columnDefinition = "JSON")
+    private String panelRegion;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private TaskStatus status;
+    private Priority priority = Priority.normal;
 
-    private String submissionUrl;
+    @Column(name = "priority_id")
+    private String priorityId;
 
-    @Column(columnDefinition = "TEXT")
-    private String revisionNote;
-
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private LocalDateTime deadline;
+    private TaskStatus status = TaskStatus.pending;
+
+    @Column(name = "revision_notes", columnDefinition = "TEXT")
+    private String revisionNotes;
+
+    @Column(name = "result_file_url", length = 500)
+    private String resultFileUrl;
+
+    @Column(name = "payment_amount", precision = 10, scale = 2)
+    private BigDecimal paymentAmount;
+
+    @Column(name = "is_paid", nullable = false)
+    private Boolean isPaid = false;
+
+    @Column(name = "due_date")
+    private LocalDateTime dueDate;
+
+    @Column(name = "submitted_at")
+    private LocalDateTime submittedAt;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
 
     @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
     public enum TaskType {
-        background, inking, toning, effects, text_cleanup
+        background, shading, effect, screentone, dialog, touch_up, other
     }
 
     public enum TaskStatus {
-        assigned, in_progress, submitted, revision_required, approved
+        pending, in_progress, submitted, approved, revision_needed
+    }
+
+    public enum Priority {
+        low, normal, high, urgent
     }
 }

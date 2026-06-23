@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+
+  # ─── MySQL Database ───────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: manga-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: manga_swp391
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./init-db:/docker-entrypoint-initdb.d   # chạy SQL init khi lần đầu khởi động
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 90s   # ← tăng từ 30s lên 90s
+    networks:
+      - manga-network
+
+  # ─── Redis (session / cache) ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: manga-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - manga-network
+
+  # ─── phpMyAdmin (xem DB trên browser) ────────────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: manga-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: 123456
+      UPLOAD_LIMIT: 100M
+    ports:
+      - "8888:80"          # mở http://localhost:8888
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - manga-network
+
+  # ─── Spring Boot Backend ──────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: manga-backend
+    restart: unless-stopped
+    environment:
+      # DB — trỏ vào service mysql (không dùng localhost nữa)
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/manga_swp391?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&characterEncoding=utf8
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 123456
+      # Redis
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      # Mail (giữ nguyên từ application.yml, override nếu cần)
+      SPRING_MAIL_USERNAME: ${MAIL_USERNAME:-danghuy05022003@gmail.com}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASSWORD:-xmfd dgkv pkhd tceq}
+      # JWT
+      JWT_SECRET: manga-swp391-secret-key-must-be-at-least-256-bits-long-for-hs384-algorithm
+      # App
+      APP_FRONTEND_URL: http://localhost:5173
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - manga-network
+
+# ─── Volumes & Networks ───────────────────────────────────────────
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  manga-network:
+    driver: bridge

@@ -1,12 +1,10 @@
 package com.mangaproject.backend.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class UserDTO {
     private String id;
     private String email;
@@ -14,4 +12,7 @@ public class UserDTO {
     private String role;
     private String avatarUrl;
     private String createdAt;
+    private Boolean isActive;
+    private String tempPassword;
+    private String personalEmail;
 }

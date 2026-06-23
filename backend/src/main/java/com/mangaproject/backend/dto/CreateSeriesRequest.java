@@ -17,4 +17,6 @@ public class CreateSeriesRequest {
     private String coverUrl;
 
     private String schedule; // weekly, monthly, one_shot
+
+    private String editorId; // Tantou Editor được chọn (optional)
 }

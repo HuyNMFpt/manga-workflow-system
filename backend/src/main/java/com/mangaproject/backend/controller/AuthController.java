@@ -31,9 +31,18 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    @Operation(summary = "Register", description = "Create new user account")
-    public ApiResponse<LoginResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ApiResponse.success(authService.register(request));
+    @Operation(summary = "Register", description = "Disabled - Only admin can create accounts")
+    public ApiResponse<Void> register() {
+        throw new RuntimeException("Đăng ký trực tiếp không được phép. Vui lòng liên hệ Admin để được cấp tài khoản.");
+    }
+
+    @PutMapping("/change-password")
+    @Operation(summary = "Change Password", description = "User changes their password after first login")
+    public ApiResponse<Void> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            Authentication authentication) {
+        authService.changePassword(authentication.getName(), request);
+        return ApiResponse.success(null, "Đổi mật khẩu thành công!");
     }
 
     @GetMapping("/me")
@@ -47,14 +56,14 @@ public class AuthController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        UserDTO userDTO = new UserDTO(
-                user.getId(),
-                user.getEmail(),
-                user.getName(),
-                user.getRole().name(),
-                user.getAvatarUrl(),
-                user.getCreatedAt().toString()
-        );
+        UserDTO userDTO = new UserDTO();
+        userDTO.setId(user.getId());
+        userDTO.setEmail(user.getEmail());
+        userDTO.setName(user.getName());
+        userDTO.setRole(user.getRoleName());
+        userDTO.setAvatarUrl(user.getAvatarUrl());
+        userDTO.setCreatedAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null);
+        userDTO.setIsActive(user.getIsActive());
 
         return ApiResponse.success(userDTO);
     }

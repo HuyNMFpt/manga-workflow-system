@@ -8,7 +8,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   assigned: { label: "Chờ làm", className: "bg-blue-50 text-blue-700 border-blue-200" },
   in_progress: { label: "Đang làm", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
   submitted: { label: "Đã nộp", className: "bg-purple-50 text-purple-700 border-purple-200" },
-  revision_required: { label: "Cần sửa", className: "bg-orange-50 text-orange-700 border-orange-200" },
+  revision_needed:   { label: "Cần sửa", className: "bg-orange-50 text-orange-700 border-orange-200" },
   approved: { label: "Đã duyệt", className: "bg-green-50 text-green-700 border-green-200" },
   // Series statuses
   draft: { label: "Nháp", className: "bg-gray-50 text-gray-600 border-gray-200" },

@@ -8,16 +8,22 @@ import lombok.*;
 public class TaskDTO {
     private String id;
     private String pageId;
-    private String chapterId;
-    private String seriesId;
     private String assignedTo;
+    private String assignedToName;  // tên assistant
+    private String assignedBy;
+    private String assignedByName;  // tên mangaka
+    private String title;
+    private String description;
     private String taskType;
-    private String regionData;
-    private String instructions;
+    private String panelRegion;
+    private String priority;
     private String status;
-    private String submissionUrl;
-    private String revisionNote;
-    private String deadline;
+    private String revisionNotes;
+    private String fileUrl;         // URL file kết quả Assistant đã nộp
+    private String pageImageUrl;    // URL ảnh trang gốc (raw_file_url từ pages table)
+    private String dueDate;
+    private String submittedAt;
+    private String approvedAt;
     private String createdAt;
     private String updatedAt;
 }

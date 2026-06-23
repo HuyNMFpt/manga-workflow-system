@@ -1,0 +1,25 @@
+package com.mangaproject.backend.dto;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+@Data
+public class CreateUserRequest {
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email format")
+    private String email;
+
+    @NotBlank(message = "Name is required")
+    private String name;
+
+    @NotBlank(message = "Role is required")
+    private String role; // mangaka, assistant, editor, board_member
+
+    @NotBlank(message = "Password is required")
+    @Size(min = 6, message = "Password must be at least 6 characters")
+    private String tempPassword; // Admin tự đặt mật khẩu tạm
+
+    private String personalEmail; // Email cá nhân để gửi thông tin đăng nhập (optional)
+}

@@ -31,6 +31,14 @@ public class ChapterController {
         return ResponseEntity.ok(new ApiResponse<>(chapters, null, true));
     }
 
+    // ← THÊM MỚI: frontend gọi GET /api/chapters/series/{seriesId}
+    @GetMapping("/series/{seriesId}")
+    @Operation(summary = "Get chapters by series ID (path)", description = "Retrieve all chapters for a series by path variable")
+    public ApiResponse<List<ChapterDTO>> getChaptersBySeriesPath(@PathVariable String seriesId) {
+        List<ChapterDTO> chapters = chapterService.getChaptersBySeries(seriesId);
+        return ApiResponse.success(chapters);
+    }
+
     @GetMapping("/{id}")
     @Operation(summary = "Get chapter by ID", description = "Retrieve a specific chapter with all pages")
     public ResponseEntity<ApiResponse<ChapterDTO>> getChapterById(@PathVariable String id) {
@@ -64,7 +72,7 @@ public class ChapterController {
     }
 
     @PutMapping("/{id}/status")
-    @Operation(summary = "Update chapter status", description = "Change chapter status (draft, in_progress, review, approved, published)")
+    @Operation(summary = "Update chapter status", description = "Change chapter status")
     public ResponseEntity<ApiResponse<ChapterDTO>> updateChapterStatus(
             @PathVariable String id,
             @RequestBody Map<String, String> request) {

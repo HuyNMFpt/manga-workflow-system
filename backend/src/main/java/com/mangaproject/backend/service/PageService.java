@@ -26,7 +26,7 @@ public class PageService {
 
     @Transactional(readOnly = true)
     public List<PageDTO> getPagesByChapter(String chapterId) {
-        List<Page> pages = pageRepository.findByChapterIdOrderByPageNumberAsc(chapterId);
+        List<Page> pages = pageRepository.findByChapter_IdOrderByPageNumberAsc(chapterId);
         return pages.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -41,30 +41,32 @@ public class PageService {
 
     @Transactional
     public PageDTO uploadPage(String chapterId, Integer pageNumber, MultipartFile file, String notes) throws IOException {
-        // Validate chapter exists
         Chapter chapter = chapterRepository.findById(chapterId)
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
-        // Check if page number already exists
-        if (pageRepository.existsByChapterIdAndPageNumber(chapterId, pageNumber)) {
+        if (pageRepository.existsByChapter_IdAndPageNumber(chapterId, pageNumber)) {
             throw new RuntimeException("Page number already exists in this chapter");
         }
 
-        // Store file
         String folder = String.format("chapters/%s/pages", chapterId);
         String imageUrl = fileStorageService.storeFile(file, folder);
         String thumbnailUrl = fileStorageService.storeThumbnail(file, folder);
 
-        // Create page entity
         Page page = new Page();
         page.setChapter(chapter);
         page.setPageNumber(pageNumber);
-        page.setImageUrl(imageUrl);
-        page.setThumbnailUrl(thumbnailUrl);
+        page.setImageUrl(imageUrl);       // map → raw_file_url
+        page.setThumbnailUrl(thumbnailUrl); // map → final_file_url
         page.setNotes(notes);
-        page.setStatus(Page.PageStatus.UPLOADED);
+        page.setStatus(Page.PageStatus.in_progress); // UPLOADED → in_progress
 
         page = pageRepository.save(page);
+
+        // Cập nhật total_pages của chapter
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+
         log.info("Page uploaded successfully: chapter={}, page={}", chapterId, pageNumber);
         return mapToDTO(page);
     }
@@ -74,17 +76,23 @@ public class PageService {
         Page page = pageRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Page not found"));
 
-        // Delete files from storage
+        String chapterId = page.getChapter().getId();
+        Chapter chapter = page.getChapter();
+
         try {
             fileStorageService.deleteFile(page.getImageUrl());
             fileStorageService.deleteFile(page.getThumbnailUrl());
         } catch (IOException e) {
             log.error("Failed to delete page files", e);
-            // Continue with database deletion even if file deletion fails
         }
 
-        // Delete from database
         pageRepository.delete(page);
+
+        // Cập nhật total_pages
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+
         log.info("Page deleted successfully: {}", id);
     }
 
@@ -93,9 +101,8 @@ public class PageService {
         Page page = pageRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Page not found"));
 
-        // Check if new page number conflicts
         if (!page.getPageNumber().equals(newPageNumber)) {
-            if (pageRepository.existsByChapterIdAndPageNumber(
+            if (pageRepository.existsByChapter_IdAndPageNumber(
                     page.getChapter().getId(), newPageNumber)) {
                 throw new RuntimeException("Page number already exists in this chapter");
             }
@@ -113,7 +120,7 @@ public class PageService {
 
         Page.PageStatus newStatus;
         try {
-            newStatus = Page.PageStatus.valueOf(status.toUpperCase());
+            newStatus = Page.PageStatus.valueOf(status.toLowerCase()); // toLowerCase thay vì toUpperCase
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid status: " + status);
         }

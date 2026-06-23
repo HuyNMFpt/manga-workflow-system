@@ -103,4 +103,78 @@ public class GmailEmailService implements EmailService {
             throw new Exception("Failed to send welcome email", e);
         }
     }
+
+    @Override
+    public void sendAccountCreatedEmail(String toEmail, String name, String role, String tempPassword) throws Exception {
+        // Gọi overload mới, dùng toEmail làm cả nơi nhận lẫn email hiển thị
+        sendAccountCreatedEmail(toEmail, toEmail, name, role, tempPassword);
+    }
+
+    public void sendAccountCreatedEmail(String toEmail, String companyEmail, String name, String role, String tempPassword) throws Exception {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("[Manga CW&PM] Tài khoản của bạn đã được tạo");
+
+            String roleDisplay = switch (role) {
+                case "mangaka" -> "Mangaka (Tác giả)";
+                case "assistant" -> "Trợ lý";
+                case "editor" -> "Tantou Editor";
+                case "board_member" -> "Thành viên Hội đồng";
+                default -> role;
+            };
+
+            String htmlContent = """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Chào mừng đến với Manga CW&PM!</h2>
+                    <p>Xin chào <strong>%s</strong>,</p>
+                    <p>Tài khoản của bạn đã được tạo với vai trò <strong>%s</strong>.</p>
+                    <p>Thông tin đăng nhập:</p>
+                    <ul>
+                        <li><strong>Email đăng nhập:</strong> %s</li>
+                        <li><strong>Mật khẩu tạm:</strong> <code>%s</code></li>
+                    </ul>
+                    <p style="color: red;"><strong>Vui lòng đổi mật khẩu ngay sau khi đăng nhập lần đầu!</strong></p>
+                    <p>Truy cập: <a href="http://localhost:5173">http://localhost:5173</a></p>
+                </div>
+                """.formatted(name, roleDisplay, companyEmail, tempPassword);
+
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Account created email sent to: {} (company email: {})", toEmail, companyEmail);
+        } catch (Exception e) {
+            log.error("Failed to send account created email to: {}", toEmail, e);
+            throw new Exception("Failed to send account created email", e);
+        }
+    }
+
+    @Override
+    public void sendPasswordResetByAdminEmail(String toEmail, String name, String tempPassword) throws Exception {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject("[Manga CW&PM] Mật khẩu của bạn đã được reset");
+
+            String htmlContent = """
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Mật khẩu đã được reset</h2>
+                    <p>Xin chào <strong>%s</strong>,</p>
+                    <p>Admin đã reset mật khẩu tài khoản của bạn.</p>
+                    <p><strong>Mật khẩu tạm mới:</strong> <code>%s</code></p>
+                    <p style="color: red;"><strong>Vui lòng đổi mật khẩu ngay sau khi đăng nhập!</strong></p>
+                </div>
+                """.formatted(name, tempPassword);
+
+            helper.setText(htmlContent, true);
+            mailSender.send(message);
+            log.info("Password reset by admin email sent to: {}", toEmail);
+        } catch (Exception e) {
+            log.error("Failed to send password reset email to: {}", toEmail, e);
+            throw new Exception("Failed to send password reset email", e);
+        }
+    }
 }
