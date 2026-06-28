@@ -63,6 +63,21 @@ public class EditorController {
         );
     }
 
+    /**
+     * PUT /api/editor/manuscripts/{id}/reset
+     * Reset manuscript về "under_review" khi Editor đã đánh dấu "Sẵn sàng" nhưng muốn xem lại
+     */
+    @PutMapping("/manuscripts/{id}/reset")
+    public ApiResponse<ManuscriptDTO> resetManuscript(
+            @PathVariable String id,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(
+                editorService.resetManuscriptToUnderReview(id, user.getId()),
+                "Đã reset bản thảo về trạng thái đang xét"
+        );
+    }
+
     @PutMapping("/manuscripts/{id}/status")
     public ApiResponse<ManuscriptDTO> updateManuscriptStatus(
             @PathVariable String id,

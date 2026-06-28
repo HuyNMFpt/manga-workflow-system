@@ -276,8 +276,22 @@ public class BoardService {
 
         submission = submissionRepository.save(submission);
 
+        // Lấy seriesId và seriesTitle cho response
+        String seriesId = "";
+        String seriesTitle = "";
+        try {
+            Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
+            if (ms != null) {
+                Series s = seriesRepository.findById(ms.getSeriesId()).orElse(null);
+                if (s != null) {
+                    seriesId = s.getId();
+                    seriesTitle = s.getTitle();
+                }
+            }
+        } catch (Exception ignored) {}
+
         return new SubmissionDTO(
-                submission.getId(), submission.getManuscriptId(), "", "",
+                submission.getId(), submission.getManuscriptId(), seriesId, seriesTitle,
                 submission.getSubmittedBy(), submission.getSubmissionRound(),
                 submission.getCoverLetter(), submission.getStatus().name(),
                 submission.getVoteYes(), submission.getVoteNo(), submission.getVoteAbstain(),

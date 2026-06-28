@@ -267,6 +267,58 @@ public class EditorService {
 
     // ── Editor trả lại Mangaka để sửa ────────────────────────────
     @org.springframework.transaction.annotation.Transactional
+    /**
+     * Reset manuscript về under_review — Editor đã đánh dấu "Sẵn sàng" nhưng muốn xem lại
+     * Chỉ cho phép reset khi manuscript đang ở status approved (sẵn sàng nộp board)
+     */
+    public ManuscriptDTO resetManuscriptToUnderReview(String manuscriptId, String editorId) {
+        Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        Series series = seriesRepository.findById(manuscript.getSeriesId())
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        // Chỉ Editor phụ trách series này mới được reset
+        if (!series.getEditorId().equals(editorId)) {
+            throw new RuntimeException("Bạn không có quyền thao tác với bản thảo này");
+        }
+
+        // Chỉ reset được khi đang approved (Sẵn sàng) — không reset khi đã nộp Board
+        if (manuscript.getStatus() != Manuscript.ManuscriptStatus.approved) {
+            throw new RuntimeException(
+                "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
+                "Hiện tại: " + manuscript.getStatus().name()
+            );
+        }
+
+        manuscript.setStatus(Manuscript.ManuscriptStatus.under_review);
+        manuscriptRepository.save(manuscript);
+
+        log.info("Manuscript {} reset to under_review by editor {}", manuscriptId, editorId);
+
+        // Build response
+        String seriesTitle = series.getTitle();
+        List<AnnotationDTO> annotations = annotationRepository
+                .findByManuscriptIdOrderByCreatedAtAsc(manuscriptId).stream()
+                .map(a -> new AnnotationDTO(
+                        a.getId(), a.getNote(), a.getTag(),
+                        a.getX(), a.getY(), a.getPageNumber(),
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                ))
+                .collect(java.util.stream.Collectors.toList());
+
+        return new ManuscriptDTO(
+                manuscript.getId(), manuscript.getSeriesId(), seriesTitle,
+                series.getStatus().name(),
+                manuscript.getSubmittedBy(), manuscript.getVersion(), manuscript.getFileUrl(),
+                manuscript.getDescription(), manuscript.getStatus().name(),
+                manuscript.getRejectionReason(),
+                manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
+                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                annotations
+        );
+    }
+
     public ManuscriptDTO updateManuscriptStatus(String manuscriptId, String editorId, UpdateManuscriptStatusRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
