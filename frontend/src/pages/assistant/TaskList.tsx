@@ -199,7 +199,26 @@ const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region
   );
 };
 
-// ─── Hook: load page image ────────────────────────────────────────
+// ─── Helper: download cross-origin file ──────────────────────────
+const downloadFile = async (url: string, filename?: string) => {
+  try {
+    // Thử fetch với credentials để có CORS
+    const res = await fetch(url, { mode: 'cors', credentials: 'include' });
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename ?? url.split('/').pop() ?? 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    // Fallback: mở tab mới (backend cần thêm CORS cho /uploads/**)
+    window.open(url, '_blank');
+  }
+};
 const usePageImage = (pageId?: string, pageImageUrl?: string) =>
   useQuery({
     queryKey: ['page', pageId],
@@ -316,8 +335,13 @@ const TaskList = () => {
     setSubmitError('');
     if (!uploadFile) { setSubmitError('Vui lòng chọn file kết quả'); return; }
     try {
+      // Nếu task vẫn còn revision_needed → gọi startTask trước (→ in_progress)
+      // Backend chỉ cho submit từ in_progress
+      if (selectedTask.status === 'revision_needed') {
+        await api.put(`/tasks/${selectedTask.id}/start`);
+      }
+
       // Upload file lên server → lấy URL thật
-      // Backend cần: POST /api/files/upload → { data: { url: "http://localhost:8080/uploads/..." } }
       const fd = new FormData();
       fd.append('file', uploadFile);
       fd.append('folder', 'task-results');
@@ -418,7 +442,10 @@ const TaskList = () => {
               const isClickable = ['pending','in_progress','revision_needed'].includes(task.status);
               return (
                 <div key={task.id}
-                  onClick={() => isClickable && setSelectedTask(task)}
+                  onClick={() => {
+                    if (!isClickable) return;
+                    setSelectedTask(task); // luôn mở modal trước để xem yêu cầu
+                  }}
                   className={`grid grid-cols-[1fr_7rem_6rem_7rem_9rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 transition-colors ${
                     isClickable ? 'cursor-pointer hover:bg-white/[0.025] group' : 'opacity-70'
                   }`}>
@@ -564,15 +591,16 @@ const TaskList = () => {
 
                       {/* File trang truyện gốc */}
                       {imageUrl ? (
-                        <a href={imageUrl} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 hover:bg-blue-500/12 transition-colors group">
+                        <button
+                          onClick={() => downloadFile(imageUrl)}
+                          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 hover:bg-blue-500/12 transition-colors group text-left">
                           <FileImage className="w-4 h-4 text-blue-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] font-semibold text-blue-300">Trang truyện gốc</p>
                             <p className="text-[10px] text-zinc-600 truncate">{imageUrl}</p>
                           </div>
                           <Download className="w-3.5 h-3.5 text-zinc-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
-                        </a>
+                        </button>
                       ) : selectedTask.pageId ? (
                         <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/3 border border-white/6">
                           <Loader2 className="w-4 h-4 text-zinc-600 animate-spin flex-shrink-0" />

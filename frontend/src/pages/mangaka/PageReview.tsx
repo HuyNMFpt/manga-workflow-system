@@ -25,6 +25,21 @@ const parseRegion = (s?: string) => {
   try { return s ? JSON.parse(s) : null; } catch { return null; }
 };
 
+// ─── CompareResultImg: hiện ảnh kết quả với error handling ────────
+const CompareResultImg = ({ src }: { src: string }) => {
+  const [error, setError] = useState(false);
+  if (error) return (
+    <div className="h-48 flex flex-col items-center justify-center gap-2">
+      <Film className="w-8 h-8 text-zinc-700 opacity-30"/>
+      <p className="text-[11px] text-zinc-700">File kết quả không tải được</p>
+      <a href={src} target="_blank" rel="noopener noreferrer"
+        className="text-[10px] text-violet-400 hover:underline">Mở link trực tiếp</a>
+    </div>
+  );
+  return <img src={src} alt="Result" className="w-full object-contain max-h-80"
+    onError={() => setError(true)}/>;
+};
+
 // ─── ResultPreview ──────────────────────────────────────────────
 const PIN_COLORS_MAP: Record<string, string> = {
   background:'#60a5fa', shading:'#a78bfa', effect:'#fb923c',
@@ -42,10 +57,18 @@ const ResultPreview = ({ task, zoom, onZoomIn, onZoomOut }: any) => {
   const calcOrigRect = () => {
     const img = origImgRef.current;
     if (!img || !img.naturalWidth) return;
-    const c = img.parentElement!;
-    const scale = Math.min(c.clientWidth/img.naturalWidth, c.clientHeight/img.naturalHeight);
-    const rw = img.naturalWidth*scale, rh = img.naturalHeight*scale;
-    setOrigRect({ left:(c.clientWidth-rw)/2, top:(c.clientHeight-rh)/2, width:rw, height:rh });
+    // img.clientWidth/Height = kích thước element thật sau CSS
+    // object-contain: ảnh scale fit trong element, có letterbox
+    const cw = img.clientWidth, ch = img.clientHeight;
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    const scale = Math.min(cw / nw, ch / nh);
+    const rw = nw * scale, rh = nh * scale;
+    setOrigRect({
+      left: (cw - rw) / 2,
+      top:  (ch - rh) / 2,
+      width: rw,
+      height: rh,
+    });
   };
 
   // Pin overlay — hover mới hiện tooltip
@@ -123,26 +146,30 @@ const ResultPreview = ({ task, zoom, onZoomIn, onZoomOut }: any) => {
       <div className="rounded-xl overflow-hidden border border-white/8 bg-black/20"
         style={{ transform:`scale(${zoom})`, transformOrigin:'top left', transition:'transform 0.15s' }}>
         {view==='compare' ? (
-          <div className="grid grid-cols-2 divide-x divide-white/8">
-            <div className="relative">
+          <div className="grid grid-cols-2 divide-x divide-white/8 items-start">
+            {/* Cột trái: Trang gốc + Pin */}
+            <div className="relative" ref={(el) => {
+              // Recalc rect khi container thay đổi
+            }}>
               <p className="absolute top-2 left-2 z-10 bg-black/60 rounded px-1.5 py-0.5 text-[9px] text-zinc-300">Trang gốc</p>
               {task.pageImageUrl
-                ? <img ref={origImgRef} src={task.pageImageUrl} alt="Original" className="w-full object-contain max-h-80" onLoad={calcOrigRect}/>
+                ? <img ref={origImgRef} src={task.pageImageUrl} alt="Original"
+                    className="w-full object-contain max-h-80"
+                    onLoad={calcOrigRect}/>
                 : <div className="h-48 flex items-center justify-center"><Film className="w-8 h-8 text-zinc-700 opacity-30"/></div>}
               <PinOverlay imgRect={origRect}/>
             </div>
+            {/* Cột phải: Kết quả */}
             <div className="relative">
               <p className="absolute top-2 left-2 z-10 bg-black/60 rounded px-1.5 py-0.5 text-[9px] text-fuchsia-300">Kết quả</p>
-              {task.fileUrl
-                ? <img src={task.fileUrl} alt="Result"
-                    className="w-full object-contain max-h-80"
-                    onError={e => { (e.target as HTMLImageElement).style.display='none'; (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('hidden'); }}
-                  />
-                : null}
-              <div className="h-48 flex flex-col items-center justify-center gap-2" hidden={!!task.fileUrl}>
-                <Film className="w-8 h-8 text-zinc-700 opacity-30"/>
-                <p className="text-[11px] text-zinc-700">Chưa có file kết quả</p>
-              </div>
+              {task.fileUrl ? (
+                <CompareResultImg src={task.fileUrl}/>
+              ) : (
+                <div className="h-48 flex flex-col items-center justify-center gap-2">
+                  <Film className="w-8 h-8 text-zinc-700 opacity-30"/>
+                  <p className="text-[11px] text-zinc-700">Chưa có file kết quả</p>
+                </div>
+              )}
             </div>
           </div>
         ) : (

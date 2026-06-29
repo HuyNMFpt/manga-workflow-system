@@ -59,6 +59,10 @@ const VotingQueue = () => {
       return r.data.data ?? [];
     },
     retry: 1,
+    staleTime: 0,                    // Luôn coi data là stale → refetch khi focus tab
+    refetchOnWindowFocus: true,      // Refetch ngay khi switch tab/window về
+    refetchInterval: 15000,          // Fallback poll mỗi 15s nếu không switch tab
+    refetchIntervalInBackground: false,
   });
 
   const submissions: any[] = (() => {

@@ -154,16 +154,37 @@ const parseDesc = (raw?: string): ParsedDesc => {
   if (!raw) return { mainText:'', fields:[], editorNotes:[] };
   const fields: { key:string; value:string }[] = [];
   const editorNotes: string[] = [];
-  // Backend lưu format "[Key]: Value\n" — match cả 2 format cũ và mới
-  const tagRegex = /\[([^\]]+?)\]:\s*([^\n\[]*)/g;
-  let match: RegExpExecArray | null;
   let cleaned = raw;
-  while ((match = tagRegex.exec(raw)) !== null) {
-    const key = match[1].trim(), value = match[2].trim();
-    if (key.toLowerCase().includes('editor note') || key === 'EditorNote') editorNotes.push(value);
-    else fields.push({ key, value });
-    cleaned = cleaned.replace(match[0], '');
+
+  // Format 1: [Key]: Value\n  (backend mới)
+  const tagRegex1 = /\[([^\]]+?)\]:\s*([^\n\[]*)/g;
+  // Format 2: [Key: Value]  (backend cũ)
+  const tagRegex2 = /\[([^\]:]+?):\s*([^\]]*)\]/g;
+
+  const processMatch = (key: string, value: string, full: string) => {
+    const k = key.trim(), v = value.trim();
+    if (k.toLowerCase().includes('editor note') || k === 'EditorNote') {
+      editorNotes.push(v);
+    } else {
+      fields.push({ key: k, value: v });
+    }
+    cleaned = cleaned.replace(full, '');
+  };
+
+  // Thử format 1 trước
+  let match: RegExpExecArray | null;
+  const raw1 = raw;
+  while ((match = tagRegex1.exec(raw1)) !== null) {
+    processMatch(match[1], match[2], match[0]);
   }
+  // Nếu không tìm được gì → thử format 2
+  if (fields.length === 0 && editorNotes.length === 0) {
+    cleaned = raw;
+    while ((match = tagRegex2.exec(raw)) !== null) {
+      processMatch(match[1], match[2], match[0]);
+    }
+  }
+
   return { mainText: cleaned.replace(/\n{2,}/g, '\n').trim(), fields, editorNotes };
 };
 const fKey = (k: string) => FIELD_LABEL[k] ?? k;
@@ -230,10 +251,21 @@ const ManuscriptReview = () => {
   const dedupedMs: any[] = Object.values(latestBySeriesId);
 
   // Filter theo manuscript status trực tiếp
-  // Sau khi backend thêm status publishing: không cần check seriesStatus nữa
+  // Filter:
+  // - "publishing": manuscript.status='publishing' (backend mới) OR seriesStatus='publishing' (tạm thời)
+  // - "approved" (Sẵn sàng): manuscript approved nhưng series CHƯA publishing
+  // - Các tab khác: theo manuscript status
   const manuscripts = activeFilter === 'all'
     ? dedupedMs
-    : dedupedMs.filter((m: any) => m.status === activeFilter);
+    : activeFilter === 'publishing'
+      ? dedupedMs.filter((m: any) =>
+          m.status === 'publishing' || m.seriesStatus === 'publishing'
+        )
+      : activeFilter === 'approved'
+        ? dedupedMs.filter((m: any) =>
+            m.status === 'approved' && m.seriesStatus !== 'publishing'
+          )
+        : dedupedMs.filter((m: any) => m.status === activeFilter);
 
   // ── Mutations ────────────────────────────────────────────────
 
@@ -317,14 +349,33 @@ const ManuscriptReview = () => {
 
   // 4. Submit lên Board
   // Backend: POST /editor/manuscripts/{id}/submit-to-board
+  // boardSubmittedIds: lưu vào sessionStorage để giữ qua F5/navigate trong cùng session
+  const [boardSubmittedIds, setBoardSubmittedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = sessionStorage.getItem('boardSubmittedIds');
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  const addBoardSubmitted = (id: string) => {
+    setBoardSubmittedIds(prev => {
+      const next = new Set([...prev, id]);
+      try { sessionStorage.setItem('boardSubmittedIds', JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
+
   const boardMutation = useMutation({
     mutationFn: ({ id, data }: { id:string; data:any }) =>
       api.post(`/editor/manuscripts/${id}/submit-to-board`, data).then(r => r.data),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
       setBForm({ audienceSummary:'', marketingAngle:'', whyItWillSell:'', recommendedSchedule:'weekly', editorNote:'' });
       setBErr('');
       setExpandedId(null);
+      // Đánh dấu manuscript này đã nộp Board trong session này
+      // → tránh hiện lại form khi seriesStatus chưa cập nhật từ backend
+      addBoardSubmitted(vars.id);
     },
     onError: (e:any) => setBErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });
@@ -407,7 +458,15 @@ const ManuscriptReview = () => {
           {FILTERS.map(f => {
             const count = f.id === 'all'
               ? dedupedMs.length
-              : dedupedMs.filter((m: any) => m.status === f.id).length;
+              : f.id === 'publishing'
+                ? dedupedMs.filter((m: any) =>
+                    m.status === 'publishing' || m.seriesStatus === 'publishing'
+                  ).length
+                : f.id === 'approved'
+                  ? dedupedMs.filter((m: any) =>
+                      m.status === 'approved' && m.seriesStatus !== 'publishing'
+                    ).length
+                  : dedupedMs.filter((m: any) => m.status === f.id).length;
             return (
               <button key={f.id} onClick={() => setActiveFilter(f.id)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
@@ -693,7 +752,7 @@ const ManuscriptReview = () => {
                       )}
 
                       {/* ══ STATUS: approved → "Sẵn sàng" ══ */}
-                      {m.status === 'approved' && (
+                      {m.status === 'approved' && m.seriesStatus !== 'publishing' && (
                         <div className="px-6 py-5 space-y-4">
                           <div className={`flex items-start gap-3 p-4 rounded-xl ${st.bg} border ${st.border}`}>
                             <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -705,16 +764,28 @@ const ManuscriptReview = () => {
                             </div>
                           </div>
                           <ManuscriptInfo m={m} parsed={parsed} />
-                          <FullBoardForm
+                          {boardSubmittedIds.has(m.id) ? (
+                            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/6 border border-amber-500/15">
+                              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[12px] font-semibold text-amber-300">Đã nộp lên Board — đang chờ xét duyệt</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+                                  Series đang trong hàng chờ bình duyệt. Không thể nộp lại cho đến khi có kết quả từ Board.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <FullBoardForm
                               bForm={bForm} setBForm={setBForm} bErr={bErr}
                               onSubmit={() => handleBoard(m.id)}
                               isPending={boardMutation.isPending}
                             />
+                          )}
                         </div>
                       )}
 
                       {/* ══ STATUS: publishing → "Đang xuất bản" ══ */}
-                      {m.status === 'publishing' && (
+                      {(m.status === 'publishing' || (m.status === 'approved' && m.seriesStatus === 'publishing')) && (
                         <div className="px-6 py-5 space-y-4">
                           <div className="flex items-start gap-3 p-4 rounded-xl bg-violet-500/6 border border-violet-500/15">
                             <CheckCircle2 className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
