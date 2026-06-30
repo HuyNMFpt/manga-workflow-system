@@ -16,4 +16,5 @@ public class SeriesRankingDTO {
     private boolean isAtRisk;
     private Integer consecutiveLowPeriods;
     private String lastUpdate;
+    private Integer readerScore;
 }

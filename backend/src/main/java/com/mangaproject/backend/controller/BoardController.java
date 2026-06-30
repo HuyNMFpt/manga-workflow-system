@@ -75,8 +75,9 @@ public class BoardController {
 
     /**
      * POST /api/board/decisions
-     * Ra quyết định: cancel / đổi lịch / hiatus / reinstate
+     * @deprecated Quyết định 1 người không qua bỏ phiếu. Dùng /board/proposals + /board/proposals/vote thay thế.
      */
+    @Deprecated
     @PostMapping("/decisions")
     public ApiResponse<SeriesDTO> makeDecision(
             @Valid @RequestBody EditorialDecisionRequest request,
@@ -84,6 +85,42 @@ public class BoardController {
         User user = getUser(authentication);
         return ApiResponse.success(boardService.makeDecision(request, user.getId()),
                 "Quyết định đã được thực hiện");
+    }
+
+    /**
+     * POST /api/board/proposals
+     * Board member đề xuất quyết định cancel/hiatus/reinstate/change_schedule — KHÔNG tự quyết ngay
+     */
+    @PostMapping("/proposals")
+    public ApiResponse<EditorialProposalDTO> createProposal(
+            @Valid @RequestBody CreateProposalRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(boardService.createProposal(request, user.getId()),
+                "Đề xuất đã được tạo, chờ Board bỏ phiếu");
+    }
+
+    /**
+     * POST /api/board/proposals/vote
+     * Mỗi Board member bỏ phiếu yes/no/abstain cho 1 đề xuất, đủ quorum thì tự chốt
+     */
+    @PostMapping("/proposals/vote")
+    public ApiResponse<EditorialProposalDTO> voteOnProposal(
+            @Valid @RequestBody EditorialVoteRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(boardService.castEditorialVote(request, user.getId()),
+                "Phiếu bầu đã được ghi nhận");
+    }
+
+    /**
+     * GET /api/board/proposals
+     * Danh sách đề xuất đang chờ Board bỏ phiếu
+     */
+    @GetMapping("/proposals")
+    public ApiResponse<List<EditorialProposalDTO>> getActiveProposals(Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(boardService.getActiveProposals(user.getId()));
     }
 
     /**
