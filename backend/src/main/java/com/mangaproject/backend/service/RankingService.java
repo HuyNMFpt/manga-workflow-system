@@ -54,9 +54,20 @@ public class RankingService {
         if (currentRank < previousRank) trend = "up";
         else if (currentRank > previousRank) trend = "down";
 
-        // Đếm số kỳ liên tiếp xếp hạng thấp (rank > 20)
-        long consecutiveLow = readerPollRepository
-                .countBySeriesIdAndRankPositionGreaterThan(series.getId(), 20);
+        // Đếm số kỳ liên tiếp xếp hạng thấp (rank > 20) — chỉ tính liên tiếp gần nhất,
+        // dừng ngay khi gặp 1 kỳ không thấp (không đếm tổng toàn bộ lịch sử)
+        List<ReaderPoll> recentPolls = readerPollRepository
+                .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
+        int consecutiveLow = 0;
+        for (ReaderPoll p : recentPolls) {
+            if (p.getRankPosition() != null && p.getRankPosition() > 20) {
+                consecutiveLow++;
+            } else {
+                break;
+            }
+        }
+
+        Integer readerScore = latest != null ? latest.getReaderScore() : null;
 
         return new SeriesRankingDTO(
                 series.getId(),
@@ -67,8 +78,9 @@ public class RankingService {
                 currentVotes,
                 previousVotes,
                 series.getCancellationRisk() != null && series.getCancellationRisk(),
-                (int) consecutiveLow,
-                latest != null ? latest.getPollDate().toString() : null
+                consecutiveLow,
+                latest != null ? latest.getPollDate().toString() : null,
+                readerScore
         );
     }
 }

@@ -108,12 +108,15 @@ public class ManuscriptService {
     private String buildDescription(CreateManuscriptRequest req) {
         StringBuilder sb = new StringBuilder();
         if (req.getDescription() != null) sb.append(req.getDescription());
+        // Format chuẩn: [Key]: Value (dấu ] đứng sát Key, dấu : ở ngoài bracket)
+        // Đây là format frontend regex đang tìm — đổi từ [Key: Value] cũ vì frontend
+        // không parse được dạng đó, hiện raw text thay vì tách field riêng.
         if (req.getTargetAudience() != null)
-            sb.append("\n[Target: ").append(req.getTargetAudience()).append("]");
+            sb.append("\n[Target]: ").append(req.getTargetAudience());
         if (req.getPublicationSchedule() != null)
-            sb.append("\n[Schedule: ").append(req.getPublicationSchedule()).append("]");
+            sb.append("\n[Schedule]: ").append(req.getPublicationSchedule());
         if (req.getCharacterSummary() != null)
-            sb.append("\n[Characters: ").append(req.getCharacterSummary()).append("]");
+            sb.append("\n[Characters]: ").append(req.getCharacterSummary());
         return sb.toString();
     }
 

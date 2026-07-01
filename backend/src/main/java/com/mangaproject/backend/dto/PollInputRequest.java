@@ -16,7 +16,10 @@ public class PollInputRequest {
     @NotNull
     private Integer pollYear;
 
-    @NotNull
+    /**
+     * Không còn dùng giá trị này nữa — backend tự tính rankPosition (#4 trong BACKEND_TODO_29062026).
+     * Giữ field optional để không vỡ request nếu frontend còn gửi kèm (giá trị bị server ignore).
+     */
     private Integer rankPosition;
 
     @NotNull
