@@ -278,13 +278,23 @@ public class BoardService {
 
         submission = submissionRepository.save(submission);
 
+        // Resolve seriesId và seriesTitle cho response
+        Manuscript msForDto = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
+        String resolvedSeriesId = msForDto != null ? msForDto.getSeriesId() : "";
+        String resolvedSeriesTitle = "";
+        if (msForDto != null) {
+            resolvedSeriesTitle = seriesRepository.findById(msForDto.getSeriesId())
+                    .map(Series::getTitle).orElse("");
+        }
+
         return new SubmissionDTO(
-                submission.getId(), submission.getManuscriptId(), "", "",
+                submission.getId(), submission.getManuscriptId(), resolvedSeriesId, resolvedSeriesTitle,
                 submission.getSubmittedBy(), submission.getSubmissionRound(),
                 submission.getCoverLetter(), submission.getStatus().name(),
                 submission.getVoteYes(), submission.getVoteNo(), submission.getVoteAbstain(),
                 submission.getVotingDeadline() != null ? submission.getVotingDeadline().toString() : null,
-                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null
+                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null,
+                null
         );
     }
 
@@ -315,6 +325,7 @@ public class BoardService {
         poll.setRankPosition(autoRank);
         poll.setVoteCount(request.getVoteCount());
         poll.setReaderScore(request.getReaderScore());
+        poll.setReaderVoteCount(request.getReaderVoteCount());
         poll.setNotes(request.getNotes());
         poll.setPollDate(request.getPollDate() != null
                 ? LocalDate.parse(request.getPollDate())
@@ -596,6 +607,14 @@ public class BoardService {
                 else break;
             }
 
+            Double rs = latest != null ? latest.getReaderScore() : null;
+            Integer rv = latest != null ? latest.getReaderVoteCount() : null;
+            Double ws = null;
+            if (rs != null) {
+                double v = rv != null ? rv : 0;
+                double R = (v * rs + 20 * 6.8) / (v + 20);
+                ws = Math.round(R * 100.0) / 100.0;
+            }
             return new SeriesRankingDTO(
                     series.getId(), series.getTitle(), curr, prev, trend,
                     latest != null ? latest.getVoteCount() : 0,
@@ -603,7 +622,7 @@ public class BoardService {
                     series.getCancellationRisk() != null && series.getCancellationRisk(),
                     consecutiveLow,
                     latest != null ? latest.getPollDate().toString() : null,
-                    latest != null ? latest.getReaderScore() : null
+                    rs, rv, ws
             );
         }).sorted(Comparator.comparingInt(r -> r.getCurrentRank() == 0 ? 999 : r.getCurrentRank()))
         .collect(Collectors.toList());

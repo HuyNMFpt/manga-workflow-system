@@ -4,16 +4,15 @@ import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Manuscript;
 import com.mangaproject.backend.model.Series;
 import com.mangaproject.backend.model.Submission;
-import com.mangaproject.backend.repository.ManuscriptRepository;
-import com.mangaproject.backend.repository.SeriesRepository;
-import com.mangaproject.backend.repository.SubmissionRepository;
+import com.mangaproject.backend.model.User;
+import com.mangaproject.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,7 +24,8 @@ public class ManuscriptService {
     private final SubmissionRepository submissionRepository;
     private final SeriesRepository seriesRepository;
     private final FileStorageService fileStorageService;
-    private final com.mangaproject.backend.repository.ManuscriptAnnotationRepository annotationRepository;
+    private final ManuscriptAnnotationRepository annotationRepository;
+    private final UserRepository userRepository;
 
     public String uploadManuscriptFile(MultipartFile file) {
         try {
@@ -60,6 +60,18 @@ public class ManuscriptService {
         manuscript.setSubmittedAt(LocalDateTime.now());
         manuscript = manuscriptRepository.save(manuscript);
 
+        // Auto-assign Tantou Editor nếu series chưa có — chỉ gán khi editorId == null
+        // không ghi đè nếu đã được assign từ trước (ví dụ admin gán tay)
+        if (series.getEditorId() == null) {
+            String assignedEditorId = findLeastLoadedEditor();
+            if (assignedEditorId != null) {
+                series.setEditorId(assignedEditorId);
+                log.info("Auto-assigned editor {} to series {}", assignedEditorId, series.getId());
+            } else {
+                log.warn("No active editor found for auto-assign, series {} has no editor", series.getId());
+            }
+        }
+
         series.setStatus(Series.SeriesStatus.submitted);
         seriesRepository.save(series);
 
@@ -76,23 +88,41 @@ public class ManuscriptService {
         submission = submissionRepository.save(submission);
 
         // Refresh để lấy createdAt từ DB
-        submission = submissionRepository.findById(submission.getId())
-                .orElse(submission);
+        submission = submissionRepository.findById(submission.getId()).orElse(submission);
 
         log.info("Manuscript submitted: seriesId={}, version={}", request.getSeriesId(), nextVersion);
-        return mapSubmissionToDTO(submission, series.getTitle());
+        return mapSubmissionToDTO(submission, series);
+    }
+
+    /**
+     * Tìm Editor active có workload (số series đang active) thấp nhất.
+     * Editor chưa có series nào → workload = 0, được ưu tiên chọn trước.
+     */
+    private String findLeastLoadedEditor() {
+        List<User> editors = userRepository.findByRole_NameAndIsActiveTrue("editor");
+        if (editors.isEmpty()) return null;
+
+        // Build workload map: editorId → số series active đang được assign
+        Map<String, Long> workload = seriesRepository.countActiveSeriesByEditor()
+                .stream()
+                .collect(Collectors.toMap(
+                        row -> (String) row[0],
+                        row -> (Long) row[1]
+                ));
+
+        // Tìm editor có workload thấp nhất — editor chưa có series nào → getOrDefault trả 0
+        return editors.stream()
+                .min(Comparator.comparingLong(e -> workload.getOrDefault(e.getId(), 0L)))
+                .map(User::getId)
+                .orElse(null);
     }
 
     public List<SubmissionDTO> getMySubmissions(String userId) {
         return submissionRepository.findBySubmittedByOrderByCreatedAtDesc(userId).stream()
                 .map(sub -> {
                     Manuscript ms = manuscriptRepository.findById(sub.getManuscriptId()).orElse(null);
-                    String seriesTitle = "";
-                    if (ms != null) {
-                        seriesTitle = seriesRepository.findById(ms.getSeriesId())
-                                .map(Series::getTitle).orElse("");
-                    }
-                    return mapSubmissionToDTO(sub, seriesTitle);
+                    Series s = ms != null ? seriesRepository.findById(ms.getSeriesId()).orElse(null) : null;
+                    return mapSubmissionToDTO(sub, s);
                 })
                 .collect(Collectors.toList());
     }
@@ -108,9 +138,6 @@ public class ManuscriptService {
     private String buildDescription(CreateManuscriptRequest req) {
         StringBuilder sb = new StringBuilder();
         if (req.getDescription() != null) sb.append(req.getDescription());
-        // Format chuẩn: [Key]: Value (dấu ] đứng sát Key, dấu : ở ngoài bracket)
-        // Đây là format frontend regex đang tìm — đổi từ [Key: Value] cũ vì frontend
-        // không parse được dạng đó, hiện raw text thay vì tách field riêng.
         if (req.getTargetAudience() != null)
             sb.append("\n[Target]: ").append(req.getTargetAudience());
         if (req.getPublicationSchedule() != null)
@@ -144,16 +171,28 @@ public class ManuscriptService {
         );
     }
 
-    private SubmissionDTO mapSubmissionToDTO(Submission s, String seriesTitle) {
+    private SubmissionDTO mapSubmissionToDTO(Submission s, Series series) {
         String manuscriptId = s.getManuscriptId();
-        String seriesId = manuscriptRepository.findById(manuscriptId)
-                .map(Manuscript::getSeriesId).orElse("");
+        String seriesId = series != null ? series.getId() :
+                manuscriptRepository.findById(manuscriptId)
+                        .map(Manuscript::getSeriesId).orElse("");
+        String seriesTitle = series != null ? series.getTitle() : "";
+
+        // Resolve assignedEditorName
+        String assignedEditorName = null;
+        if (series != null && series.getEditorId() != null) {
+            assignedEditorName = userRepository.findById(series.getEditorId())
+                    .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                    .orElse(null);
+        }
+
         return new SubmissionDTO(
                 s.getId(), manuscriptId, seriesId, seriesTitle,
                 s.getSubmittedBy(), s.getSubmissionRound(), s.getCoverLetter(),
                 s.getStatus().name(), s.getVoteYes(), s.getVoteNo(), s.getVoteAbstain(),
                 s.getVotingDeadline() != null ? s.getVotingDeadline().toString() : null,
-                s.getCreatedAt() != null ? s.getCreatedAt().toString() : null
+                s.getCreatedAt() != null ? s.getCreatedAt().toString() : null,
+                assignedEditorName
         );
     }
 }

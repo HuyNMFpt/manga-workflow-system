@@ -35,8 +35,13 @@ public class ReaderPoll {
     @Column(name = "vote_count", nullable = false)
     private Integer voteCount = 0;
 
+    // Đổi từ Integer → Double để nhận 8.5, 9.0... — thang 1.0-10.0
     @Column(name = "reader_score")
-    private Integer readerScore;
+    private Double readerScore;
+
+    // Số người đã chấm điểm — dùng để tính R Bayesian
+    @Column(name = "reader_vote_count")
+    private Integer readerVoteCount;
 
     @Column(columnDefinition = "TEXT")
     private String notes;

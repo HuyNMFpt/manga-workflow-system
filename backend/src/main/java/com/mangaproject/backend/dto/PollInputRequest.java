@@ -1,9 +1,7 @@
 package com.mangaproject.backend.dto;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.*;
 import lombok.Data;
-import java.time.LocalDate;
 
 @Data
 public class PollInputRequest {
@@ -17,15 +15,22 @@ public class PollInputRequest {
     private Integer pollYear;
 
     /**
-     * Không còn dùng giá trị này nữa — backend tự tính rankPosition (#4 trong BACKEND_TODO_29062026).
-     * Giữ field optional để không vỡ request nếu frontend còn gửi kèm (giá trị bị server ignore).
+     * Không dùng — backend tự tính rankPosition từ voteCount.
+     * Giữ optional để không vỡ request nếu frontend còn gửi kèm.
      */
     private Integer rankPosition;
 
     @NotNull
     private Integer voteCount;
 
-    private Integer readerScore;
+    // Thang 1.0 – 10.0, optional
+    @DecimalMin(value = "1.0", message = "Reader score phải từ 1.0 đến 10.0")
+    @DecimalMax(value = "10.0", message = "Reader score phải từ 1.0 đến 10.0")
+    private Double readerScore;
+
+    // Số người đã chấm — dùng để tính R Bayesian, optional
+    private Integer readerVoteCount;
+
     private String notes;
     private String pollDate; // yyyy-MM-dd
 }

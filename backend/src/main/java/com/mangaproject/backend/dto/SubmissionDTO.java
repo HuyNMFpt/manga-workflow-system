@@ -19,4 +19,5 @@ public class SubmissionDTO {
     private Integer voteAbstain;
     private String votingDeadline;
     private String createdAt;
+    private String assignedEditorName; // tên Editor được auto-assign (null nếu chưa có)
 }

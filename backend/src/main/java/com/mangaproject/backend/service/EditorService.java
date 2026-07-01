@@ -255,13 +255,19 @@ public class EditorService {
 
         log.info("Editor submitted manuscript to board: manuscriptId={}, editorId={}", manuscriptId, editorId);
 
+        // Resolve editor name cho DTO
+        String editorName = userRepository.findById(series.getEditorId() != null ? series.getEditorId() : "")
+                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                .orElse(null);
+
         return new SubmissionDTO(
                 submission.getId(), manuscriptId, series.getId(), series.getTitle(),
                 submission.getSubmittedBy(), submission.getSubmissionRound(),
                 submission.getCoverLetter(), submission.getStatus().name(),
                 0, 0, 0,
                 submission.getVotingDeadline().toString(),
-                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null
+                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null,
+                editorName
         );
     }
 
