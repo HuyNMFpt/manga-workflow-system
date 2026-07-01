@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query'
-import { Feather, X, ChevronDown, Upload, Check, FileText, Users, Loader2, ArrowRight, UserCircle, AlertCircle } from 'lucide-react'
+import { useQueryClient, useMutation } from '@tanstack/react-query'
+import { Feather, X, ChevronDown, Upload, Check, FileText, Users, Loader2, ArrowRight, Sparkles } from 'lucide-react'
 import { GENRE_OPTIONS } from '@/lib/constants'
 import api from '@/lib/axios'
 
@@ -14,7 +14,6 @@ interface Props {
     genre: string
     synopsis: string
     coverUrl?: string
-    editorId?: string
   }
 }
 
@@ -46,8 +45,8 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   })
   const [coverFile,        setCoverFile]        = useState<File | null>(null)
   const [coverPreview,     setCoverPreview]     = useState<string | null>(existingSeries?.coverUrl ?? null)
-  const [seriesError,      setSeriesError]      = useState('')
-  const [selectedEditorId, setSelectedEditorId] = useState(existingSeries?.editorId ?? '')
+  const [seriesError,    setSeriesError]    = useState('')
+  const [assignedEditor, setAssignedEditor] = useState<string | null>(null) // tên editor được assign từ response
 
   // ── Step 2 state ────────────────────────────────────────────
   const [msForm, setMsForm] = useState({
@@ -61,22 +60,6 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   const [draftPreview, setDraftPreview] = useState<string | null>(null)
   const [msError,      setMsError]      = useState('')
 
-  // ── Query: Load editors ──────────────────────────────────────
-  // GET /api/users/editors → res.data.data = [{ id, name, email, avatarUrl }] (plain list)
-  const {
-    data: editorsRaw = [],
-    isLoading: editorsLoading,
-    isError: editorsError,
-  } = useQuery({
-    queryKey: ['users', 'editors'],
-    queryFn: async () => {
-      const r = await api.get('/users/editors')
-      return r.data.data ?? []
-    },
-  })
-  const editors: any[] = Array.isArray(editorsRaw) ? editorsRaw : []
-  const selectedEditor  = editors.find(e => e.id === selectedEditorId)
-
   // ── Mutation 1: Create/Update series ────────────────────────
   const createSeriesMutation = useMutation({
     mutationFn: async () => {
@@ -85,7 +68,6 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
         fd.append('title',    seriesForm.title.trim())
         fd.append('genre',    seriesForm.genre)
         fd.append('synopsis', seriesForm.synopsis)
-        if (selectedEditorId) fd.append('editorId', selectedEditorId)
         if (coverFile) fd.append('cover', coverFile)
         await api.put(`/series/${existingSeriesId}`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -96,7 +78,6 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
       fd.append('title',    seriesForm.title.trim())
       fd.append('genre',    seriesForm.genre)
       fd.append('synopsis', seriesForm.synopsis)
-      if (selectedEditorId) fd.append('editorId', selectedEditorId)
       if (coverFile) fd.append('cover', coverFile)
       const r = await api.post('/series', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -123,11 +104,13 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
       fd.append('plotSummary',         msForm.plotSummary || '')
       fd.append('coverLetter',         msForm.coverLetter || '')
       if (draftFile) fd.append('file', draftFile)
-      await api.post('/manuscripts/submit', fd, {
+      const res = await api.post('/manuscripts/submit', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
+      return res.data.data?.assignedEditorName ?? null
     },
-    onSuccess: () => {
+    onSuccess: (editorName) => {
+      setAssignedEditor(editorName)
       qc.invalidateQueries({ queryKey: ['series'] })
       onSuccess?.()
       setStep('success')
@@ -153,7 +136,6 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
     if (!seriesForm.title.trim())        { setSeriesError('Vui lòng nhập tên series'); return }
     if (!seriesForm.genre)               { setSeriesError('Vui lòng chọn thể loại'); return }
     if (seriesForm.synopsis.length < 50) { setSeriesError(`Tóm tắt cần ít nhất 50 ký tự (${seriesForm.synopsis.length}/50)`); return }
-    if (!selectedEditorId)               { setSeriesError('Vui lòng chọn Tantou Editor phụ trách'); return }
     createSeriesMutation.mutate()
   }
 
@@ -285,85 +267,16 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
                 </div>
               </div>
 
-              {/* ── Tantou Editor picker ── */}
-              <div>
-                <label className={labelCls}>
-                  Tantou Editor <span className="text-red-400">*</span>
-                </label>
-
-                {editorsLoading ? (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-white/8 bg-white/3">
-                    <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
-                    <span className="text-[12px] text-zinc-500">Đang tải danh sách Editor...</span>
-                  </div>
-
-                ) : editorsError || editors.length === 0 ? (
-                  <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-amber-500/20 bg-amber-500/5">
-                    <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-zinc-500">
-                      Không tải được danh sách Editor.
-                      Thử lại sau hoặc liên hệ quản lý.
-                    </p>
-                  </div>
-
-                ) : (
-                  <div className="space-y-1.5">
-                    {editors.map((editor: any) => {
-                      const isSelected = selectedEditorId === editor.id
-                      return (
-                        <button
-                          key={editor.id}
-                          type="button"
-                          onClick={() => setSelectedEditorId(isSelected ? '' : editor.id)}
-                          className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-left transition-all ${
-                            isSelected
-                              ? 'bg-violet-500/12 border-violet-500/35 ring-1 ring-violet-500/20'
-                              : 'bg-white/[0.02] border-white/6 hover:bg-white/5 hover:border-white/12'
-                          }`}>
-                          {/* Avatar */}
-                          {editor.avatarUrl ? (
-                            <img
-                              src={editor.avatarUrl}
-                              alt={editor.name}
-                              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                            />
-                          ) : (
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-bold ${
-                              isSelected ? 'bg-violet-500/25 text-violet-300' : 'bg-white/8 text-zinc-500'
-                            }`}>
-                              {editor.name?.charAt(0)?.toUpperCase() ?? <UserCircle className="w-4 h-4" />}
-                            </div>
-                          )}
-
-                          {/* Info */}
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-[13px] font-semibold truncate ${isSelected ? 'text-white' : 'text-zinc-300'}`}>
-                              {editor.name}
-                            </p>
-                            <p className="text-[10px] text-zinc-600 truncate">{editor.email}</p>
-                          </div>
-
-                          {/* Check indicator */}
-                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 transition-all ${
-                            isSelected
-                              ? 'bg-violet-500 border-violet-500'
-                              : 'border-white/15'
-                          }`}>
-                            {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
-                          </div>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Selected summary */}
-                {selectedEditor && (
-                  <p className="text-[10px] text-violet-400 mt-1.5 flex items-center gap-1">
-                    <Check className="w-3 h-3" />
-                    Đã chọn: <span className="font-semibold">{selectedEditor.name}</span> làm Tantou Editor
+              {/* ── Tantou Editor — tự động assign ── */}
+              <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl border border-violet-500/20 bg-violet-500/6">
+                <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[12px] font-semibold text-violet-300">Hệ thống sẽ tự chọn Tantou Editor</p>
+                  <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">
+                    Khi bạn nộp bản thảo, hệ thống tự động chọn Editor có ít việc nhất để phụ trách series này.
+                    Bạn sẽ thấy tên Editor được assign ở bước xác nhận.
                   </p>
-                )}
+                </div>
               </div>
 
               {seriesError && (
@@ -378,23 +291,13 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
           {step === 'manuscript' && (
             <form id="form-ms" onSubmit={handleStepTwo} className="space-y-4">
 
-              {/* Selected editor reminder */}
-              {selectedEditor && (
-                <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-violet-500/8 border border-violet-500/20">
-                  {selectedEditor.avatarUrl ? (
-                    <img src={selectedEditor.avatarUrl} alt={selectedEditor.name}
-                      className="w-7 h-7 rounded-full object-cover flex-shrink-0" />
-                  ) : (
-                    <div className="w-7 h-7 rounded-full bg-violet-500/20 flex items-center justify-center text-[11px] font-bold text-violet-300 flex-shrink-0">
-                      {selectedEditor.name?.charAt(0)?.toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-[11px] text-zinc-400">Tantou Editor phụ trách</p>
-                    <p className="text-[13px] font-semibold text-white truncate">{selectedEditor.name}</p>
-                  </div>
-                </div>
-              )}
+              {/* Auto-assign reminder */}
+              <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-violet-500/8 border border-violet-500/20">
+                <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                <p className="text-[11px] text-zinc-400">
+                  Tantou Editor sẽ được hệ thống tự chọn khi bạn nộp bản thảo.
+                </p>
+              </div>
 
               {/* Target audience */}
               <div>
@@ -509,7 +412,10 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
                 <p className="text-xs text-zinc-500 leading-relaxed">
                   Series <span className="text-white font-semibold">"{seriesForm.title}"</span>{' '}
                   {existingSeriesId ? 'đã được cập nhật và' : 'đã được tạo,'} bản thảo đã gửi đến{' '}
-                  <span className="text-violet-300 font-semibold">{selectedEditor?.name ?? 'Editor'}</span>.
+                  {assignedEditor
+                    ? <><span className="text-violet-300 font-semibold">{assignedEditor}</span> (Tantou Editor được hệ thống chỉ định).</>
+                    : <>Tantou Editor phụ trách (hệ thống đang xử lý chỉ định).</>
+                  }{' '}
                   Editor sẽ xem xét trước khi nộp lên Hội đồng biên tập.
                 </p>
               </div>
@@ -530,7 +436,7 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
                   className="px-4 py-2 text-sm rounded-xl border border-white/8 text-zinc-400 hover:bg-white/5 hover:text-white transition-colors">
                   Huỷ
                 </button>
-                <button type="submit" form="form-series" disabled={createSeriesMutation.isPending || !selectedEditorId}
+                <button type="submit" form="form-series" disabled={createSeriesMutation.isPending}
                   className="flex items-center gap-2 px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white font-semibold hover:shadow-lg hover:shadow-violet-600/30 disabled:opacity-50 transition-all">
                   {createSeriesMutation.isPending
                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang tạo...</>
