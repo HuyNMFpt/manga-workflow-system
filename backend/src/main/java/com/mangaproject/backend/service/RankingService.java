@@ -22,6 +22,8 @@ public class RankingService {
     private static final int BAYESIAN_M = 20;
     // C = default điểm trung bình hệ thống khi chưa đủ data
     private static final double BAYESIAN_C_DEFAULT = 6.8;
+    // 20% cuối bảng xếp hạng bị tính là "kỳ thấp" — đồng bộ với BoardService
+    private static final double AT_RISK_BOTTOM_PCT = 0.2;
 
     public List<SeriesRankingDTO> getAllRankings() {
         List<Series> allSeries = seriesRepository.findByStatusIn(
@@ -76,13 +78,19 @@ public class RankingService {
         else if (currentRank > previousRank) trend = "down";
 
         // consecutiveLow: đếm kỳ xếp hạng thấp LIÊN TIẾP từ gần nhất
-        // dừng ngay khi gặp kỳ không thấp (không đếm tổng lịch sử)
+        // Ngưỡng động: 20% cuối bảng — đồng bộ với BoardService
+        int totalPublishing = seriesRepository.findByStatusIn(
+                List.of(Series.SeriesStatus.publishing)).size();
+        int threshold = Math.max(1, (int) Math.ceil(totalPublishing * AT_RISK_BOTTOM_PCT));
         List<ReaderPoll> recentPolls = readerPollRepository
                 .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
         int consecutiveLow = 0;
-        for (ReaderPoll p : recentPolls) {
-            if (p.getRankPosition() != null && p.getRankPosition() > 20) consecutiveLow++;
-            else break;
+        if (totalPublishing > 1) {
+            for (ReaderPoll p : recentPolls) {
+                if (p.getRankPosition() != null
+                        && p.getRankPosition() > (totalPublishing - threshold)) consecutiveLow++;
+                else break;
+            }
         }
 
         Double readerScore     = latest != null ? latest.getReaderScore()     : null;

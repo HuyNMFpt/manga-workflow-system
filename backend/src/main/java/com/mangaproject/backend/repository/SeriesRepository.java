@@ -19,4 +19,7 @@ public interface SeriesRepository extends JpaRepository<Series, String> {
            "AND s.status IN ('submitted','under_review','publishing') " +
            "GROUP BY s.editorId")
     List<Object[]> countActiveSeriesByEditor();
+
+    // At-risk dynamic threshold: đếm tổng series đang publishing
+    int countByStatus(Series.SeriesStatus status);
 }

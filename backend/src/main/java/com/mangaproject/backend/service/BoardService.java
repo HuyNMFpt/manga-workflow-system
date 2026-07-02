@@ -29,6 +29,9 @@ public class BoardService {
     private final EditorialProposalRepository editorialProposalRepository;
     private final EditorialVoteRepository editorialVoteRepository;
 
+    // 20% cuối bảng xếp hạng bị tính là "kỳ thấp" — dễ điều chỉnh sau này
+    private static final double AT_RISK_BOTTOM_PCT = 0.2;
+
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
         // Chờ vote: dedup theo seriesId — mỗi series chỉ tính 1 lần dù có nhiều submission (nộp lại nhiều lần)
@@ -337,23 +340,35 @@ public class BoardService {
         series.setPreviousRank(series.getCurrentRank());
         series.setCurrentRank(autoRank);
 
-        // #6 — Check cancellation risk: rank > 20 LIÊN TIẾP 3 kỳ gần nhất
-        // (không đếm tổng toàn bộ lịch sử, dừng ngay khi gặp 1 kỳ không thấp)
-        List<ReaderPoll> recentPolls = readerPollRepository
-                .findTop5BySeriesIdOrderByPollDateDesc(request.getSeriesId());
-        int consecutiveLow = 0;
-        for (ReaderPoll p : recentPolls) {
-            if (p.getRankPosition() != null && p.getRankPosition() > 20) {
-                consecutiveLow++;
-            } else {
-                break;
+        // #6 — Check cancellation risk: thuộc 20% cuối bảng LIÊN TIẾP 3 kỳ gần nhất
+        // Ngưỡng động: không hardcode > 20 mà tính theo tổng series publishing
+        // Ví dụ: 5 series → threshold=1 → hạng > 4 bị tính thấp
+        int totalPublishing = seriesRepository.countByStatus(Series.SeriesStatus.publishing);
+        int atRiskThreshold = Math.max(1, (int) Math.ceil(totalPublishing * AT_RISK_BOTTOM_PCT));
+
+        // Edge case: chỉ 1 series publishing → không xét at-risk (không có đối thủ để so sánh)
+        if (totalPublishing <= 1) {
+            series.setCancellationRisk(false);
+        } else {
+            List<ReaderPoll> recentPolls = readerPollRepository
+                    .findTop5BySeriesIdOrderByPollDateDesc(request.getSeriesId());
+            int consecutiveLow = 0;
+            for (ReaderPoll p : recentPolls) {
+                if (p.getRankPosition() != null
+                        && p.getRankPosition() > (totalPublishing - atRiskThreshold)) {
+                    consecutiveLow++;
+                } else {
+                    break;
+                }
             }
+            series.setCancellationRisk(consecutiveLow >= 3);
+            log.info("at-risk check: totalPublishing={}, threshold={}, consecutiveLow={}",
+                    totalPublishing, atRiskThreshold, consecutiveLow);
         }
-        series.setCancellationRisk(consecutiveLow >= 3);
         seriesRepository.save(series);
 
-        log.info("Poll data entered: seriesId={}, autoRank={}, votes={}, consecutiveLow={}",
-                request.getSeriesId(), autoRank, request.getVoteCount(), consecutiveLow);
+        log.info("Poll data entered: seriesId={}, autoRank={}, votes={}",
+                request.getSeriesId(), autoRank, request.getVoteCount());
 
         return new ReaderPollDTO(
                 poll.getId(), poll.getSeriesId(), poll.getPollPeriod(),
@@ -598,13 +613,18 @@ public class BoardService {
             int prev = previous != null ? previous.getRankPosition() : curr;
             String trend = curr < prev ? "up" : curr > prev ? "down" : "stable";
 
-            // Đếm liên tiếp gần nhất, không phải tổng toàn bộ lịch sử
+            // Đếm liên tiếp gần nhất với ngưỡng động 20% cuối bảng
+            int totalPub = seriesRepository.countByStatus(Series.SeriesStatus.publishing);
+            int thr = Math.max(1, (int) Math.ceil(totalPub * AT_RISK_BOTTOM_PCT));
             List<ReaderPoll> recent = readerPollRepository
                     .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
             int consecutiveLow = 0;
-            for (ReaderPoll p : recent) {
-                if (p.getRankPosition() != null && p.getRankPosition() > 20) consecutiveLow++;
-                else break;
+            if (totalPub > 1) {
+                for (ReaderPoll p : recent) {
+                    if (p.getRankPosition() != null
+                            && p.getRankPosition() > (totalPub - thr)) consecutiveLow++;
+                    else break;
+                }
             }
 
             Double rs = latest != null ? latest.getReaderScore() : null;

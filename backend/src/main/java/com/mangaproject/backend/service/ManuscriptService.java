@@ -72,7 +72,8 @@ public class ManuscriptService {
             }
         }
 
-        series.setStatus(Series.SeriesStatus.submitted);
+        // under_editorial_review: Mangaka đã nộp, Editor đang xét (khác submitted = Editor đã nộp Board)
+        series.setStatus(Series.SeriesStatus.under_editorial_review);
         seriesRepository.save(series);
 
         int submissionRound = (int) submissionRepository

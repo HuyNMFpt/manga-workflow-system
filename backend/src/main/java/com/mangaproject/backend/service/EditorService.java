@@ -300,6 +300,10 @@ public class EditorService {
         manuscript.setStatus(Manuscript.ManuscriptStatus.under_review);
         manuscriptRepository.save(manuscript);
 
+        // Series cũng cần về under_editorial_review (Editor đang xét lại, chưa nộp Board)
+        series.setStatus(Series.SeriesStatus.under_editorial_review);
+        seriesRepository.save(series);
+
         log.info("Manuscript {} reset to under_review by editor {}", manuscriptId, editorId);
 
         // Build response
