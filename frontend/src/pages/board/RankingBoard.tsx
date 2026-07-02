@@ -153,10 +153,7 @@ const RankingBoard = () => {
           <div>
             <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-emerald-500 mb-2">Board · Rankings</p>
             <h1 className="text-2xl font-black font-['Syne']">Bảng xếp hạng</h1>
-            <p className="text-sm text-zinc-600 mt-1">
-              Xếp hạng theo Bayesian Weighted Rating
-              <span className="ml-2 text-zinc-700">R = (v·S + {M}·C) / (v + {M})</span>
-            </p>
+            <p className="text-sm text-zinc-600 mt-1">Xếp hạng theo điểm đánh giá có trọng số của độc giả</p>
           </div>
           <button onClick={() => setShowInput(!showInput)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold shadow-lg shadow-teal-600/25 hover:shadow-teal-600/40 transition-all">
@@ -167,19 +164,13 @@ const RankingBoard = () => {
 
       <div className="px-8 py-8 space-y-6">
 
-        {/* Legend + công thức */}
-        <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-600">
-          <span className="flex items-center gap-1.5 font-mono bg-white/3 px-2 py-1 rounded-lg border border-white/5">
-            R = (v·S + {M}·C) / (v + {M})
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-zinc-500">C</span> = {currentC} (điểm nền hệ thống)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="text-zinc-500">m</span> = {M} vote tối thiểu
-          </span>
+        {/* Legend */}
+        <div className="flex items-center gap-3 text-[11px] text-zinc-600">
           <span className="flex items-center gap-1.5">
             <AlertTriangle className="w-3 h-3 text-red-500"/>At-risk = rank thấp ≥ 3 kỳ liên tiếp
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Star className="w-3 h-3 text-amber-400 fill-amber-400/60"/>Điểm R — có trọng số theo số lượng đánh giá
           </span>
         </div>
 
@@ -209,7 +200,6 @@ const RankingBoard = () => {
           <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-6 space-y-4">
             <div className="flex items-start justify-between">
               <p className="text-sm font-bold text-white">Nhập dữ liệu bình chọn kỳ này</p>
-              <p className="text-[10px] text-zinc-600 font-mono">R = (v·S + {M}·{C_DEFAULT}) / (v + {M})</p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="md:col-span-3">
@@ -241,29 +231,20 @@ const RankingBoard = () => {
 
               {/* Reader Score + Reader Vote Count — highlighted, dùng tính R */}
               <div className="md:col-span-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 grid grid-cols-2 gap-3">
-                <div className="col-span-2 flex items-center justify-between">
+                <div className="col-span-2">
                   <p className="text-[10px] font-bold tracking-[0.1em] uppercase text-amber-500/80">
-                    ★ Reader Rating — dùng tính R
+                    ★ Reader Rating
                   </p>
-                  {form.readerScore && form.readerVoteCount && (() => {
-                    const S = parseFloat(form.readerScore);
-                    const v = parseInt(form.readerVoteCount);
-                    if (!isNaN(S) && !isNaN(v) && S >= 1 && S <= 10) {
-                      const R = ((v * S + M * C_DEFAULT) / (v + M)).toFixed(2);
-                      return <span className="text-[10px] text-amber-400 font-mono font-bold">R = {R}</span>;
-                    }
-                    return null;
-                  })()}
                 </div>
                 <div>
-                  <label className="block text-[10px] text-amber-500/60 mb-1">S — Điểm thô (1.0 – 10.0)</label>
+                  <label className="block text-[10px] text-amber-500/60 mb-1">Điểm thô (1.0 – 10.0)</label>
                   <input type="number" min="1" max="10" step="0.1"
                     value={form.readerScore} placeholder="VD: 8.5"
                     onChange={e=>setForm(p=>({...p,readerScore:e.target.value}))}
                     className="w-full bg-transparent border-b border-amber-500/20 pb-1 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-amber-400/60"/>
                 </div>
                 <div>
-                  <label className="block text-[10px] text-amber-500/60 mb-1">v — Số reader vote</label>
+                  <label className="block text-[10px] text-amber-500/60 mb-1">Số lượt đánh giá</label>
                   <input type="number" min="0"
                     value={form.readerVoteCount} placeholder="VD: 142"
                     onChange={e=>setForm(p=>({...p,readerVoteCount:e.target.value}))}
@@ -301,13 +282,12 @@ const RankingBoard = () => {
           </div>
         ) : (
           <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
-            <div className="grid grid-cols-[3rem_1fr_6rem_8rem_5rem_6rem_6rem] gap-3 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
+            <div className="grid grid-cols-[3rem_1fr_6rem_8rem_6rem_6rem] gap-3 px-6 py-3 border-b border-white/5 text-[10px] font-bold tracking-[0.15em] uppercase text-zinc-700">
               <span>Hạng</span><span>Series</span>
               <span className="text-center">Votes</span>
               <span className="text-center flex items-center justify-center gap-1">
-                <Star className="w-2.5 h-2.5 text-amber-500"/>R (Weighted)
+                <Star className="w-2.5 h-2.5 text-amber-500"/>Điểm
               </span>
-              <span className="text-center text-zinc-800">v</span>
               <span className="text-center">Trend</span>
               <span className="text-center">Status</span>
             </div>
@@ -315,7 +295,7 @@ const RankingBoard = () => {
               const change = (r.previousRank ?? r.currentRank) - r.currentRank;
               return (
                 <div key={r.seriesId ?? idx}
-                  className={`grid grid-cols-[3rem_1fr_6rem_8rem_5rem_6rem_6rem] gap-3 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${r.isAtRisk?'bg-red-500/3':''}`}>
+                  className={`grid grid-cols-[3rem_1fr_6rem_8rem_6rem_6rem] gap-3 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${r.isAtRisk?'bg-red-500/3':''}`}>
                   {/* Rank */}
                   <div className="flex items-center justify-center">
                     {r.currentRank===1?<span className="text-xl">🥇</span>
@@ -331,13 +311,12 @@ const RankingBoard = () => {
                   </div>
                   {/* Poll votes */}
                   <div className="text-center text-sm font-bold text-white">{(r.currentVotes??0).toLocaleString()}</div>
-                  {/* R — Bayesian weighted score */}
-                  <div className="flex justify-center">
+                  {/* Điểm R + số lượt đánh giá */}
+                  <div className="flex flex-col items-center gap-0.5">
                     <StarScore score={r._R} raw={r.readerScore}/>
-                  </div>
-                  {/* v — reader vote count */}
-                  <div className="text-center text-[11px] text-zinc-600">
-                    {r.readerVoteCount != null ? r.readerVoteCount.toLocaleString() : '—'}
+                    {r.readerVoteCount != null && (
+                      <span className="text-[9px] text-zinc-700">{r.readerVoteCount.toLocaleString()} đánh giá</span>
+                    )}
                   </div>
                   {/* Trend */}
                   <div className="flex items-center justify-center gap-1.5">
