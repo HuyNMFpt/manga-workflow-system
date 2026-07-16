@@ -60,7 +60,54 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   color:       'Tô màu',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────
+// ─── Deadline countdown ───────────────────────────────────────────
+const DeadlineCell = ({ dueDate, status }: { dueDate?: string; status: string }) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!dueDate) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [dueDate]);
+
+  if (!dueDate) return <span className="text-zinc-700">—</span>;
+
+  // Task xong rồi → hiện ngày tĩnh
+  if (status === 'approved' || status === 'submitted')
+    return <span className="text-zinc-600 text-[11px]">{new Date(dueDate).toLocaleDateString('vi-VN')}</span>;
+
+  const target    = new Date(dueDate + (dueDate.length === 10 ? 'T23:59:59' : '')).getTime();
+  const diff      = target - now;
+  const isOverdue = diff < 0;
+  const abs       = Math.abs(diff);
+  const days      = Math.floor(abs / 86400000);
+  const hours     = Math.floor((abs % 86400000) / 3600000);
+  const mins      = Math.floor((abs % 3600000) / 60000);
+  const secs      = Math.floor((abs % 60000) / 1000);
+
+  if (isOverdue) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 flex items-center gap-1">
+        <AlertTriangle className="w-2.5 h-2.5"/>Quá hạn
+      </span>
+      <span className="text-[10px] text-red-500">
+        {days > 0 ? `${days} ngày` : `${hours}g ${mins}p`}
+      </span>
+    </div>
+  );
+
+  const isUrgent  = days < 1;
+  const isWarning = days <= 2;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={`text-[11px] font-mono tabular-nums ${isUrgent ? 'text-red-400 font-bold' : isWarning ? 'text-amber-400' : 'text-zinc-500'}`}>
+        {days > 0
+          ? `${days}n ${hours}g ${mins}p`
+          : `${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`}
+      </span>
+      <span className="text-[9px] text-zinc-700">{new Date(dueDate).toLocaleDateString('vi-VN')}</span>
+    </div>
+  );
+};
 const parseRegion = (s?: string) => {
   if (!s) return null;
   try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
@@ -440,15 +487,18 @@ const TaskList = () => {
             {tasks.map((task: any) => {
               const st = STATUS_MAP[task.status] ?? STATUS_MAP.pending;
               const isClickable = ['pending','in_progress','revision_needed'].includes(task.status);
+              const isOverdue = task.dueDate
+                && new Date(task.dueDate + (task.dueDate.length === 10 ? 'T23:59:59' : '')).getTime() < Date.now()
+                && !['approved','submitted'].includes(task.status);
               return (
                 <div key={task.id}
                   onClick={() => {
                     if (!isClickable) return;
-                    setSelectedTask(task); // luôn mở modal trước để xem yêu cầu
+                    setSelectedTask(task);
                   }}
                   className={`grid grid-cols-[1fr_7rem_6rem_7rem_9rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 transition-colors ${
                     isClickable ? 'cursor-pointer hover:bg-white/[0.025] group' : 'opacity-70'
-                  }`}>
+                  } ${isOverdue ? 'bg-red-500/3' : ''}`}>
 
                   {/* Task name */}
                   <div>
@@ -485,8 +535,8 @@ const TaskList = () => {
                   </div>
 
                   {/* Deadline */}
-                  <div className="text-center text-[11px] text-zinc-600">
-                    {task.dueDate ? new Date(task.dueDate).toLocaleDateString('vi-VN') : '—'}
+                  <div className="flex justify-center">
+                    <DeadlineCell dueDate={task.dueDate} status={task.status} />
                   </div>
 
                   {/* Status + CTA */}
@@ -525,7 +575,13 @@ const TaskList = () => {
                 </div>
                 <p className="text-[11px] text-zinc-600 mt-0.5">
                   {TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
-                  {selectedTask.dueDate && ` · Hạn ${new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}`}
+                  {selectedTask.dueDate && (() => {
+                    const isOverdue = new Date(selectedTask.dueDate + (selectedTask.dueDate.length === 10 ? 'T23:59:59':'')).getTime() < Date.now()
+                      && !['approved','submitted'].includes(selectedTask.status);
+                    return isOverdue
+                      ? <span className="text-red-400 font-semibold"> · ⚠ Quá hạn {new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}</span>
+                      : <span> · Hạn {new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}</span>;
+                  })()}
                 </p>
               </div>
               <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors flex-shrink-0">

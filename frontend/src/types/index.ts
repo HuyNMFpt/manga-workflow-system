@@ -36,16 +36,17 @@ export interface LoginResponse {
 // SERIES
 // ============================================================
 
-// ✅ Backend enum: draft | submitted | approved | publishing | on_hiatus | cancelled
+// ✅ Backend enum: draft | under_editorial_review | submitted | approved | publishing | on_hiatus | cancelled
 export type SeriesStatus =
   | "draft"
-  | "submitted"    // Chờ duyệt (trước là pending_review)
+  | "under_editorial_review" // Mangaka đã nộp, Editor đang xét
+  | "submitted"    // Editor đã nộp lên Board, chờ duyệt
   | "approved"     // Được Board duyệt
-  | "publishing"   // Đang sản xuất - xuất bản (trước là serializing)
-  | "on_hiatus"    // Tạm ngưng (trước là on_hold)
-  | "cancelled"    // Đã hủy / không được duyệt
+  | "publishing"   // Đang sản xuất - xuất bản
+  | "on_hiatus"    // Tạm ngưng
+  | "cancelled"    // Đã hủy
 
-export type PublicationSchedule = "weekly" | "monthly" | "one_shot"
+export type PublicationSchedule = "weekly" | "biweekly" | "monthly" | "one_shot"
 
 export interface Series {
   id: string
@@ -76,7 +77,6 @@ export interface SeriesRanking {
 // ============================================================
 
 export type ChapterStatus =
-  | "not_started"
   | "in_progress"
   | "pending_review"
   | "editor_review"
@@ -252,23 +252,26 @@ export interface PaginatedResponse<T> {
 // NOTIFICATION
 // ============================================================
 
+// ✅ Khớp với backend Notification.NotificationType enum
 export type NotificationType =
   | "task_assigned"
-  | "task_submitted"
   | "task_approved"
-  | "task_revision"
-  | "ranking_changed"
+  | "revision_requested"
+  | "deadline_warning"
   | "series_at_risk"
-  | "manuscript_feedback"
-  | "vote_required"
+  | "poll_updated"
+  | "series_cancelled"
+  | "submission_result"
 
+// ✅ Khớp với backend NotificationDTO
 export interface Notification {
   id: string
   userId: string
   type: NotificationType
-  title: string
   message: string
-  relatedId?: string
+  referenceId?: string    // backend: referenceId (không phải relatedId)
+  referenceType?: string  // backend: referenceType
   isRead: boolean
   createdAt: string
+  // title không có trong backend — derive từ type nếu cần hiển thị
 }

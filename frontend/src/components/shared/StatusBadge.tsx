@@ -4,44 +4,49 @@ import { TaskStatus, SeriesStatus, ManuscriptStatus } from "@/types"
 type AnyStatus = TaskStatus | SeriesStatus | ManuscriptStatus
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  // Task statuses
-  assigned: { label: "Chờ làm", className: "bg-blue-50 text-blue-700 border-blue-200" },
-  in_progress: { label: "Đang làm", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  submitted: { label: "Đã nộp", className: "bg-purple-50 text-purple-700 border-purple-200" },
-  revision_needed:   { label: "Cần sửa", className: "bg-orange-50 text-orange-700 border-orange-200" },
-  approved: { label: "Đã duyệt", className: "bg-green-50 text-green-700 border-green-200" },
-  // Series statuses
-  draft: { label: "Nháp", className: "bg-gray-50 text-gray-600 border-gray-200" },
-  pending_review: { label: "Chờ duyệt", className: "bg-blue-50 text-blue-700 border-blue-200" },
-  in_review: { label: "Đang xét", className: "bg-yellow-50 text-yellow-700 border-yellow-200" },
-  rejected: { label: "Từ chối", className: "bg-red-50 text-red-700 border-red-200" },
-  serializing: { label: "Đang đăng", className: "bg-green-50 text-green-700 border-green-200" },
-  on_hold: { label: "Tạm dừng", className: "bg-orange-50 text-orange-700 border-orange-200" },
-  cancelled: { label: "Đã huỷ", className: "bg-red-50 text-red-700 border-red-200" },
-  // Manuscript
-  needs_major_revision: { label: "Sửa lớn", className: "bg-red-50 text-red-700 border-red-200" },
-  needs_minor_revision: { label: "Sửa nhỏ", className: "bg-orange-50 text-orange-700 border-orange-200" },
-  approved_for_board: { label: "Lên hội đồng", className: "bg-purple-50 text-purple-700 border-purple-200" },
-  board_approved: { label: "HĐ duyệt", className: "bg-green-50 text-green-700 border-green-200" },
-  board_rejected: { label: "HĐ từ chối", className: "bg-red-50 text-red-700 border-red-200" },
+  // ── Task statuses ──────────────────────────────────────────
+  pending:          { label: "Chờ làm",     className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"     },
+  in_progress:      { label: "Đang làm",    className: "bg-amber-500/10 text-amber-400 border-amber-500/20"  },
+  submitted:        { label: "Đã nộp",      className: "bg-blue-500/10 text-blue-400 border-blue-500/20"     },
+  revision_needed:  { label: "Cần sửa",     className: "bg-orange-500/10 text-orange-400 border-orange-500/20"},
+  approved:         { label: "Đã duyệt",    className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"},
+
+  // ── Series statuses — khớp với backend SeriesStatus enum ──
+  draft:                    { label: "Nháp",            className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"     },
+  under_editorial_review:   { label: "Editor đang xét", className: "bg-blue-500/10 text-blue-400 border-blue-500/20"     },
+  submitted:                { label: "Chờ Board duyệt", className: "bg-amber-500/10 text-amber-400 border-amber-500/20"  },
+  publishing:               { label: "Đang xuất bản",  className: "bg-violet-500/10 text-violet-400 border-violet-500/20"},
+  on_hiatus:                { label: "Tạm ngưng",       className: "bg-orange-500/10 text-orange-400 border-orange-500/20"},
+  cancelled:                { label: "Đã huỷ",          className: "bg-red-500/10 text-red-400 border-red-500/20"        },
+
+  // ── Manuscript statuses ────────────────────────────────────
+  under_review:             { label: "Đang xét",        className: "bg-blue-500/10 text-blue-400 border-blue-500/20"     },
+  revision_requested:       { label: "Cần sửa",         className: "bg-orange-500/10 text-orange-400 border-orange-500/20"},
+  approved:                 { label: "Sẵn sàng",        className: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"},
+  rejected:                 { label: "Từ chối",         className: "bg-red-500/10 text-red-400 border-red-500/20"        },
+
+  // ── Submission statuses ────────────────────────────────────
+  pending:                  { label: "Chờ vote",        className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"     },
+  voting:                   { label: "Đang vote",       className: "bg-amber-500/10 text-amber-400 border-amber-500/20"  },
 }
 
 interface StatusBadgeProps {
-  status: AnyStatus
+  status: AnyStatus | string
   className?: string
 }
 
 export default function StatusBadge({ status, className }: StatusBadgeProps) {
-  const config = STATUS_CONFIG[status] ?? { label: status, className: "bg-gray-50 text-gray-600 border-gray-200" }
+  const config = STATUS_CONFIG[status] ?? {
+    label: status,
+    className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"
+  }
 
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
-        config.className,
-        className
-      )}
-    >
+    <span className={cn(
+      "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+      config.className,
+      className
+    )}>
       {config.label}
     </span>
   )

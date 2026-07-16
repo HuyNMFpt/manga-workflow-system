@@ -1,16 +1,31 @@
-import { useState } from "react"
-import { Eye, EyeOff, BookOpen, Feather, Users, BarChart2 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Eye, EyeOff, BookOpen, Feather, Users, BarChart2, Clock } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 
 export default function LoginPage() {
-  const { login, isLoggingIn, loginError } = useAuth()
+  const { login, isLoggingIn, loginError, retryAfter } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
     email: "", password: "", remember: false,
   })
+  const [countdown, setCountdown] = useState<number | null>(null)
+
+  // Khi bị rate limit → bắt đầu đếm ngược
+  useEffect(() => {
+    if (retryAfter != null) setCountdown(retryAfter)
+  }, [retryAfter])
+
+  useEffect(() => {
+    if (countdown == null || countdown <= 0) return
+    const t = setTimeout(() => setCountdown(c => (c != null && c > 1 ? c - 1 : null)), 1000)
+    return () => clearTimeout(t)
+  }, [countdown])
+
+  const isRateLimited = countdown != null && countdown > 0
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isRateLimited) return
     login({ email: formData.email, password: formData.password })
   }
 
@@ -89,12 +104,23 @@ export default function LoginPage() {
             <p className="text-sm text-zinc-500">Đăng nhập để tiếp tục vào workspace</p>
           </div>
 
-          {/* Error */}
-          {loginError && (
+          {/* Error / Rate limit */}
+          {isRateLimited ? (
+            <div className="mb-5 px-4 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-3">
+              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-300">Tài khoản tạm thời bị khoá</p>
+                <p className="text-[11px] text-amber-500/80 mt-0.5">
+                  Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau{" "}
+                  <span className="font-bold tabular-nums">{countdown}s</span>
+                </p>
+              </div>
+            </div>
+          ) : loginError ? (
             <div className="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
               Email hoặc mật khẩu không đúng. Vui lòng thử lại.
             </div>
-          )}
+          ) : null}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email */}
@@ -151,10 +177,14 @@ export default function LoginPage() {
             </div>
 
             {/* Submit */}
-            <button type="submit" disabled={isLoggingIn}
+            <button type="submit" disabled={isLoggingIn || isRateLimited}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-bold hover:shadow-lg hover:shadow-violet-600/30 hover:scale-[1.01] focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 transition-all mt-2 relative overflow-hidden group">
               <span className="relative z-10">
-                {isLoggingIn ? "Đang đăng nhập..." : "Đăng nhập"}
+                {isLoggingIn
+                  ? "Đang đăng nhập..."
+                  : isRateLimited
+                    ? `Thử lại sau ${countdown}s`
+                    : "Đăng nhập"}
               </span>
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
             </button>
