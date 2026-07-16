@@ -8,21 +8,23 @@ import SeriesDetailModal from "@/components/shared/SeriesDetailModal"
 import api from "@/lib/axios"
 
 const STATUS_FILTERS: { label: string; value: string }[] = [
-  { label: "Tất cả",    value: "all"        },
-  { label: "Nháp",      value: "draft"      },
-  { label: "Chờ duyệt", value: "submitted"  },  // ✅ Backend: submitted
-  { label: "Đang đăng", value: "publishing" },  // ✅ Backend: publishing
-  { label: "Tạm ngưng", value: "on_hiatus"  },  // ✅ Backend: on_hiatus
-  { label: "Đã huỷ",    value: "cancelled"  },
+  { label: "Tất cả",         value: "all"                    },
+  { label: "Nháp",           value: "draft"                  },
+  { label: "Editor xét",     value: "under_editorial_review" },
+  { label: "Chờ Board",      value: "submitted"              },
+  { label: "Đang xuất bản",  value: "publishing"             },
+  { label: "Tạm ngưng",      value: "on_hiatus"              },
+  { label: "Đã huỷ",         value: "cancelled"              },
 ]
 
 const STATUS_STYLE: Record<string, { dot: string; label: string; pill: string }> = {
-  draft:       { dot: 'bg-zinc-500',    label: 'Nháp',        pill: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'           },
-  submitted:   { dot: 'bg-amber-400',   label: 'Chờ duyệt',   pill: 'bg-amber-500/10 text-amber-300 border-amber-500/20'        },
-  approved:    { dot: 'bg-emerald-400', label: 'Được duyệt',  pill: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'  },
-  publishing:  { dot: 'bg-violet-400',  label: 'Đang đăng',   pill: 'bg-violet-500/10 text-violet-300 border-violet-500/20'     },
-  on_hiatus:   { dot: 'bg-orange-400',  label: 'Tạm ngưng',   pill: 'bg-orange-500/10 text-orange-300 border-orange-500/20'     },
-  cancelled:   { dot: 'bg-red-500',     label: 'Đã huỷ',      pill: 'bg-red-500/10 text-red-300 border-red-500/20'              },
+  draft:                  { dot: 'bg-zinc-500',   label: 'Nháp',            pill: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'          },
+  under_editorial_review: { dot: 'bg-blue-400',   label: 'Editor đang xét', pill: 'bg-blue-500/10 text-blue-300 border-blue-500/20'           },
+  submitted:              { dot: 'bg-amber-400',  label: 'Chờ Board duyệt', pill: 'bg-amber-500/10 text-amber-300 border-amber-500/20'        },
+  approved:               { dot: 'bg-emerald-400',label: 'Được duyệt',      pill: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'  },
+  publishing:             { dot: 'bg-violet-400', label: 'Đang xuất bản',   pill: 'bg-violet-500/10 text-violet-300 border-violet-500/20'     },
+  on_hiatus:              { dot: 'bg-orange-400', label: 'Tạm ngưng',       pill: 'bg-orange-500/10 text-orange-300 border-orange-500/20'     },
+  cancelled:              { dot: 'bg-red-500',    label: 'Đã huỷ',          pill: 'bg-red-500/10 text-red-300 border-red-500/20'              },
 }
 
 

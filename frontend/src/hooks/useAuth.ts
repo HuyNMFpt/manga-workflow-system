@@ -19,6 +19,13 @@ export function useAuth() {
     },
   })
 
+  // Parse retryAfter từ 429 response
+  const loginErrorData = loginMutation.error as any
+  const retryAfter: number | null =
+    loginErrorData?.response?.status === 429
+      ? (loginErrorData?.response?.data?.retryAfter ?? 60)
+      : null
+
   const logoutMutation = useMutation({
     mutationFn: authService.logout,
     onSettled: () => {
@@ -35,6 +42,7 @@ export function useAuth() {
     logout: logoutMutation.mutate,
     isLoggingIn: loginMutation.isPending,
     loginError: loginMutation.error,
+    retryAfter,
   }
 }
 

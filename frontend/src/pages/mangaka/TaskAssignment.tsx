@@ -145,8 +145,9 @@ export default function TaskAssignment() {
         description: t.description,
         taskType:    t.type,
         priority:    t.priority,
-        // Lưu tọa độ pin (x, y) thay vì rectangle zone
         panelRegion: JSON.stringify({ x: t.x, y: t.y, width: 0, height: 0 }),
+        // Tự động lấy deadline từ chapter — task phải xong trước deadline chapter
+        dueDate:     selectedChapter?.deadline ?? null,
       });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey:['tasks'] }),

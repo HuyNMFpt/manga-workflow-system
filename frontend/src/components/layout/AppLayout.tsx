@@ -127,6 +127,7 @@ export default function AppLayout() {
 
   // Fetch notifications từ backend
   // GET /api/notifications → res.data.data = Notification[]
+  const { isAuthenticated } = useAuthStore()
   useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
@@ -135,7 +136,9 @@ export default function AppLayout() {
       setNotifications(list)
       return list
     },
-    refetchInterval: 30_000, // poll 30s
+    enabled: isAuthenticated,          // chỉ fetch khi đã đăng nhập
+    refetchInterval: 30_000,           // poll 30s
+    refetchOnWindowFocus: true,        // refetch ngay khi quay lại tab
   })
 
   // Mark as read
@@ -293,30 +296,45 @@ export default function AppLayout() {
                       <Bell className="w-7 h-7 opacity-20" />
                       <p className="text-[12px]">Không có thông báo nào</p>
                     </div>
-                  ) : notifications.map(n => (
-                    <div key={n.id}
-                      onClick={() => !n.isRead && readMutation.mutate(n.id)}
-                      className={cn(
-                        "px-4 py-3 border-b border-white/4 last:border-0 cursor-pointer transition-colors hover:bg-white/3",
-                        !n.isRead && "bg-white/[0.03]"
-                      )}>
-                      <div className="flex items-start gap-2.5">
-                        <div className={cn(
-                          "w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0",
-                          n.isRead ? "bg-zinc-700" : "bg-blue-400"
-                        )} />
-                        <div className="flex-1 min-w-0">
-                          <p className={cn("text-[12px] leading-relaxed", n.isRead ? "text-zinc-500" : "text-zinc-200")}>
-                            {n.message}
-                          </p>
-                          <p className="text-[10px] text-zinc-700 mt-1 flex items-center gap-1">
-                            <Clock className="w-2.5 h-2.5" />
-                            {new Date(n.createdAt).toLocaleString('vi-VN', { dateStyle:'short', timeStyle:'short' })}
-                          </p>
+                  ) : notifications.map(n => {
+                    const isRead = n.isRead === true;
+                    // Icon + màu theo type
+                    const typeStyle: Record<string, { dot: string; label: string }> = {
+                      task_assigned:    { dot: 'bg-blue-400',    label: 'Giao việc'       },
+                      task_approved:    { dot: 'bg-emerald-400', label: 'Duyệt task'      },
+                      revision_requested:{ dot: 'bg-amber-400',  label: 'Cần sửa'         },
+                      deadline_warning: { dot: 'bg-red-400',     label: 'Sắp deadline'    },
+                      series_at_risk:   { dot: 'bg-red-500',     label: 'At-risk'         },
+                      poll_updated:     { dot: 'bg-violet-400',  label: 'Kết quả poll'    },
+                      series_cancelled: { dot: 'bg-red-600',     label: 'Series bị hủy'  },
+                      submission_result:{ dot: 'bg-teal-400',    label: 'Kết quả nộp'    },
+                    };
+                    const style = typeStyle[n.type] ?? { dot: 'bg-zinc-500', label: n.type };
+                    return (
+                      <div key={n.id}
+                        onClick={() => !isRead && readMutation.mutate(n.id)}
+                        className={cn(
+                          "px-4 py-3 border-b border-white/4 last:border-0 cursor-pointer transition-colors hover:bg-white/3",
+                          !isRead && "bg-white/[0.03]"
+                        )}>
+                        <div className="flex items-start gap-2.5">
+                          <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0", isRead ? "bg-zinc-700" : style.dot)} />
+                          <div className="flex-1 min-w-0">
+                            <p className={cn("text-[10px] font-bold uppercase tracking-wider mb-0.5", isRead ? "text-zinc-700" : "text-zinc-500")}>
+                              {style.label}
+                            </p>
+                            <p className={cn("text-[12px] leading-relaxed", isRead ? "text-zinc-500" : "text-zinc-200")}>
+                              {n.message}
+                            </p>
+                            <p className="text-[10px] text-zinc-700 mt-1 flex items-center gap-1">
+                              <Clock className="w-2.5 h-2.5" />
+                              {new Date(n.createdAt).toLocaleString('vi-VN', { dateStyle:'short', timeStyle:'short' })}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

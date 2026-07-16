@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen, Check, Loader2, AlertCircle, ChevronDown, ChevronUp,
   Users, Tag, TrendingUp, MessageSquare, FileText, Calendar, User,
-  ExternalLink, ImageIcon, Download
+  ExternalLink, ImageIcon, Download, ThumbsUp, ThumbsDown, Clock
 } from 'lucide-react';
 import api from '@/lib/axios';
 
@@ -12,8 +12,9 @@ interface VoteForm {
   decision: 'approve' | 'reject' | 'revision' | '';
   justification: string;
   schedule: string;
+  publishStartDate: string;
 }
-const EMPTY_FORM: VoteForm = { decision: '', justification: '', schedule: 'weekly' };
+const EMPTY_FORM: VoteForm = { decision: '', justification: '', schedule: 'weekly', publishStartDate: '' };
 
 const SCHEDULE_OPTIONS = [
   { value: 'weekly',   label: 'Hàng tuần'  },
@@ -42,6 +43,18 @@ const VotingQueue = () => {
   const [voteForm,    setVoteForm]    = useState<VoteForm>(EMPTY_FORM);
   const [submitError, setSubmitError] = useState('');
   const [submitted,   setSubmitted]   = useState<string[]>([]);
+  const [viewingVotesFor, setViewingVotesFor] = useState<string | null>(null);
+
+  // ── Vote details query (cho người vote cuối xem ý kiến trước) ──
+  const { data: voteDetails = [] } = useQuery({
+    queryKey: ['board', 'vote-details', viewingVotesFor],
+    queryFn: async () => {
+      const r = await api.get(`/board/submissions/${viewingVotesFor}/votes`);
+      return r.data.data ?? [];
+    },
+    enabled: !!viewingVotesFor,
+    staleTime: 0,
+  });
 
   // ── Fetch voting queue ─────────────────────────────────────────
   // Backend: GET /board/voting-queue
@@ -135,8 +148,11 @@ const VotingQueue = () => {
 
   // ── Helpers ───────────────────────────────────────────────────
   const getTab = (id: string) => activeTab[id] ?? 'series';
-  const setTab = (id: string, tab: 'series' | 'manuscript' | 'editor-notes' | 'vote') =>
+  const setTab = (id: string, tab: 'series' | 'manuscript' | 'editor-notes' | 'vote') => {
     setActiveTab(prev => ({ ...prev, [id]: tab }));
+    // Load vote details khi mở tab vote (cho board trưởng xem ý kiến trước)
+    if (tab === 'vote') setViewingVotesFor(id);
+  };
 
   const handleToggle = (id: string) => {
     if (expandedId === id) {
@@ -151,18 +167,25 @@ const VotingQueue = () => {
     }
   };
 
-  const handleVote = (submissionId: string) => {
+  const handleVote = (submissionId: string, isLastVoter: boolean) => {
     setSubmitError('');
     if (!voteForm.decision) { setSubmitError('Vui lòng chọn quyết định'); return; }
     if (voteForm.justification.length < 50) {
       setSubmitError(`Justification cần ít nhất 50 ký tự (hiện tại: ${voteForm.justification.length})`);
       return;
     }
+    if (isLastVoter && voteForm.decision === 'approve' && !voteForm.publishStartDate) {
+      setSubmitError('Vui lòng chọn ngày phát hành chính thức');
+      return;
+    }
     voteMutation.mutate({
       submissionId,
-      decision:      voteForm.decision,
-      justification: voteForm.justification,
-      schedule:      voteForm.schedule,
+      decision:         voteForm.decision,
+      justification:    voteForm.justification,
+      schedule:         voteForm.schedule,
+      publishStartDate: isLastVoter && voteForm.decision === 'approve'
+                          ? voteForm.publishStartDate
+                          : undefined,
     });
   };
 
@@ -211,10 +234,13 @@ const VotingQueue = () => {
             </p>
           </div>
         ) : submissions.map((s: any) => {
-          const id         = s.submissionId ?? s.id;
-          const isExpanded = expandedId === id;
-          const isDone     = submitted.includes(id) || s.hasVoted;
-          const tab        = getTab(id);
+          const id           = s.submissionId ?? s.id;
+          const isExpanded   = expandedId === id;
+          const isDone       = submitted.includes(id) || s.hasVoted;
+          const tab          = getTab(id);
+          const totalVoted   = (s.voteYes ?? 0) + (s.voteNo ?? 0) + (s.voteAbstain ?? 0);
+          // Người vote cuối (board trưởng) = người sắp làm quorum đủ 3
+          const isLastVoter  = totalVoted === 2 && !s.hasVoted;
 
           return (
             <div key={id} className={`rounded-2xl border overflow-hidden transition-all ${
@@ -495,7 +521,24 @@ const VotingQueue = () => {
 
                   {/* ════ TAB: Vote ════ */}
                   {tab === 'vote' && (
-                    <div className="px-6 pb-6 pt-5 space-y-4">
+                    <div className={`px-6 pb-6 pt-5 ${isLastVoter ? 'grid grid-cols-[1fr_300px] gap-5 items-start' : 'space-y-4'}`}>
+
+                      {/* ── Cột trái: form vote ── */}
+                      <div className="space-y-4">
+
+                      {/* Banner board trưởng */}
+                      {isLastVoter && (
+                        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                          <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-[12px] font-bold text-amber-300">Bạn là người vote cuối cùng</p>
+                            <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">
+                              Xem ý kiến của 2 thành viên trước ở bên phải trước khi đưa ra quyết định.
+                              Nếu approve, cần chọn lịch và ngày phát hành chính thức.
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Decision buttons */}
                       <div>
@@ -564,6 +607,24 @@ const VotingQueue = () => {
                               <span className="text-zinc-700">— click để chọn</span>
                             </p>
                           )}
+
+                          {/* Ngày phát hành chính thức — chỉ board trưởng */}
+                          {isLastVoter && (
+                            <div className="pt-1 border-t border-emerald-500/10">
+                              <label className="block text-[10px] font-bold tracking-[0.1em] uppercase text-emerald-400/80 mb-1.5">
+                                Ngày phát hành chính thức *
+                              </label>
+                              <input type="date"
+                                value={voteForm.publishStartDate}
+                                min={new Date().toISOString().split('T')[0]}
+                                onChange={e => setVoteForm(f => ({ ...f, publishStartDate: e.target.value }))}
+                                className="w-full bg-white/5 border border-emerald-500/20 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-400/50 transition-all"
+                              />
+                              <p className="text-[10px] text-zinc-700 mt-1">
+                                Deadline chapter 1 = ngày này. Các chapter tiếp theo tự tính theo lịch đã chọn.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -613,7 +674,7 @@ const VotingQueue = () => {
                           Huỷ
                         </button>
                         <button
-                          onClick={() => handleVote(id)}
+                          onClick={() => handleVote(id, isLastVoter)}
                           disabled={voteMutation.isPending}
                           className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold shadow-lg shadow-teal-600/20 hover:shadow-teal-600/35 disabled:opacity-60 transition-all flex items-center gap-2">
                           {voteMutation.isPending
@@ -621,6 +682,49 @@ const VotingQueue = () => {
                             : <><Check className="w-3.5 h-3.5" />Xác nhận vote</>}
                         </button>
                       </div>
+                      </div>{/* end cột trái */}
+
+                      {/* ── Cột phải: tổng hợp vote trước (chỉ board trưởng) ── */}
+                      {isLastVoter && (
+                        <div className="rounded-2xl border border-white/8 bg-white/3 p-4 space-y-3 self-start">
+                          <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                            Ý kiến 2 thành viên trước
+                          </p>
+                          {(voteDetails as any[]).length === 0 ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="w-4 h-4 text-zinc-600 animate-spin" />
+                            </div>
+                          ) : (voteDetails as any[]).map((v: any, i: number) => (
+                            <div key={i} className={`p-3 rounded-xl border ${
+                              v.vote === 'yes'     ? 'bg-emerald-500/6 border-emerald-500/15' :
+                              v.vote === 'no'      ? 'bg-red-500/6 border-red-500/15' :
+                                                     'bg-zinc-500/6 border-zinc-500/15'
+                            }`}>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                {v.vote === 'yes'
+                                  ? <ThumbsUp   className="w-3.5 h-3.5 text-emerald-400" />
+                                  : v.vote === 'no'
+                                  ? <ThumbsDown className="w-3.5 h-3.5 text-red-400" />
+                                  : <Clock      className="w-3.5 h-3.5 text-zinc-500" />}
+                                <span className="text-[12px] font-semibold text-white">{v.voterName}</span>
+                                <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                  v.vote === 'yes' ? 'bg-emerald-500/15 text-emerald-400' :
+                                  v.vote === 'no'  ? 'bg-red-500/15 text-red-400' :
+                                                     'bg-zinc-500/15 text-zinc-500'
+                                }`}>
+                                  {v.vote === 'yes' ? 'Approve' : v.vote === 'no' ? 'Reject' : 'Abstain'}
+                                </span>
+                              </div>
+                              {v.comment && (
+                                <p className="text-[11px] text-zinc-500 leading-relaxed">{v.comment}</p>
+                              )}
+                              <p className="text-[9px] text-zinc-700 mt-1.5">
+                                {new Date(v.votedAt).toLocaleString('vi-VN')}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 

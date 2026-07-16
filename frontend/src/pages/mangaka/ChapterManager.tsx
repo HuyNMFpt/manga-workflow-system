@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpen, Plus, Upload, Loader2, CheckCircle2, ChevronDown,
-  FileText, Layers, Send, AlertTriangle, X, ClipboardList
+  FileText, Layers, AlertTriangle, ClipboardList, Clock
 } from 'lucide-react';
 import api from '@/lib/axios';
 import { Chapter, Series } from '@/types';
@@ -17,13 +17,62 @@ const fetchChapters = async (id: string): Promise<Chapter[]> => {
   return r.data.data ?? [];
 };
 
+// ✅ Khớp với backend ChapterStatus enum
 const STATUS_MAP: Record<string, { label: string; pill: string }> = {
-  not_started:    { label:'Chưa bắt đầu', pill:'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'         },
   in_progress:    { label:'Đang làm',      pill:'bg-blue-500/10 text-blue-300 border-blue-500/20'          },
   pending_review: { label:'Chờ duyệt',     pill:'bg-amber-500/10 text-amber-300 border-amber-500/20'       },
   editor_review:  { label:'Editor review', pill:'bg-violet-500/10 text-violet-300 border-violet-500/20'    },
   approved:       { label:'Đã duyệt',      pill:'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
   published:      { label:'Đã xuất bản',   pill:'bg-teal-500/10 text-teal-300 border-teal-500/20'          },
+};
+
+/* ── Deadline display với real-time countdown ──────────────── */
+const useDeadlineCountdown = (deadlineStr: string | undefined) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!deadlineStr) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [deadlineStr]);
+  if (!deadlineStr) return null;
+  const target = new Date(deadlineStr + (deadlineStr.length === 10 ? 'T23:59:59' : '')).getTime();
+  const diff   = target - now;
+  const isOverdue = diff < 0;
+  const abs    = Math.abs(diff);
+  const days   = Math.floor(abs / 86400000);
+  const hours  = Math.floor((abs % 86400000) / 3600000);
+  const mins   = Math.floor((abs % 3600000) / 60000);
+  const secs   = Math.floor((abs % 60000) / 1000);
+  return { isOverdue, days, hours, mins, secs };
+};
+
+const DeadlineCell = ({ deadline, status }: { deadline?: string; status: string }) => {
+  const cd = useDeadlineCountdown(deadline);
+  if (!cd) return <span className="text-zinc-700">—</span>;
+  if (status === 'published' || status === 'approved')
+    return <span className="text-zinc-600 text-[11px]">{new Date(deadline!).toLocaleDateString('vi-VN')}</span>;
+  if (cd.isOverdue) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 flex items-center gap-1">
+        <AlertTriangle className="w-2.5 h-2.5"/>Quá hạn
+      </span>
+      <span className="text-[10px] text-red-500">
+        {cd.days > 0 ? `${cd.days} ngày` : `${cd.hours}g ${cd.mins}p`}
+      </span>
+    </div>
+  );
+  const isUrgent  = cd.days < 1;
+  const isWarning = cd.days <= 2;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={`text-[11px] font-mono tabular-nums ${isUrgent ? 'text-red-400 font-bold' : isWarning ? 'text-amber-400' : 'text-zinc-500'}`}>
+        {cd.days > 0
+          ? `${cd.days}n ${cd.hours}g ${cd.mins}p`
+          : `${String(cd.hours).padStart(2,'0')}:${String(cd.mins).padStart(2,'0')}:${String(cd.secs).padStart(2,'0')}`}
+      </span>
+      <span className="text-[9px] text-zinc-700">{new Date(deadline!).toLocaleDateString('vi-VN')}</span>
+    </div>
+  );
 };
 
 type Tab = 'list' | 'create' | 'upload';
@@ -199,11 +248,15 @@ export default function ChapterManager() {
                   <span className="text-center">Task</span>
                 </div>
                 {(chapters as Chapter[]).map(c => {
-                  const st = STATUS_MAP[c.status] ?? STATUS_MAP.not_started;
+                  const st = STATUS_MAP[c.status] ?? STATUS_MAP.in_progress;
                   const canAssign = c.status !== 'published';
+                  const isOverdue = c.deadline
+                    ? new Date(c.deadline + 'T23:59:59').getTime() < Date.now()
+                      && c.status !== 'published' && c.status !== 'approved'
+                    : false;
                   return (
                     <div key={c.id}
-                      className="grid grid-cols-[1fr_5rem_8rem_8rem_7rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors">
+                      className={`grid grid-cols-[1fr_5rem_8rem_8rem_7rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${isOverdue ? 'bg-red-500/3' : ''}`}>
 
                       <div>
                         <p className="text-[13px] font-semibold text-white">
@@ -213,8 +266,8 @@ export default function ChapterManager() {
 
                       <div className="text-center text-sm text-zinc-500">{c.totalPages ?? '—'}</div>
 
-                      <div className="text-center text-[11px] text-zinc-600">
-                        {c.deadline ? new Date(c.deadline).toLocaleDateString('vi-VN') : '—'}
+                      <div className="flex justify-center">
+                        <DeadlineCell deadline={c.deadline} status={c.status} />
                       </div>
 
                       <div className="flex justify-center">
