@@ -101,8 +101,8 @@ public class BoardService {
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
         List<Submission> allSubmissions = new ArrayList<>();
-        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
+        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
 
         // Dedup: chỉ lấy submission mới nhất theo seriesId (không phải manuscriptId — mỗi lần
         // Mangaka nộp lại sẽ tạo manuscript mới với id khác, nên dedup theo manuscriptId không
@@ -375,6 +375,20 @@ public class BoardService {
         }
         seriesRepository.save(series);
 
+        // 3.2 — Notification poll_updated cho Mangaka
+        Notification pollNotif = new Notification();
+        pollNotif.setUserId(series.getMangakaId());
+        pollNotif.setType(Notification.NotificationType.poll_updated);
+        pollNotif.setNotificationTypeId(
+                lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.poll_updated));
+        pollNotif.setReferenceId(series.getId());
+        pollNotif.setReferenceType("series");
+        pollNotif.setMessage(String.format(
+                "Kết quả poll mới cho \"%s\": hạng %d (kỳ %s/%d, %d phiếu)",
+                series.getTitle(), autoRank, request.getPollPeriod(), request.getPollYear(), request.getVoteCount()
+        ));
+        notificationRepository.save(pollNotif);
+
         log.info("Poll data entered: seriesId={}, autoRank={}, votes={}",
                 request.getSeriesId(), autoRank, request.getVoteCount());
 
@@ -581,21 +595,35 @@ public class BoardService {
         }
         seriesRepository.save(series);
 
-        // Thông báo cho Mangaka khi series bị cancel/hiatus
-        if (proposal.getActionType().equals("cancel") || proposal.getActionType().equals("hiatus")) {
-            Notification notification = new Notification();
-            notification.setUserId(series.getMangakaId());
-            notification.setType(Notification.NotificationType.series_at_risk);
-            notification.setNotificationTypeId(
-                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
-            notification.setReferenceId(series.getId());
-            notification.setReferenceType("series");
-            notification.setMessage(String.format(
-                    "Series \"%s\" đã được Hội đồng biên tập quyết định: %s",
-                    series.getTitle(),
-                    proposal.getActionType().equals("cancel") ? "hủy bỏ" : "tạm ngưng"
+        // 3.3 — Notification series_cancelled khi cancel
+        if (proposal.getActionType().equals("cancel")) {
+            Notification cancelNotif = new Notification();
+            cancelNotif.setUserId(series.getMangakaId());
+            cancelNotif.setType(Notification.NotificationType.series_cancelled);
+            cancelNotif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_cancelled));
+            cancelNotif.setReferenceId(series.getId());
+            cancelNotif.setReferenceType("series");
+            cancelNotif.setMessage(String.format(
+                    "Series \"%s\" đã bị Hội đồng biên tập hủy bỏ.",
+                    series.getTitle()
             ));
-            notificationRepository.save(notification);
+            notificationRepository.save(cancelNotif);
+        }
+        // Notification series_at_risk khi hiatus
+        if (proposal.getActionType().equals("hiatus")) {
+            Notification hiatusNotif = new Notification();
+            hiatusNotif.setUserId(series.getMangakaId());
+            hiatusNotif.setType(Notification.NotificationType.series_at_risk);
+            hiatusNotif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
+            hiatusNotif.setReferenceId(series.getId());
+            hiatusNotif.setReferenceType("series");
+            hiatusNotif.setMessage(String.format(
+                    "Series \"%s\" đã được Hội đồng biên tập quyết định: tạm ngưng.",
+                    series.getTitle()
+            ));
+            notificationRepository.save(hiatusNotif);
         }
     }
 
