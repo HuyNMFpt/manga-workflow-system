@@ -123,7 +123,8 @@ public class EditorService {
                     total, completed, inProgress, pending, overdue,
                     daysLeft, daysLeft <= 3 || overdue > 0,
                     Math.round(percent * 10.0) / 10.0,
-                    assistantNames
+                    assistantNames,
+                    latestChapter.getDeadline() != null ? latestChapter.getDeadline().toString() : null
             ));
         }
 
@@ -143,7 +144,10 @@ public class EditorService {
                                 .map(a -> new AnnotationDTO(
                                         a.getId(), a.getNote(), a.getTag(),
                                         a.getX(), a.getY(), a.getPageNumber(),
-                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                                        userRepository.findById(a.getEditorId())
+                                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                                .orElse(null)
                                 ))
                                 .collect(Collectors.toList());
 
@@ -193,7 +197,10 @@ public class EditorService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(Collectors.toList());
 
@@ -211,6 +218,11 @@ public class EditorService {
 
     // ── Editor nộp lên Board ──────────────────────────────────────
     @org.springframework.transaction.annotation.Transactional
+    public void deleteAnnotation(String annotationId, String editorId) {
+        annotationRepository.deleteByIdAndEditorId(annotationId, editorId);
+        log.info("Annotation {} deleted by editor {}", annotationId, editorId);
+    }
+
     public SubmissionDTO submitToBoard(String manuscriptId, String editorId, SubmitToBoardRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
@@ -229,7 +241,7 @@ public class EditorService {
         manuscriptRepository.save(manuscript);
 
         // Tạo Submission lên Board
-        int submissionRound = (int) submissionRepository.countByManuscriptId(manuscriptId) + 1;
+        int submissionRound = submissionRepository.countBySeriesId(manuscript.getSeriesId()) + 1;
 
         Submission submission = new Submission();
         submission.setManuscriptId(manuscriptId);
@@ -313,7 +325,10 @@ public class EditorService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(java.util.stream.Collectors.toList());
 

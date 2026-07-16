@@ -1,5 +1,5 @@
 package com.mangaproject.backend.service;
-
+import com.mangaproject.backend.model.Notification;
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Chapter;
 import com.mangaproject.backend.model.Page;
@@ -26,6 +26,8 @@ public class TaskService {
     private final PageRepository pageRepository;
     private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
+    private final LookupResolverService lookupResolverService;
 
     public PaginatedResponse<TaskDTO> getMyTasks(String userId, String status, int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
@@ -74,7 +76,24 @@ public class TaskService {
         task.setStatus(Task.TaskStatus.pending);
         if (request.getDueDate() != null) task.setDueDate(LocalDateTime.parse(request.getDueDate()));
 
-        return mapToDTO(taskRepository.save(task), null, null, null);
+        task = taskRepository.save(task);
+
+        // Notification: thông báo cho Assistant được giao task
+        try {
+            Notification notif = new Notification();
+            notif.setUserId(task.getAssignedTo());
+            notif.setType(Notification.NotificationType.task_assigned);
+            notif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.task_assigned));
+            notif.setReferenceId(task.getId());
+            notif.setReferenceType("task");
+            notif.setMessage(String.format("Bạn được giao task mới: %s", task.getTitle()));
+            notificationRepository.save(notif);
+        } catch (Exception e) {
+            log.warn("Failed to send task_assigned notification: {}", e.getMessage());
+        }
+
+        return mapToDTO(task, null, null, null);
     }
 
     // BR-01: pending | revision_needed → in_progress
@@ -124,6 +143,21 @@ public class TaskService {
 
         // Auto-approve chapter nếu tất cả task đã approved — dùng COUNT query tối ưu
         autoApproveChapterIfDone(task.getPageId());
+
+        // Notification: thông báo cho Assistant task đã được duyệt
+        try {
+            Notification notif = new Notification();
+            notif.setUserId(task.getAssignedTo());
+            notif.setType(Notification.NotificationType.task_approved);
+            notif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.task_approved));
+            notif.setReferenceId(task.getId());
+            notif.setReferenceType("task");
+            notif.setMessage(String.format("Task '%s' của bạn đã được duyệt!", task.getTitle()));
+            notificationRepository.save(notif);
+        } catch (Exception e) {
+            log.warn("Failed to send task_approved notification: {}", e.getMessage());
+        }
 
         return mapToDTO(task, null, null, null);
     }

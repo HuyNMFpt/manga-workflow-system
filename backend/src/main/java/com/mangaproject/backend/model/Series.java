@@ -57,6 +57,9 @@ public class Series {
     @Column(name = "cancellation_risk", nullable = false)
     private Boolean cancellationRisk = false;
 
+    @Column(name = "publish_start_date")
+    private java.time.LocalDate publishStartDate;
+
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
 
@@ -82,6 +85,6 @@ public class Series {
     }
 
     public enum PublishSchedule {
-        weekly, monthly
+        weekly, biweekly, monthly
     }
 }

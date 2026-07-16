@@ -101,8 +101,6 @@ public class BoardService {
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
         List<Submission> allSubmissions = new ArrayList<>();
-        // voting trước (mới hơn, có đủ evaluation fields) → pending sau
-        // putIfAbsent giữ phần tử đầu tiên → voting luôn thắng pending cũ cùng seriesId
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
 
@@ -237,12 +235,19 @@ public class BoardService {
                     Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
                     if (series != null) {
                         series.setStatus(Series.SeriesStatus.publishing);
+                        series.setApprovedAt(LocalDateTime.now());
                         if (request.getSchedule() != null) {
                             try {
                                 series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
                                 series.setPublishScheduleId(
                                         lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
                             } catch (IllegalArgumentException ignored) {}
+                        }
+                        // Lưu ngày phát hành khi board approve
+                        if (request.getPublishStartDate() != null && !request.getPublishStartDate().isBlank()) {
+                            try {
+                                series.setPublishStartDate(java.time.LocalDate.parse(request.getPublishStartDate()));
+                            } catch (Exception ignored) {}
                         }
                         seriesRepository.save(series);
                     }
@@ -427,6 +432,25 @@ public class BoardService {
                 series.getCreatedAt() != null ? series.getCreatedAt().toString() : null,
                 series.getUpdatedAt() != null ? series.getUpdatedAt().toString() : null
         );
+    }
+
+    // ── Board Vote Details — xem chi tiết phiếu bầu ──────────────
+
+    public List<BoardVoteDetailDTO> getVoteDetails(String submissionId) {
+        return boardVoteRepository.findBySubmissionIdOrderByVotedAtAsc(submissionId)
+                .stream()
+                .map(v -> {
+                    String name = userRepository.findById(v.getVoterId())
+                            .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                            .orElse("Unknown");
+                    return new BoardVoteDetailDTO(
+                            v.getVoterId(), name,
+                            v.getVote().name(),
+                            v.getComment(),
+                            v.getVotedAt() != null ? v.getVotedAt().toString() : null
+                    );
+                })
+                .collect(Collectors.toList());
     }
 
     // ── Editorial Proposal — quyết định tập thể của Board (thay makeDecision) ──

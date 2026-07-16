@@ -22,4 +22,5 @@ public class StudioProgressDTO {
     private boolean isUrgent;
     private double completionPercent;
     private List<String> assistantNames;
+    private String deadlineDate; // ISO date string "YYYY-MM-DD" — frontend dùng để tính real-time countdown
 }

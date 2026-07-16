@@ -16,6 +16,10 @@ public interface SubmissionRepository extends JpaRepository<Submission, String> 
     List<Submission> findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus status);
     void deleteByManuscriptId(String manuscriptId);
 
+    // Đếm số lần nộp bản thảo của 1 series — dùng cho submissionRound
+    @Query("SELECT COUNT(s) FROM Submission s JOIN Manuscript m ON s.manuscriptId = m.id WHERE m.seriesId = :seriesId")
+    int countBySeriesId(@Param("seriesId") String seriesId);
+
     // Dùng cho VotingDeadlineScheduler
     List<Submission> findByStatusInAndVotingDeadlineBefore(
             List<Submission.SubmissionStatus> statuses, java.time.LocalDateTime deadline);

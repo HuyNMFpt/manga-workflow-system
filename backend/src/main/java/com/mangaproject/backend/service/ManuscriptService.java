@@ -45,6 +45,17 @@ public class ManuscriptService {
             throw new RuntimeException("Unauthorized: series does not belong to you");
         }
 
+        // TODO 3: Không cho nộp bản thảo khi series đang publishing/on_hiatus/cancelled
+        if (series.getStatus() == Series.SeriesStatus.publishing
+                || series.getStatus() == Series.SeriesStatus.on_hiatus
+                || series.getStatus() == Series.SeriesStatus.cancelled) {
+            throw new RuntimeException(
+                "Không thể nộp bản thảo cho series đang ở trạng thái: "
+                + series.getStatus().name()
+                + ". Chỉ nộp được khi series ở trạng thái draft hoặc đang xét duyệt."
+            );
+        }
+
         int nextVersion = manuscriptRepository
                 .findTopBySeriesIdOrderByVersionDesc(request.getSeriesId())
                 .map(m -> m.getVersion() + 1)
@@ -76,8 +87,8 @@ public class ManuscriptService {
         series.setStatus(Series.SeriesStatus.under_editorial_review);
         seriesRepository.save(series);
 
-        int submissionRound = (int) submissionRepository
-                .findBySubmittedByOrderByCreatedAtDesc(userId).size() + 1;
+        // TODO 2: Đếm số lần nộp bản thảo của series này (không phải của mangaka)
+        int submissionRound = submissionRepository.countBySeriesId(request.getSeriesId()) + 1;
 
         Submission submission = new Submission();
         submission.setManuscriptId(manuscript.getId());
@@ -155,7 +166,10 @@ public class ManuscriptService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(Collectors.toList());
 

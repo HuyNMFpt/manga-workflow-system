@@ -10,7 +10,9 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.mangaproject.backend.model.User;
 
 import java.util.List;
 import java.util.Map;
@@ -49,8 +51,10 @@ public class ChapterController {
     @PostMapping
     @Operation(summary = "Create new chapter", description = "Create a new chapter for a series")
     public ResponseEntity<ApiResponse<ChapterDTO>> createChapter(
-            @Valid @RequestBody CreateChapterRequest request) {
-        ChapterDTO chapter = chapterService.createChapter(request);
+            @Valid @RequestBody CreateChapterRequest request,
+            Authentication authentication) {
+        User user = (User) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.createChapter(request, user.getId());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(chapter, "Chapter created successfully", true));
     }
@@ -75,13 +79,15 @@ public class ChapterController {
     @Operation(summary = "Update chapter status", description = "Change chapter status")
     public ResponseEntity<ApiResponse<ChapterDTO>> updateChapterStatus(
             @PathVariable String id,
-            @RequestBody Map<String, String> request) {
+            @RequestBody Map<String, String> request,
+            Authentication authentication) {
         String status = request.get("status");
         if (status == null || status.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>(null, "Status is required", false));
         }
-        ChapterDTO chapter = chapterService.updateChapterStatus(id, status);
+        User user = (User) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.updateChapterStatus(id, status, user.getId());
         return ResponseEntity.ok(new ApiResponse<>(chapter, "Chapter status updated", true));
     }
 }

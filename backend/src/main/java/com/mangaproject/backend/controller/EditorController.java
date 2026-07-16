@@ -51,6 +51,19 @@ public class EditorController {
         return ApiResponse.success(editorService.addAnnotation(id, user.getId(), request));
     }
 
+    /**
+     * DELETE /api/editor/annotations/{annotationId}
+     * Xóa annotation — chỉ Editor đã tạo mới được xóa
+     */
+    @DeleteMapping("/annotations/{annotationId}")
+    public ApiResponse<Void> deleteAnnotation(
+            @PathVariable String annotationId,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        editorService.deleteAnnotation(annotationId, user.getId());
+        return ApiResponse.success(null, "Đã xóa ghi chú");
+    }
+
     @PostMapping("/manuscripts/{id}/submit-to-board")
     public ApiResponse<SubmissionDTO> submitToBoard(
             @PathVariable String id,
