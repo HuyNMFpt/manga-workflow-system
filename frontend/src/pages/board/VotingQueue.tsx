@@ -117,7 +117,7 @@ const VotingQueue = () => {
           }
           return list.map((s: any) =>
             (s.submissionId ?? s.id) === vars.submissionId
-              ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, hasVoted: true }
+              ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, voteAbstain: updated.voteAbstain, hasVoted: true }
               : s
           );
         });
@@ -256,8 +256,8 @@ const VotingQueue = () => {
 
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <div className="text-right">
-                    <div className="text-lg font-black text-teal-400 font-['Syne']">{s.voteYes ?? 0}/3</div>
-                    <div className="text-[10px] text-zinc-700">phiếu approve</div>
+                    <div className="text-lg font-black text-teal-400 font-['Syne']">{(s.voteYes ?? 0) + (s.voteNo ?? 0) + (s.voteAbstain ?? 0)}/3</div>
+                    <div className="text-[10px] text-zinc-700">phiếu đã bỏ</div>
                   </div>
                   {!isDone && (
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center border transition-all ${
@@ -421,13 +421,18 @@ const VotingQueue = () => {
                           <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all"
-                              style={{ width: `${Math.min(((s.voteYes ?? 0) / 3) * 100, 100)}%` }}
+                              style={{ width: `${Math.min((((s.voteYes ?? 0) + (s.voteNo ?? 0) + (s.voteAbstain ?? 0)) / 3) * 100, 100)}%` }}
                             />
                           </div>
-                          <span className="text-[12px] font-bold text-teal-400">{s.voteYes ?? 0}/3</span>
+                          <span className="text-[12px] font-bold text-teal-400">{(s.voteYes ?? 0) + (s.voteNo ?? 0) + (s.voteAbstain ?? 0)}/3</span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5 text-[10px]">
+                          <span className="text-emerald-400">✓ {s.voteYes ?? 0} approve</span>
+                          <span className="text-red-400">✗ {s.voteNo ?? 0} reject</span>
+                          {(s.voteAbstain ?? 0) > 0 && <span className="text-zinc-500">— {s.voteAbstain} abstain</span>}
                         </div>
                         <p className="text-[10px] text-zinc-700 mt-1">
-                          Cần 3 phiếu approve để được xuất bản
+                          Cần tổng 3 phiếu, yes &gt; no để được xuất bản
                         </p>
                       </div>
 
