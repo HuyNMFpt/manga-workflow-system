@@ -10,14 +10,23 @@ public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5173", "http://localhost:3000")
+                .allowedOriginPatterns(
+                        "http://localhost:5173",
+                        "http://localhost:3000",
+                        "https://*.ngrok-free.app",
+                        "https://*.ngrok-free.dev"
+                )
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
 
-        // Cho phép frontend fetch/download file ảnh từ /uploads/**
         registry.addMapping("/uploads/**")
-                .allowedOrigins("http://localhost:5173", "http://localhost:3000")
+                .allowedOriginPatterns(
+                        "http://localhost:5173",
+                        "http://localhost:3000",
+                        "https://*.ngrok-free.app",
+                        "https://*.ngrok-free.dev"
+                )
                 .allowedMethods("GET")
                 .allowedHeaders("*")
                 .allowCredentials(true);

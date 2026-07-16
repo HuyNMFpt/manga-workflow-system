@@ -101,8 +101,10 @@ public class BoardService {
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
         List<Submission> allSubmissions = new ArrayList<>();
-        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
+        // voting trước (mới hơn, có đủ evaluation fields) → pending sau
+        // putIfAbsent giữ phần tử đầu tiên → voting luôn thắng pending cũ cùng seriesId
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
+        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
 
         // Dedup: chỉ lấy submission mới nhất theo seriesId (không phải manuscriptId — mỗi lần
         // Mangaka nộp lại sẽ tạo manuscript mới với id khác, nên dedup theo manuscriptId không
@@ -214,10 +216,11 @@ public class BoardService {
 
         submission.setStatus(Submission.SubmissionStatus.voting);
 
+        // Fix: dùng đúng giá trị frontend gửi (approve/reject/abstain)
         switch (request.getDecision()) {
             case "approve" -> submission.setVoteYes(submission.getVoteYes() + 1);
-            case "reject" -> submission.setVoteNo(submission.getVoteNo() + 1);
-            case "revision" -> submission.setVoteAbstain(submission.getVoteAbstain() + 1);
+            case "reject"  -> submission.setVoteNo(submission.getVoteNo() + 1);
+            default        -> submission.setVoteAbstain(submission.getVoteAbstain() + 1);
         }
 
         // Kiểm tra kết quả: cần 3 vote yes để approve (có thể điều chỉnh)

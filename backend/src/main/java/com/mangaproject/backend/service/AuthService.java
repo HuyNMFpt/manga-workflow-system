@@ -63,6 +63,29 @@ public class AuthService {
         return new LoginResponse(userDTO, token, refreshToken);
     }
 
+    public LoginResponse refreshToken(String refreshToken) {
+        // Validate refresh token
+        if (!jwtUtil.validateToken(refreshToken)) {
+            throw new RuntimeException("Refresh token không hợp lệ hoặc đã hết hạn");
+        }
+
+        String email = jwtUtil.extractEmail(refreshToken);
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!user.getIsActive()) {
+            throw new RuntimeException("Tài khoản đã bị vô hiệu hóa");
+        }
+
+        // Tạo token mới
+        String newToken = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
+        String newRefreshToken = jwtUtil.generateToken(user.getEmail(), user.getRoleName());
+
+        log.info("Token refreshed for user: {}", email);
+        UserDTO userDTO = mapToDTO(user);
+        return new LoginResponse(userDTO, newToken, newRefreshToken);
+    }
+
     public void changePassword(String email, ChangePasswordRequest request) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));

@@ -59,6 +59,7 @@ cors:
 # File Upload Configuration
 file:
   upload-dir: uploads
+  #base-url: https://cusp-zoology-tightness.ngrok-free.dev
   base-url: http://localhost:8080
 
 # App Configuration
