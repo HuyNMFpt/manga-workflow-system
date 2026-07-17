@@ -38,11 +38,13 @@ const MangakaDashboard = () => {
   const bestRank    = (rankings as any[]).length ? Math.min(...(rankings as any[]).map((r: any) => r.currentRank)) : null;
 
   const STATUS_MAP: Record<string, { label: string; dot: string }> = {
-    serializing:     { label: 'Đang đăng',  dot: 'bg-violet-400' },
-    draft:           { label: 'Nháp',        dot: 'bg-zinc-500'   },
-    pending_review:  { label: 'Chờ duyệt',   dot: 'bg-amber-400'  },
-    approved:        { label: 'Được duyệt',  dot: 'bg-emerald-400'},
-    cancelled:       { label: 'Đã huỷ',      dot: 'bg-red-500'    },
+    draft:                  { label: 'Nháp',            dot: 'bg-zinc-500'   },
+    under_editorial_review: { label: 'Editor đang xét', dot: 'bg-blue-400'   },
+    submitted:              { label: 'Chờ Board duyệt', dot: 'bg-amber-400'  },
+    approved:               { label: 'Được duyệt',      dot: 'bg-emerald-400'},
+    publishing:             { label: 'Đang xuất bản',   dot: 'bg-violet-400' },
+    on_hiatus:              { label: 'Tạm ngưng',        dot: 'bg-orange-400' },
+    cancelled:              { label: 'Đã huỷ',           dot: 'bg-red-500'    },
   };
 
   const PRIORITY_MAP: Record<string, string> = {
@@ -89,7 +91,7 @@ const MangakaDashboard = () => {
             {
               label: 'Series',
               value: series.length,
-              sub: `${series.filter((s:any)=>s.status==='serializing').length} đang đăng`,
+              sub: `${series.filter((s:any)=>s.status==='publishing').length} đang xuất bản`,
               icon: BookOpen,
               color: 'text-violet-400',
               ring: 'ring-violet-500/20',

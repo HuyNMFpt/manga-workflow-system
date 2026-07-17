@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -154,16 +154,37 @@ const parseDesc = (raw?: string): ParsedDesc => {
   if (!raw) return { mainText:'', fields:[], editorNotes:[] };
   const fields: { key:string; value:string }[] = [];
   const editorNotes: string[] = [];
-  // Backend lưu format "[Key]: Value\n" — match cả 2 format cũ và mới
-  const tagRegex = /\[([^\]]+?)\]:\s*([^\n\[]*)/g;
-  let match: RegExpExecArray | null;
   let cleaned = raw;
-  while ((match = tagRegex.exec(raw)) !== null) {
-    const key = match[1].trim(), value = match[2].trim();
-    if (key.toLowerCase().includes('editor note') || key === 'EditorNote') editorNotes.push(value);
-    else fields.push({ key, value });
-    cleaned = cleaned.replace(match[0], '');
+
+  // Format 1: [Key]: Value\n  (backend mới)
+  const tagRegex1 = /\[([^\]]+?)\]:\s*([^\n\[]*)/g;
+  // Format 2: [Key: Value]  (backend cũ)
+  const tagRegex2 = /\[([^\]:]+?):\s*([^\]]*)\]/g;
+
+  const processMatch = (key: string, value: string, full: string) => {
+    const k = key.trim(), v = value.trim();
+    if (k.toLowerCase().includes('editor note') || k === 'EditorNote') {
+      editorNotes.push(v);
+    } else {
+      fields.push({ key: k, value: v });
+    }
+    cleaned = cleaned.replace(full, '');
+  };
+
+  // Thử format 1 trước
+  let match: RegExpExecArray | null;
+  const raw1 = raw;
+  while ((match = tagRegex1.exec(raw1)) !== null) {
+    processMatch(match[1], match[2], match[0]);
   }
+  // Nếu không tìm được gì → thử format 2
+  if (fields.length === 0 && editorNotes.length === 0) {
+    cleaned = raw;
+    while ((match = tagRegex2.exec(raw)) !== null) {
+      processMatch(match[1], match[2], match[0]);
+    }
+  }
+
   return { mainText: cleaned.replace(/\n{2,}/g, '\n').trim(), fields, editorNotes };
 };
 const fKey = (k: string) => FIELD_LABEL[k] ?? k;
@@ -229,11 +250,37 @@ const ManuscriptReview = () => {
   }, {});
   const dedupedMs: any[] = Object.values(latestBySeriesId);
 
+  // Auto-clean boardSubmittedIds khi data load xong
+  useEffect(() => {
+    if (dedupedMs.length === 0) return;
+    // Xóa khỏi local set nếu seriesStatus đã phản ánh đúng từ backend
+    setBoardSubmittedIds(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Set([...prev].filter(id => {
+        const m = dedupedMs.find((x: any) => x.id === id);
+        return !m || m.seriesStatus === 'submitted';
+      }));
+      return next.size !== prev.size ? next : prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allMs.length]);
+
   // Filter theo manuscript status trực tiếp
-  // Sau khi backend thêm status publishing: không cần check seriesStatus nữa
+  // Filter:
+  // - "publishing": manuscript.status='publishing' (backend mới) OR seriesStatus='publishing' (tạm thời)
+  // - "approved" (Sẵn sàng): manuscript approved nhưng series CHƯA publishing
+  // - Các tab khác: theo manuscript status
   const manuscripts = activeFilter === 'all'
     ? dedupedMs
-    : dedupedMs.filter((m: any) => m.status === activeFilter);
+    : activeFilter === 'publishing'
+      ? dedupedMs.filter((m: any) =>
+          m.status === 'publishing' || m.seriesStatus === 'publishing'
+        )
+      : activeFilter === 'approved'
+        ? dedupedMs.filter((m: any) =>
+            m.status === 'approved' && m.seriesStatus !== 'publishing'
+          )
+        : dedupedMs.filter((m: any) => m.status === activeFilter);
 
   // ── Mutations ────────────────────────────────────────────────
 
@@ -315,16 +362,44 @@ const ManuscriptReview = () => {
     onError: (e:any) => setRErr(e.response?.data?.message ?? 'Không thể cập nhật trạng thái'),
   });
 
-  // 4. Submit lên Board
+  // 5. Reset approved → under_review
+  const resetMutation = useMutation({
+    mutationFn: (id: string) =>
+      api.put(`/editor/manuscripts/${id}/reset`).then(r => r.data),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
+      setBoardSubmittedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      setActiveFilter('under_review');
+      setExpandedId(null);
+    },
+  });
   // Backend: POST /editor/manuscripts/{id}/submit-to-board
+  // Sau khi nộp Board: series.status → "submitted", manuscript.status vẫn "approved"
+  // → Dùng seriesStatus từ backend làm nguồn sự thật chính
+  // boardSubmittedIds chỉ để cover khoảng trễ trước khi query invalidate xong
+  const [boardSubmittedIds, setBoardSubmittedIds] = useState<Set<string>>(new Set());
+
+  const addBoardSubmitted = (id: string) => {
+    setBoardSubmittedIds(prev => new Set([...prev, id]));
+  };
+
+  // Helper: manuscript đã nộp Board nếu seriesStatus = "submitted" HOẶC có trong boardSubmittedIds
+  const isSubmittedToBoard = (m: any) =>
+    m.seriesStatus === 'submitted' || boardSubmittedIds.has(m.id);
+
+
+
   const boardMutation = useMutation({
     mutationFn: ({ id, data }: { id:string; data:any }) =>
       api.post(`/editor/manuscripts/${id}/submit-to-board`, data).then(r => r.data),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
       setBForm({ audienceSummary:'', marketingAngle:'', whyItWillSell:'', recommendedSchedule:'weekly', editorNote:'' });
       setBErr('');
       setExpandedId(null);
+      // Đánh dấu manuscript này đã nộp Board trong session này
+      // → tránh hiện lại form khi seriesStatus chưa cập nhật từ backend
+      addBoardSubmitted(vars.id);
     },
     onError: (e:any) => setBErr(e.response?.data?.message ?? 'Lỗi xảy ra'),
   });
@@ -407,7 +482,15 @@ const ManuscriptReview = () => {
           {FILTERS.map(f => {
             const count = f.id === 'all'
               ? dedupedMs.length
-              : dedupedMs.filter((m: any) => m.status === f.id).length;
+              : f.id === 'publishing'
+                ? dedupedMs.filter((m: any) =>
+                    m.status === 'publishing' || m.seriesStatus === 'publishing'
+                  ).length
+                : f.id === 'approved'
+                  ? dedupedMs.filter((m: any) =>
+                      m.status === 'approved' && m.seriesStatus !== 'publishing'
+                    ).length
+                  : dedupedMs.filter((m: any) => m.status === f.id).length;
             return (
               <button key={f.id} onClick={() => setActiveFilter(f.id)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12px] font-medium transition-all ${
@@ -442,7 +525,10 @@ const ManuscriptReview = () => {
         ) : (
           <div className="space-y-3">
             {manuscripts.map((m: any) => {
-              const st        = getStatus(m.status);
+              const displayStatus = (m.status === 'approved' && m.seriesStatus === 'publishing')
+                ? 'publishing'
+                : m.status;
+              const st        = getStatus(displayStatus);
               const isExpanded = expandedId === m.id;
               const parsed    = parseDesc(m.description);
 
@@ -693,7 +779,7 @@ const ManuscriptReview = () => {
                       )}
 
                       {/* ══ STATUS: approved → "Sẵn sàng" ══ */}
-                      {m.status === 'approved' && (
+                      {m.status === 'approved' && m.seriesStatus !== 'publishing' && (
                         <div className="px-6 py-5 space-y-4">
                           <div className={`flex items-start gap-3 p-4 rounded-xl ${st.bg} border ${st.border}`}>
                             <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -705,16 +791,32 @@ const ManuscriptReview = () => {
                             </div>
                           </div>
                           <ManuscriptInfo m={m} parsed={parsed} />
-                          <FullBoardForm
-                              bForm={bForm} setBForm={setBForm} bErr={bErr}
-                              onSubmit={() => handleBoard(m.id)}
-                              isPending={boardMutation.isPending}
-                            />
+                          {isSubmittedToBoard(m) ? (
+                            <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/6 border border-amber-500/15">
+                              <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-[12px] font-semibold text-amber-300">Đã nộp lên Board — đang chờ xét duyệt</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">
+                                  Series đang trong hàng chờ bình duyệt. Không thể nộp lại cho đến khi có kết quả từ Board.
+                                </p>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <FullBoardForm
+                                bForm={bForm} setBForm={setBForm} bErr={bErr}
+                                onSubmit={() => handleBoard(m.id)}
+                                isPending={boardMutation.isPending}
+                                onReset={() => resetMutation.mutate(m.id)}
+                                isResetPending={resetMutation.isPending}
+                              />
+                            </>
+                          )}
                         </div>
                       )}
 
                       {/* ══ STATUS: publishing → "Đang xuất bản" ══ */}
-                      {m.status === 'publishing' && (
+                      {(m.status === 'publishing' || (m.status === 'approved' && m.seriesStatus === 'publishing')) && (
                         <div className="px-6 py-5 space-y-4">
                           <div className="flex items-start gap-3 p-4 rounded-xl bg-violet-500/6 border border-violet-500/15">
                             <CheckCircle2 className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
@@ -929,7 +1031,7 @@ const BoardBox = ({ m, onApprove, isPending }: {
   </div>
 );
 
-const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending }: any) => (
+const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending, onReset, isResetPending }: any) => (
   <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/4 p-4 space-y-4">
     <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
       <ArrowUpRight className="w-3.5 h-3.5" />Hồ sơ nộp Board
@@ -967,12 +1069,20 @@ const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending }: any) => (
       </div>
     </div>
     {bErr && <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/15 rounded-xl px-3 py-2">{bErr}</p>}
-    <button onClick={onSubmit} disabled={isPending}
-      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-emerald-600/25 disabled:opacity-50 transition-all">
-      {isPending
-        ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang nộp...</>
-        : <><ArrowUpRight className="w-3.5 h-3.5"/>Nộp lên Board</>}
-    </button>
+    <div className="flex gap-2">
+      <button onClick={onReset} disabled={isResetPending}
+        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-zinc-500/15 border border-zinc-500/25 text-zinc-300 text-sm font-semibold hover:bg-zinc-500/25 disabled:opacity-50 transition-all">
+        {isResetPending
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang xử lý...</>
+          : <><RotateCcw className="w-3.5 h-3.5"/>Quay lại xét duyệt</>}
+      </button>
+      <button onClick={onSubmit} disabled={isPending}
+        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-semibold hover:shadow-lg hover:shadow-emerald-600/25 disabled:opacity-50 transition-all">
+        {isPending
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang nộp...</>
+          : <><ArrowUpRight className="w-3.5 h-3.5"/>Nộp lên Board</>}
+      </button>
+    </div>
   </div>
 );
 

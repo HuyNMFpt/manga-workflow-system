@@ -8,6 +8,7 @@ import com.mangaproject.backend.model.Series;
 import com.mangaproject.backend.repository.ChapterRepository;
 import com.mangaproject.backend.repository.SeriesRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ChapterService {
 
     private final ChapterRepository chapterRepository;
@@ -38,7 +40,7 @@ public class ChapterService {
     }
 
     @Transactional
-    public ChapterDTO createChapter(CreateChapterRequest request) {
+    public ChapterDTO createChapter(CreateChapterRequest request, String currentUserId) {
         Series series = seriesRepository.findById(request.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
@@ -53,6 +55,19 @@ public class ChapterService {
         chapter.setTitle(request.getTitle());
         chapter.setNotes(request.getNotes());
         chapter.setStatus(Chapter.ChapterStatus.in_progress);
+
+        // Tự tính deadline dựa vào publishStartDate + publishSchedule của series
+        if (series.getPublishStartDate() != null && series.getPublishSchedule() != null) {
+            int daysPerChapter = switch (series.getPublishSchedule()) {
+                case weekly   -> 7;
+                case biweekly -> 14;
+                case monthly  -> 30;
+            };
+            java.time.LocalDate deadline = series.getPublishStartDate()
+                    .plusDays((long)(request.getChapterNumber() - 1) * daysPerChapter);
+            chapter.setDeadline(deadline);
+            log.info("Auto deadline set for chapter {}: {}", request.getChapterNumber(), deadline);
+        }
 
         chapter = chapterRepository.save(chapter);
         return mapToDTO(chapter);
@@ -91,7 +106,7 @@ public class ChapterService {
     }
 
     @Transactional
-    public ChapterDTO updateChapterStatus(String id, String status) {
+    public ChapterDTO updateChapterStatus(String id, String status, String currentEditorId) {
         Chapter chapter = chapterRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Chapter not found"));
 
@@ -121,6 +136,7 @@ public class ChapterService {
         dto.setTitle(chapter.getTitle());
         dto.setNotes(chapter.getNotes());
         dto.setStatus(chapter.getStatus().name());
+        dto.setDeadline(chapter.getDeadline() != null ? chapter.getDeadline().toString() : null);
         dto.setTotalPages(chapter.getPages() != null ? chapter.getPages().size() : 0);
         dto.setPublishedAt(chapter.getPublishedAt() != null ?
                 chapter.getPublishedAt().atStartOfDay() : null);

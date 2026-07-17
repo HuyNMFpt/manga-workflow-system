@@ -1,7 +1,69 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlertTriangle, RefreshCw, Loader2, Send, X, CheckCircle2, BookOpen } from 'lucide-react';
+import { Activity, AlertTriangle, RefreshCw, Loader2, Send, X, CheckCircle2, BookOpen, Clock } from 'lucide-react';
 import api from '@/lib/axios';
+
+/* ── Real-time deadline countdown ───────────────────────────────
+   Nhận deadlineDate (YYYY-MM-DD), cập nhật mỗi giây
+   Trả về: { days, hours, minutes, seconds, isOverdue, label }
+─────────────────────────────────────────────────────────────── */
+const useDeadlineCountdown = (deadlineDate: string | null | undefined) => {
+  const calc = () => {
+    if (!deadlineDate) return null;
+    // deadline là cuối ngày đó (23:59:59)
+    const target = new Date(deadlineDate + 'T23:59:59');
+    const diff   = target.getTime() - Date.now();
+    const isOverdue = diff < 0;
+    const abs    = Math.abs(diff);
+    const days    = Math.floor(abs / 86400000);
+    const hours   = Math.floor((abs % 86400000) / 3600000);
+    const minutes = Math.floor((abs % 3600000) / 60000);
+    const seconds = Math.floor((abs % 60000) / 1000);
+    return { days, hours, minutes, seconds, isOverdue };
+  };
+
+  const [state, setState] = useState(calc);
+  useEffect(() => {
+    if (!deadlineDate) return;
+    setState(calc());
+    const t = setInterval(() => setState(calc()), 1000);
+    return () => clearInterval(t);
+  }, [deadlineDate]);
+  return state;
+};
+
+/* ── DeadlineDisplay — hiển thị countdown cho 1 series ─────── */
+const DeadlineDisplay = ({ deadlineDate, daysUntilDeadline }: { deadlineDate?: string; daysUntilDeadline?: number }) => {
+  const cd = useDeadlineCountdown(deadlineDate);
+
+  if (!cd) {
+    // Không có deadline date → fallback về daysUntilDeadline tĩnh
+    return daysUntilDeadline != null ? (
+      <span className={daysUntilDeadline <= 2 ? 'text-red-400' : 'text-zinc-600'}>
+        · {daysUntilDeadline} ngày còn lại
+      </span>
+    ) : null;
+  }
+
+  if (cd.isOverdue) {
+    return (
+      <span className="text-red-400 font-semibold">
+        · Quá hạn {cd.days > 0 ? `${cd.days} ngày` : `${cd.hours}g ${cd.minutes}p`}
+      </span>
+    );
+  }
+
+  const isUrgent = cd.days < 1;      // dưới 24 giờ
+  const isWarning = cd.days <= 2;     // dưới 3 ngày
+
+  return (
+    <span className={`font-mono tabular-nums ${isUrgent ? 'text-red-400 font-bold' : isWarning ? 'text-amber-400' : 'text-zinc-600'}`}>
+      {cd.days > 0
+        ? ` · còn ${cd.days} ngày ${cd.hours}g ${cd.minutes}p`
+        : ` · còn ${cd.hours}:${String(cd.minutes).padStart(2,'0')}:${String(cd.seconds).padStart(2,'0')}`}
+    </span>
+  );
+};
 
 const StudioProgress = () => {
   const qc = useQueryClient();
@@ -98,10 +160,7 @@ const StudioProgress = () => {
                     </div>
                     <p className="text-[11px] text-zinc-600">
                       Chapter {s.currentChapter} · {s.mangakaName}
-                      {/* ✅ daysUntilDeadline (không phải daysLeft) */}
-                      {s.daysUntilDeadline != null && (
-                        <span className={s.daysUntilDeadline <= 2 ? ' text-red-400':' text-zinc-600'}> · {s.daysUntilDeadline} ngày còn lại</span>
-                      )}
+                      <DeadlineDisplay deadlineDate={s.deadlineDate} daysUntilDeadline={s.daysUntilDeadline} />
                     </p>
                   </div>
                   <span className={`text-2xl font-black font-['Syne'] ${pct>=80?'text-emerald-400':pct>=50?'text-amber-400':'text-red-400'}`}>{Math.round(pct)}%</span>

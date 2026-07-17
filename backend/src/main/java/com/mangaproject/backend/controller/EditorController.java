@@ -51,6 +51,19 @@ public class EditorController {
         return ApiResponse.success(editorService.addAnnotation(id, user.getId(), request));
     }
 
+    /**
+     * DELETE /api/editor/annotations/{annotationId}
+     * Xóa annotation — chỉ Editor đã tạo mới được xóa
+     */
+    @DeleteMapping("/annotations/{annotationId}")
+    public ApiResponse<Void> deleteAnnotation(
+            @PathVariable String annotationId,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        editorService.deleteAnnotation(annotationId, user.getId());
+        return ApiResponse.success(null, "Đã xóa ghi chú");
+    }
+
     @PostMapping("/manuscripts/{id}/submit-to-board")
     public ApiResponse<SubmissionDTO> submitToBoard(
             @PathVariable String id,
@@ -60,6 +73,21 @@ public class EditorController {
         return ApiResponse.success(
                 editorService.submitToBoard(id, user.getId(), request),
                 "Đã nộp bản thảo lên Hội đồng biên tập"
+        );
+    }
+
+    /**
+     * PUT /api/editor/manuscripts/{id}/reset
+     * Reset manuscript về "under_review" khi Editor đã đánh dấu "Sẵn sàng" nhưng muốn xem lại
+     */
+    @PutMapping("/manuscripts/{id}/reset")
+    public ApiResponse<ManuscriptDTO> resetManuscript(
+            @PathVariable String id,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(
+                editorService.resetManuscriptToUnderReview(id, user.getId()),
+                "Đã reset bản thảo về trạng thái đang xét"
         );
     }
 

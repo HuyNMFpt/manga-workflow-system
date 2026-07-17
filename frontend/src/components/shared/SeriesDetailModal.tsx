@@ -67,7 +67,8 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
       const r = await api.get(`/manuscripts/series/${series.id}`)
       return r.data.data ?? []
     },
-    enabled: series.status === 'draft', // chỉ fetch khi cần
+    enabled: series.status === 'draft'
+          || series.status === 'under_editorial_review', // chỉ fetch khi cần
   })
   // Lấy manuscript mới nhất có rejectionReason (Editor vừa trả về)
   const latestRevision = (manuscripts as any[])
@@ -203,7 +204,9 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
               </div>
 
               {/* ── DRAFT actions ─────────────────────────── */}
-              {series.status === 'draft' && (
+              {(series.status === 'draft'
+                || series.status === 'under_editorial_review'
+                || series.status === 'cancelled') && (
                 <div className="space-y-3">
 
                   {/* ── Nếu có lý do trả về từ Editor ── */}

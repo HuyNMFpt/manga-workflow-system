@@ -38,3 +38,4 @@ Thumbs.db
 # Environment
 .env
 backend/uploads/
+init-db/02_seed_series_at_risk_test_data.sql

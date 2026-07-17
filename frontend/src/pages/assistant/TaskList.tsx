@@ -60,7 +60,54 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   color:       'Tô màu',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────
+// ─── Deadline countdown ───────────────────────────────────────────
+const DeadlineCell = ({ dueDate, status }: { dueDate?: string; status: string }) => {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!dueDate) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [dueDate]);
+
+  if (!dueDate) return <span className="text-zinc-700">—</span>;
+
+  // Task xong rồi → hiện ngày tĩnh
+  if (status === 'approved' || status === 'submitted')
+    return <span className="text-zinc-600 text-[11px]">{new Date(dueDate).toLocaleDateString('vi-VN')}</span>;
+
+  const target    = new Date(dueDate + (dueDate.length === 10 ? 'T23:59:59' : '')).getTime();
+  const diff      = target - now;
+  const isOverdue = diff < 0;
+  const abs       = Math.abs(diff);
+  const days      = Math.floor(abs / 86400000);
+  const hours     = Math.floor((abs % 86400000) / 3600000);
+  const mins      = Math.floor((abs % 3600000) / 60000);
+  const secs      = Math.floor((abs % 60000) / 1000);
+
+  if (isOverdue) return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/25 flex items-center gap-1">
+        <AlertTriangle className="w-2.5 h-2.5"/>Quá hạn
+      </span>
+      <span className="text-[10px] text-red-500">
+        {days > 0 ? `${days} ngày` : `${hours}g ${mins}p`}
+      </span>
+    </div>
+  );
+
+  const isUrgent  = days < 1;
+  const isWarning = days <= 2;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={`text-[11px] font-mono tabular-nums ${isUrgent ? 'text-red-400 font-bold' : isWarning ? 'text-amber-400' : 'text-zinc-500'}`}>
+        {days > 0
+          ? `${days}n ${hours}g ${mins}p`
+          : `${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`}
+      </span>
+      <span className="text-[9px] text-zinc-700">{new Date(dueDate).toLocaleDateString('vi-VN')}</span>
+    </div>
+  );
+};
 const parseRegion = (s?: string) => {
   if (!s) return null;
   try { return typeof s === 'string' ? JSON.parse(s) : s; } catch { return null; }
@@ -199,7 +246,26 @@ const RevisionPin = ({ imageUrl, region, taskType }: { imageUrl?: string; region
   );
 };
 
-// ─── Hook: load page image ────────────────────────────────────────
+// ─── Helper: download cross-origin file ──────────────────────────
+const downloadFile = async (url: string, filename?: string) => {
+  try {
+    // Thử fetch với credentials để có CORS
+    const res = await fetch(url, { mode: 'cors', credentials: 'include' });
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename ?? url.split('/').pop() ?? 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    // Fallback: mở tab mới (backend cần thêm CORS cho /uploads/**)
+    window.open(url, '_blank');
+  }
+};
 const usePageImage = (pageId?: string, pageImageUrl?: string) =>
   useQuery({
     queryKey: ['page', pageId],
@@ -316,8 +382,13 @@ const TaskList = () => {
     setSubmitError('');
     if (!uploadFile) { setSubmitError('Vui lòng chọn file kết quả'); return; }
     try {
+      // Nếu task vẫn còn revision_needed → gọi startTask trước (→ in_progress)
+      // Backend chỉ cho submit từ in_progress
+      if (selectedTask.status === 'revision_needed') {
+        await api.put(`/tasks/${selectedTask.id}/start`);
+      }
+
       // Upload file lên server → lấy URL thật
-      // Backend cần: POST /api/files/upload → { data: { url: "http://localhost:8080/uploads/..." } }
       const fd = new FormData();
       fd.append('file', uploadFile);
       fd.append('folder', 'task-results');
@@ -416,12 +487,18 @@ const TaskList = () => {
             {tasks.map((task: any) => {
               const st = STATUS_MAP[task.status] ?? STATUS_MAP.pending;
               const isClickable = ['pending','in_progress','revision_needed'].includes(task.status);
+              const isOverdue = task.dueDate
+                && new Date(task.dueDate + (task.dueDate.length === 10 ? 'T23:59:59' : '')).getTime() < Date.now()
+                && !['approved','submitted'].includes(task.status);
               return (
                 <div key={task.id}
-                  onClick={() => isClickable && setSelectedTask(task)}
+                  onClick={() => {
+                    if (!isClickable) return;
+                    setSelectedTask(task);
+                  }}
                   className={`grid grid-cols-[1fr_7rem_6rem_7rem_9rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 transition-colors ${
                     isClickable ? 'cursor-pointer hover:bg-white/[0.025] group' : 'opacity-70'
-                  }`}>
+                  } ${isOverdue ? 'bg-red-500/3' : ''}`}>
 
                   {/* Task name */}
                   <div>
@@ -458,8 +535,8 @@ const TaskList = () => {
                   </div>
 
                   {/* Deadline */}
-                  <div className="text-center text-[11px] text-zinc-600">
-                    {task.dueDate ? new Date(task.dueDate).toLocaleDateString('vi-VN') : '—'}
+                  <div className="flex justify-center">
+                    <DeadlineCell dueDate={task.dueDate} status={task.status} />
                   </div>
 
                   {/* Status + CTA */}
@@ -498,7 +575,13 @@ const TaskList = () => {
                 </div>
                 <p className="text-[11px] text-zinc-600 mt-0.5">
                   {TASK_TYPE_LABEL[selectedTask.taskType] ?? selectedTask.taskType}
-                  {selectedTask.dueDate && ` · Hạn ${new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}`}
+                  {selectedTask.dueDate && (() => {
+                    const isOverdue = new Date(selectedTask.dueDate + (selectedTask.dueDate.length === 10 ? 'T23:59:59':'')).getTime() < Date.now()
+                      && !['approved','submitted'].includes(selectedTask.status);
+                    return isOverdue
+                      ? <span className="text-red-400 font-semibold"> · ⚠ Quá hạn {new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}</span>
+                      : <span> · Hạn {new Date(selectedTask.dueDate).toLocaleDateString('vi-VN')}</span>;
+                  })()}
                 </p>
               </div>
               <button onClick={closeModal} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors flex-shrink-0">
@@ -564,15 +647,16 @@ const TaskList = () => {
 
                       {/* File trang truyện gốc */}
                       {imageUrl ? (
-                        <a href={imageUrl} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 hover:bg-blue-500/12 transition-colors group">
+                        <button
+                          onClick={() => downloadFile(imageUrl)}
+                          className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/20 hover:bg-blue-500/12 transition-colors group text-left">
                           <FileImage className="w-4 h-4 text-blue-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[12px] font-semibold text-blue-300">Trang truyện gốc</p>
                             <p className="text-[10px] text-zinc-600 truncate">{imageUrl}</p>
                           </div>
                           <Download className="w-3.5 h-3.5 text-zinc-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
-                        </a>
+                        </button>
                       ) : selectedTask.pageId ? (
                         <div className="flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-white/3 border border-white/6">
                           <Loader2 className="w-4 h-4 text-zinc-600 animate-spin flex-shrink-0" />

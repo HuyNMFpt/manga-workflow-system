@@ -9,4 +9,10 @@ import java.util.List;
 public interface ManuscriptAnnotationRepository extends JpaRepository<ManuscriptAnnotation, String> {
     void deleteByManuscriptId(String manuscriptId);
     List<ManuscriptAnnotation> findByManuscriptIdOrderByCreatedAtAsc(String manuscriptId);
+
+    // Xóa annotation cụ thể của Editor — check ownership trước khi xóa
+    void deleteByIdAndEditorId(String id, String editorId);
+
+    // Đếm số annotation của 1 bản thảo
+    int countByManuscriptId(String manuscriptId);
 }

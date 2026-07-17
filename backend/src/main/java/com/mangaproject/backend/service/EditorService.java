@@ -123,7 +123,8 @@ public class EditorService {
                     total, completed, inProgress, pending, overdue,
                     daysLeft, daysLeft <= 3 || overdue > 0,
                     Math.round(percent * 10.0) / 10.0,
-                    assistantNames
+                    assistantNames,
+                    latestChapter.getDeadline() != null ? latestChapter.getDeadline().toString() : null
             ));
         }
 
@@ -143,7 +144,10 @@ public class EditorService {
                                 .map(a -> new AnnotationDTO(
                                         a.getId(), a.getNote(), a.getTag(),
                                         a.getX(), a.getY(), a.getPageNumber(),
-                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                                        userRepository.findById(a.getEditorId())
+                                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                                .orElse(null)
                                 ))
                                 .collect(Collectors.toList());
 
@@ -193,7 +197,10 @@ public class EditorService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(Collectors.toList());
 
@@ -211,6 +218,11 @@ public class EditorService {
 
     // ── Editor nộp lên Board ──────────────────────────────────────
     @org.springframework.transaction.annotation.Transactional
+    public void deleteAnnotation(String annotationId, String editorId) {
+        annotationRepository.deleteByIdAndEditorId(annotationId, editorId);
+        log.info("Annotation {} deleted by editor {}", annotationId, editorId);
+    }
+
     public SubmissionDTO submitToBoard(String manuscriptId, String editorId, SubmitToBoardRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
@@ -229,7 +241,7 @@ public class EditorService {
         manuscriptRepository.save(manuscript);
 
         // Tạo Submission lên Board
-        int submissionRound = (int) submissionRepository.countByManuscriptId(manuscriptId) + 1;
+        int submissionRound = submissionRepository.countBySeriesId(manuscript.getSeriesId()) + 1;
 
         Submission submission = new Submission();
         submission.setManuscriptId(manuscriptId);
@@ -255,18 +267,83 @@ public class EditorService {
 
         log.info("Editor submitted manuscript to board: manuscriptId={}, editorId={}", manuscriptId, editorId);
 
+        // Resolve editor name cho DTO
+        String editorName = userRepository.findById(series.getEditorId() != null ? series.getEditorId() : "")
+                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                .orElse(null);
+
         return new SubmissionDTO(
                 submission.getId(), manuscriptId, series.getId(), series.getTitle(),
                 submission.getSubmittedBy(), submission.getSubmissionRound(),
                 submission.getCoverLetter(), submission.getStatus().name(),
                 0, 0, 0,
                 submission.getVotingDeadline().toString(),
-                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null
+                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null,
+                editorName
         );
     }
 
     // ── Editor trả lại Mangaka để sửa ────────────────────────────
     @org.springframework.transaction.annotation.Transactional
+    /**
+     * Reset manuscript về under_review — Editor đã đánh dấu "Sẵn sàng" nhưng muốn xem lại
+     * Chỉ cho phép reset khi manuscript đang ở status approved (sẵn sàng nộp board)
+     */
+    public ManuscriptDTO resetManuscriptToUnderReview(String manuscriptId, String editorId) {
+        Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        Series series = seriesRepository.findById(manuscript.getSeriesId())
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        // Chỉ Editor phụ trách series này mới được reset
+        if (!series.getEditorId().equals(editorId)) {
+            throw new RuntimeException("Bạn không có quyền thao tác với bản thảo này");
+        }
+
+        // Chỉ reset được khi đang approved (Sẵn sàng) — không reset khi đã nộp Board
+        if (manuscript.getStatus() != Manuscript.ManuscriptStatus.approved) {
+            throw new RuntimeException(
+                "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
+                "Hiện tại: " + manuscript.getStatus().name()
+            );
+        }
+
+        manuscript.setStatus(Manuscript.ManuscriptStatus.under_review);
+        manuscriptRepository.save(manuscript);
+
+        // Series cũng cần về under_editorial_review (Editor đang xét lại, chưa nộp Board)
+        series.setStatus(Series.SeriesStatus.under_editorial_review);
+        seriesRepository.save(series);
+
+        log.info("Manuscript {} reset to under_review by editor {}", manuscriptId, editorId);
+
+        // Build response
+        String seriesTitle = series.getTitle();
+        List<AnnotationDTO> annotations = annotationRepository
+                .findByManuscriptIdOrderByCreatedAtAsc(manuscriptId).stream()
+                .map(a -> new AnnotationDTO(
+                        a.getId(), a.getNote(), a.getTag(),
+                        a.getX(), a.getY(), a.getPageNumber(),
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
+                ))
+                .collect(java.util.stream.Collectors.toList());
+
+        return new ManuscriptDTO(
+                manuscript.getId(), manuscript.getSeriesId(), seriesTitle,
+                series.getStatus().name(),
+                manuscript.getSubmittedBy(), manuscript.getVersion(), manuscript.getFileUrl(),
+                manuscript.getDescription(), manuscript.getStatus().name(),
+                manuscript.getRejectionReason(),
+                manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
+                manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                annotations
+        );
+    }
+
     public ManuscriptDTO updateManuscriptStatus(String manuscriptId, String editorId, UpdateManuscriptStatusRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));

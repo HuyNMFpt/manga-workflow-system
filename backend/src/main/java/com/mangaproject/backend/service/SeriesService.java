@@ -123,8 +123,9 @@ public class SeriesService {
         }
 
         if (series.getStatus() != Series.SeriesStatus.draft
-                && series.getStatus() != Series.SeriesStatus.cancelled) {
-            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft hoặc cancelled");
+                && series.getStatus() != Series.SeriesStatus.cancelled
+                && series.getStatus() != Series.SeriesStatus.under_editorial_review) {
+            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft, đang xét duyệt hoặc cancelled");
         }
 
         // Cascade delete thủ công theo thứ tự FK
