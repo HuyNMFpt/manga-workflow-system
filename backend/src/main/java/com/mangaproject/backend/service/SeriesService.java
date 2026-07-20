@@ -92,7 +92,7 @@ public class SeriesService {
 
     @Transactional
     public SeriesDTO updateSeries(String id, String title, String genre, String synopsis,
-                                   String coverUrl, String editorId, String mangakaId) {
+                                  String coverUrl, String editorId, String mangakaId) {
         Series series = seriesRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
@@ -122,10 +122,13 @@ public class SeriesService {
             throw new RuntimeException("Bạn không có quyền xóa series này");
         }
 
-        if (series.getStatus() != Series.SeriesStatus.draft
-                && series.getStatus() != Series.SeriesStatus.cancelled
-                && series.getStatus() != Series.SeriesStatus.under_editorial_review) {
-            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft, đang xét duyệt hoặc cancelled");
+        if (!List.of(
+                Series.SeriesStatus.draft,
+                Series.SeriesStatus.cancelled,
+                Series.SeriesStatus.under_editorial_review,
+                Series.SeriesStatus.rejected
+        ).contains(series.getStatus())) {
+            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft, đang xét duyệt, đã bị từ chối hoặc cancelled");
         }
 
         // Cascade delete thủ công theo thứ tự FK

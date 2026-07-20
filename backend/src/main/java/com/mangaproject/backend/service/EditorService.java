@@ -18,6 +18,7 @@ public class EditorService {
 
     private final SeriesRepository seriesRepository;
     private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptPageRepository manuscriptPageRepository;
     private final ManuscriptAnnotationRepository annotationRepository;
     private final ChapterRepository chapterRepository;
     private final TaskRepository taskRepository;
@@ -97,7 +98,7 @@ public class EditorService {
             // Days until deadline
             int daysLeft = latestChapter.getDeadline() != null
                     ? (int) java.time.temporal.ChronoUnit.DAYS.between(
-                            java.time.LocalDate.now(), latestChapter.getDeadline())
+                    java.time.LocalDate.now(), latestChapter.getDeadline())
                     : 999;
 
             // Danh sách assistant
@@ -159,7 +160,9 @@ public class EditorService {
                                 m.getRejectionReason(),
                                 m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
                                 m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
-                                annotations
+                                annotations,
+                                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(m.getId())
+                                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
                         );
                         return dto;
                     })
@@ -212,7 +215,9 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
-                annotations
+                annotations,
+                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(manuscript.getId())
+                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
         );
     }
 
@@ -304,8 +309,8 @@ public class EditorService {
         // Chỉ reset được khi đang approved (Sẵn sàng) — không reset khi đã nộp Board
         if (manuscript.getStatus() != Manuscript.ManuscriptStatus.approved) {
             throw new RuntimeException(
-                "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
-                "Hiện tại: " + manuscript.getStatus().name()
+                    "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
+                            "Hiện tại: " + manuscript.getStatus().name()
             );
         }
 
@@ -340,7 +345,9 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
-                annotations
+                annotations,
+                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(manuscript.getId())
+                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
         );
     }
 
@@ -406,6 +413,7 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                null,
                 null
         );
     }}

@@ -1,16 +1,24 @@
 package com.mangaproject.backend.service;
 
 import com.mangaproject.backend.dto.*;
-import com.mangaproject.backend.model.Manuscript;
-import com.mangaproject.backend.model.Series;
-import com.mangaproject.backend.model.Submission;
-import com.mangaproject.backend.model.User;
+import com.mangaproject.backend.model.*;
 import com.mangaproject.backend.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -21,6 +29,7 @@ import java.util.stream.Collectors;
 public class ManuscriptService {
 
     private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptPageRepository manuscriptPageRepository;
     private final SubmissionRepository submissionRepository;
     private final SeriesRepository seriesRepository;
     private final FileStorageService fileStorageService;
@@ -46,13 +55,15 @@ public class ManuscriptService {
         }
 
         // TODO 3: Không cho nộp bản thảo khi series đang publishing/on_hiatus/cancelled
-        if (series.getStatus() == Series.SeriesStatus.publishing
-                || series.getStatus() == Series.SeriesStatus.on_hiatus
-                || series.getStatus() == Series.SeriesStatus.cancelled) {
+        if (!List.of(
+                Series.SeriesStatus.draft,
+                Series.SeriesStatus.under_editorial_review,
+                Series.SeriesStatus.rejected
+        ).contains(series.getStatus())) {
             throw new RuntimeException(
-                "Không thể nộp bản thảo cho series đang ở trạng thái: "
-                + series.getStatus().name()
-                + ". Chỉ nộp được khi series ở trạng thái draft hoặc đang xét duyệt."
+                    "Không thể nộp bản thảo cho series đang ở trạng thái: "
+                            + series.getStatus().name()
+                            + ". Chỉ nộp được khi series ở trạng thái draft, đang xét duyệt, hoặc đã bị từ chối."
             );
         }
 
@@ -147,6 +158,120 @@ public class ManuscriptService {
                 .collect(Collectors.toList());
     }
 
+    // ── Upload trang bản thảo — batch ảnh ──────────────────────────
+    @Transactional
+    public List<ManuscriptPageDTO> uploadPages(String manuscriptId,
+                                               List<MultipartFile> files, String notes) {
+        manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        int nextPage = manuscriptPageRepository.findMaxPageNumber(manuscriptId)
+                .map(max -> max + 1).orElse(1);
+
+        List<ManuscriptPageDTO> result = new ArrayList<>();
+        for (MultipartFile file : files) {
+            try {
+                String folder = "manuscripts/" + manuscriptId + "/pages";
+                String imageUrl = fileStorageService.storeFile(file, folder);
+                String thumbUrl = fileStorageService.storeThumbnail(file, folder);
+
+                ManuscriptPage page = new ManuscriptPage();
+                page.setManuscriptId(manuscriptId);
+                page.setPageNumber(nextPage++);
+                page.setImageUrl(imageUrl);
+                page.setThumbnailUrl(thumbUrl);
+                page.setNotes(notes);
+                result.add(mapPageToDTO(manuscriptPageRepository.save(page)));
+            } catch (IOException e) {
+                throw new RuntimeException("Upload trang " + nextPage + " thất bại: " + e.getMessage());
+            }
+        }
+        log.info("Manuscript batch upload: id={}, pages={}", manuscriptId, result.size());
+        return result;
+    }
+
+    // ── Upload PDF — extract từng trang thành ảnh ────────────────
+    @Transactional
+    public List<ManuscriptPageDTO> uploadPdf(String manuscriptId, MultipartFile pdfFile) {
+        manuscriptRepository.findById(manuscriptId)
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+
+        int nextPage = manuscriptPageRepository.findMaxPageNumber(manuscriptId)
+                .map(max -> max + 1).orElse(1);
+
+        List<ManuscriptPageDTO> result = new ArrayList<>();
+        try (PDDocument document = Loader.loadPDF(pdfFile.getBytes())) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            for (int i = 0; i < document.getNumberOfPages(); i++) {
+                BufferedImage image = renderer.renderImageWithDPI(i, 150, ImageType.RGB);
+
+                // Nền trắng (tránh PDF transparent → ảnh đen)
+                BufferedImage white = new BufferedImage(
+                        image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+                java.awt.Graphics2D g = white.createGraphics();
+                g.setColor(java.awt.Color.WHITE);
+                g.fillRect(0, 0, image.getWidth(), image.getHeight());
+                g.drawImage(image, 0, 0, null);
+                g.dispose();
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ImageIO.write(white, "jpg", baos);
+
+                MultipartFile mockFile = new ByteArrayMultipartFile(
+                        "page_" + (i + 1) + ".jpg", "image/jpeg", baos.toByteArray());
+
+                String folder = "manuscripts/" + manuscriptId + "/pages";
+                String imageUrl = fileStorageService.storeFile(mockFile, folder);
+                String thumbUrl = fileStorageService.storeThumbnail(mockFile, folder);
+
+                ManuscriptPage page = new ManuscriptPage();
+                page.setManuscriptId(manuscriptId);
+                page.setPageNumber(nextPage + i);
+                page.setImageUrl(imageUrl);
+                page.setThumbnailUrl(thumbUrl);
+                page.setNotes("PDF trang " + (i + 1));
+                result.add(mapPageToDTO(manuscriptPageRepository.save(page)));
+
+                log.info("Manuscript PDF extract: id={}, page={}/{}", manuscriptId, i + 1, document.getNumberOfPages());
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Upload PDF thất bại: " + e.getMessage());
+        }
+        return result;
+    }
+
+    // ── Lấy danh sách trang bản thảo ────────────────────────────
+    public List<ManuscriptPageDTO> getPages(String manuscriptId) {
+        return manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(manuscriptId)
+                .stream().map(this::mapPageToDTO).collect(Collectors.toList());
+    }
+
+    private ManuscriptPageDTO mapPageToDTO(ManuscriptPage p) {
+        return new ManuscriptPageDTO(
+                p.getId(), p.getManuscriptId(), p.getPageNumber(),
+                p.getImageUrl(), p.getThumbnailUrl(), p.getNotes());
+    }
+
+    // ── ByteArrayMultipartFile — wrap byte[] thành MultipartFile ──
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final String contentType;
+        private final byte[] content;
+        public ByteArrayMultipartFile(String name, String contentType, byte[] content) {
+            this.name = name; this.contentType = contentType; this.content = content;
+        }
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return name; }
+        @Override public String getContentType() { return contentType; }
+        @Override public boolean isEmpty() { return content.length == 0; }
+        @Override public long getSize() { return content.length; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public InputStream getInputStream() { return new ByteArrayInputStream(content); }
+        @Override public void transferTo(java.io.File dest) throws IOException {
+            java.nio.file.Files.write(dest.toPath(), content);
+        }
+    }
+
     private String buildDescription(CreateManuscriptRequest req) {
         StringBuilder sb = new StringBuilder();
         if (req.getDescription() != null) sb.append(req.getDescription());
@@ -174,7 +299,12 @@ public class ManuscriptService {
                 .collect(Collectors.toList());
 
         Series series = seriesRepository.findById(m.getSeriesId()).orElse(null);
-        return new ManuscriptDTO(
+
+        List<ManuscriptPageDTO> pages = manuscriptPageRepository
+                .findByManuscriptIdOrderByPageNumberAsc(m.getId())
+                .stream().map(this::mapPageToDTO).collect(Collectors.toList());
+
+        ManuscriptDTO dto = new ManuscriptDTO(
                 m.getId(), m.getSeriesId(), seriesTitle,
                 series != null ? series.getStatus().name() : null,
                 m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
@@ -182,8 +312,10 @@ public class ManuscriptService {
                 m.getRejectionReason(),
                 m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
                 m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
-                annotations
+                annotations,
+                pages
         );
+        return dto;
     }
 
     private SubmissionDTO mapSubmissionToDTO(Submission s, Series series) {
