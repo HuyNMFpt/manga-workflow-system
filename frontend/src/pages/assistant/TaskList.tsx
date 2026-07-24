@@ -17,6 +17,7 @@ const PIN_COLORS: Record<string, string> = {
   other:      '#71717a',
 };
 import api from '@/lib/axios';
+import { convertImageIfNeeded } from '@/lib/imageConvert';
 import { taskService } from '@/services/taskService';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -309,6 +310,23 @@ const TaskList = () => {
 
   // Submit form state
   const [uploadFile,  setUploadFile]  = useState<File | null>(null);
+
+  // Handle file input — convert webp/avif/heic → png tự động, PSD/AI giữ nguyên
+  const handleUploadFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files?.[0] ?? null;
+    if (!raw) { setUploadFile(null); return; }
+    // Nếu không phải ảnh raster (PSD, AI...) → giữ nguyên
+    if (!raw.type.startsWith('image/') && !/\.(webp|avif|heic|heif|jfif)$/i.test(raw.name)) {
+      setUploadFile(raw); return;
+    }
+    try {
+      const f = await convertImageIfNeeded(raw);
+      setUploadFile(f);
+    } catch (err: any) {
+      alert(err.message ?? 'Lỗi xử lý ảnh');
+      e.target.value = '';
+    }
+  };
   const [note,        setNote]        = useState('');
   const [submitError, setSubmitError] = useState('');
 
@@ -718,7 +736,7 @@ const TaskList = () => {
                         ? 'border-blue-500/40 bg-blue-500/5'
                         : 'border-white/8 hover:border-blue-500/25 hover:bg-white/3'
                     }`}>
-                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
+                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={handleUploadFileChange} className="hidden" />
                       {uploadFile ? (
                         <>
                           <div className="w-12 h-12 rounded-lg bg-blue-500/15 border border-blue-500/25 flex items-center justify-center flex-shrink-0">
@@ -804,7 +822,7 @@ const TaskList = () => {
                         ? 'border-orange-500/40 bg-orange-500/5'
                         : 'border-white/8 hover:border-orange-500/25 hover:bg-white/3'
                     }`}>
-                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} className="hidden" />
+                      <input type="file" accept="image/*,.psd,.ai,.png" onChange={handleUploadFileChange} className="hidden" />
                       {uploadFile ? (
                         <>
                           <div className="w-12 h-12 rounded-lg bg-orange-500/15 border border-orange-500/25 flex items-center justify-center flex-shrink-0">

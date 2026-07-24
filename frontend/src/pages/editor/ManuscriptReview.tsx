@@ -85,8 +85,13 @@ const PIN_COLORS = [
 
 const AnnotationCanvas = ({ imageUrl, pins, pendingPin, onClickImage }: AnnotationCanvasProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [imgState, setImgState] = useState<'loading'|'loaded'|'error'>('loading');
+
+  // Reset state khi đổi trang (imageUrl thay đổi)
+  useEffect(() => { setImgState('loading'); }, [imageUrl]);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (imgState !== 'loaded') return; // chưa load xong thì không đặt pin (tọa độ sẽ sai)
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     const x = ((e.clientX - rect.left) / rect.width)  * 100;
@@ -96,34 +101,62 @@ const AnnotationCanvas = ({ imageUrl, pins, pendingPin, onClickImage }: Annotati
 
   return (
     <div
-      ref={containerRef}
-      onClick={handleClick}
-      className="relative w-full overflow-hidden rounded-xl border border-amber-500/25 cursor-crosshair select-none bg-black/20"
-      style={{ userSelect: 'none' }}>
-      <img
-        src={imageUrl}
-        alt="Bản thảo"
-        className="w-full object-contain max-h-[500px] pointer-events-none"
-        draggable={false}
-      />
-      {/* Overlay hint */}
-      <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg">
-        <p className="text-[10px] text-amber-300 font-semibold">Click lên trang để đặt pin đánh dấu</p>
-      </div>
-      {/* Existing pins */}
-      {pins.map((pin, i) => (
-        <div key={i}
-          style={{ left:`${pin.x}%`, top:`${pin.y}%`, backgroundColor: pin.color }}
-          className="absolute w-5 h-5 rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 flex items-center justify-center text-[9px] font-black text-white pointer-events-none z-10">
-          {pin.index + 1}
+      className="relative w-full overflow-hidden rounded-xl border border-amber-500/25 cursor-crosshair select-none bg-black/20 flex justify-center"
+      style={{ userSelect: 'none', minHeight: imgState !== 'loaded' ? 320 : undefined }}>
+
+      {/* Loading skeleton */}
+      {imgState === 'loading' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/3 animate-pulse">
+          <Loader2 className="w-6 h-6 text-amber-400/60 animate-spin" />
+          <p className="text-[11px] text-zinc-600">Đang tải trang bản thảo...</p>
         </div>
-      ))}
-      {/* Pending pin (chưa submit) */}
-      {pendingPin && (
+      )}
+
+      {/* Error state */}
+      {imgState === 'error' && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+          <AlertCircle className="w-6 h-6 text-red-400/70" />
+          <p className="text-[11px] text-zinc-500">Không tải được ảnh — kiểm tra kết nối hoặc F5</p>
+          <button
+            onClick={(e) => { e.stopPropagation(); setImgState('loading'); }}
+            className="text-[11px] text-amber-400 hover:underline">Thử lại</button>
+        </div>
+      )}
+
+      {/* Wrapper ôm sát ảnh — x,y % tính theo ảnh thật, không theo container full-width */}
+      <div ref={containerRef} onClick={handleClick} className="relative inline-block max-h-[500px]">
+        <img
+          key={imageUrl + (imgState === 'loading' ? '?' : '')}
+          src={imageUrl}
+          alt="Bản thảo"
+          onLoad={() => setImgState('loaded')}
+          onError={() => setImgState('error')}
+          className={`max-h-[500px] w-auto pointer-events-none transition-opacity duration-200 block ${
+            imgState === 'loaded' ? 'opacity-100' : 'opacity-0'
+          }`}
+          draggable={false}
+        />
+        {/* Existing pins */}
+        {pins.map((pin, i) => (
+          <div key={i}
+            style={{ left:`${pin.x}%`, top:`${pin.y}%`, backgroundColor: pin.color }}
+            className="absolute w-5 h-5 rounded-full border-2 border-white shadow-lg -translate-x-1/2 -translate-y-1/2 flex items-center justify-center text-[9px] font-black text-white pointer-events-none z-10">
+            {pin.index + 1}
+          </div>
+        ))}
+        {/* Pending pin (chưa submit) */}
+        {pendingPin && (
         <div
           style={{ left:`${pendingPin.x}%`, top:`${pendingPin.y}%` }}
           className="absolute w-5 h-5 rounded-full border-2 border-white bg-amber-400 shadow-lg -translate-x-1/2 -translate-y-1/2 animate-pulse pointer-events-none z-20">
           <div className="absolute inset-0 rounded-full bg-amber-400 animate-ping opacity-60" />
+        </div>
+      )}
+      </div>
+      {/* Overlay hint */}
+      {imgState === 'loaded' && (
+        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-lg pointer-events-none">
+          <p className="text-[10px] text-amber-300 font-semibold">Click lên trang để đặt pin đánh dấu</p>
         </div>
       )}
     </div>
@@ -216,6 +249,7 @@ const ManuscriptReview = () => {
   const [aErr,  setAErr]        = useState('');
   const [pendingPin, setPendingPin] = useState<{ x:number; y:number } | null>(null);
   const [localPins, setLocalPins] = useState<{ x:number; y:number; tag:string; comment:string; index:number; color:string }[]>([]);
+  const [msPageMap, setMsPageMap] = useState<Record<string, number>>({}); // manuscriptId → currentPage
 
   // Return-to-mangaka form
   const [rForm, setRForm] = useState({ type:'needs_minor_revision', reason:'' });
@@ -435,15 +469,33 @@ const ManuscriptReview = () => {
 
   const handleReturn = (msId: string) => {
     setRErr('');
-    if (rForm.reason.length < 20) { setRErr('Cần ít nhất 20 ký tự'); return; }
+    // reason được tự tổng hợp từ pin annotations trong ReturnBox
+    if (!rForm.reason.trim()) { setRErr('Cần có ghi chú (đặt pin annotation trước)'); return; }
     returnMutation.mutate({ id:msId, type:rForm.type, reason:rForm.reason });
+  };
+
+  // Trả lại trực tiếp — dùng bởi ReturnBox, không phụ thuộc rForm state
+  const handleDirectReturn = (msId: string, noteCount: number) => {
+    setRErr('');
+    if (noteCount === 0) { setRErr('Cần có ghi chú (đặt pin annotation trước)'); return; }
+    returnMutation.mutate({
+      id: msId,
+      type: 'needs_minor_revision',
+      reason: `${noteCount} ghi chú cần chỉnh sửa (xem chi tiết pin annotation)`,
+    });
   };
 
   const handleBoard = (msId: string) => {
     setBErr('');
-    if (!bForm.audienceSummary.trim()) { setBErr('Vui lòng nhập đối tượng độc giả'); return; }
-    if (!bForm.whyItWillSell.trim())   { setBErr('Vui lòng nhập lý do sẽ thành công'); return; }
-    boardMutation.mutate({ id:msId, data:bForm });
+    if (!bForm.whyItWillSell.trim())   { setBErr('Vui lòng nhập đánh giá vì sao sẽ thành công'); return; }
+    // audienceSummary lấy tự động từ thông tin Mangaka đã điền (targetAudience)
+    const m = manuscripts.find((x:any) => x.id === msId);
+    const parsed = parseDesc(m?.description);
+    const targetAudience = parsed.fields.find((f:any) =>
+      f.key.toLowerCase().includes('target') ||
+      f.key.toLowerCase().includes('đối tượng') ||
+      f.key.toLowerCase().includes('audience'))?.value ?? '';
+    boardMutation.mutate({ id:msId, data: { ...bForm, audienceSummary: targetAudience } });
   };
 
   // ── Loading / Error ──────────────────────────────────────────
@@ -534,7 +586,7 @@ const ManuscriptReview = () => {
 
               // Preview text cho row
               const previewText = parsed.mainText
-                || parsed.fields.map(f => `${fKey(f.key)}: ${f.value}`).join(' · ')
+                || parsed.fields.filter(f => !/schedule|lịch/i.test(f.key)).map(f => `${fKey(f.key)}: ${f.value}`).join(' · ')
                 || '';
 
               return (
@@ -549,6 +601,12 @@ const ManuscriptReview = () => {
                   <div
                     className="px-6 py-4 flex items-start gap-4 cursor-pointer hover:bg-white/[0.02] transition-colors"
                     onClick={() => handleExpand(m)}>
+                    {/* Ảnh bìa series */}
+                    <div className="w-11 h-14 rounded-lg bg-gradient-to-br from-amber-900/40 to-orange-900/20 border border-amber-500/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      {m.coverUrl
+                        ? <img src={m.coverUrl} alt={m.seriesTitle ?? m.title} className="w-full h-full object-cover" />
+                        : <FileText className="w-4 h-4 text-amber-400/40" />}
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${st.dot}`} />
@@ -619,45 +677,70 @@ const ManuscriptReview = () => {
 
                           {/* ── Annotation trực tiếp lên bản thảo ── */}
                           <div className="rounded-xl border border-amber-500/20 bg-amber-500/4 overflow-hidden">
-                            <div className="px-4 py-2.5 border-b border-amber-500/10">
+                            <div className="px-4 py-2.5 border-b border-amber-500/10 flex items-center justify-between">
                               <p className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                                <Pen className="w-3.5 h-3.5" />Bản thảo sơ bộ — click để đặt pin đánh dấu
+                                <Pen className="w-3.5 h-3.5" />Bản thảo sơ bộ — click để đặt pin
                               </p>
-                              <p className="text-[10px] text-zinc-600 mt-0.5">
-                                Click trực tiếp lên vị trí cần chỉnh sửa để đặt pin
-                              </p>
+                              {/* Page navigator */}
+                              {(m.pages?.length ?? 0) > 1 && (() => {
+                                const pageKey = `ms-page-${m.id}`;
+                                const curPage = (msPageMap[pageKey] ?? 1);
+                                return (
+                                  <div className="flex items-center gap-1.5">
+                                    <button onClick={() => setMsPageMap(p => ({...p, [pageKey]: Math.max(1, curPage-1)}))}
+                                      disabled={curPage <= 1}
+                                      className="w-6 h-6 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-xs flex items-center justify-center transition-colors">‹</button>
+                                    <span className="text-[11px] text-zinc-500 tabular-nums">{curPage}/{m.pages.length}</span>
+                                    <button onClick={() => setMsPageMap(p => ({...p, [pageKey]: Math.min(m.pages.length, curPage+1)}))}
+                                      disabled={curPage >= m.pages.length}
+                                      className="w-6 h-6 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-xs flex items-center justify-center transition-colors">›</button>
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <div className="p-4 space-y-3">
-                              {m.fileUrl ? (
+                              {(m.pages?.length ?? 0) > 0 ? (() => {
+                                const pageKey = `ms-page-${m.id}`;
+                                const curPage = msPageMap[pageKey] ?? 1;
+                                const pageObj = m.pages.find((p:any) => p.pageNumber === curPage) ?? m.pages[0];
+                                return (
+                                  <AnnotationCanvas
+                                    imageUrl={pageObj.imageUrl}
+                                    pins={[
+                                      ...(m.annotations ?? [])
+                                        .filter((a:any) => a.x != null && a.y != null && (a.pageNumber == null || a.pageNumber === curPage))
+                                        .map((a:any, i:number) => ({ x:a.x, y:a.y, index:i, color:PIN_COLORS[i % PIN_COLORS.length] })),
+                                      ...localPins
+                                        .filter(p => (p as any).pageNumber == null || (p as any).pageNumber === curPage)
+                                        .map((p, i) => ({
+                                          ...p,
+                                          index: (m.annotations?.filter((a:any)=>a.x!=null)?.length??0)+i,
+                                          color: PIN_COLORS[((m.annotations?.filter((a:any)=>a.x!=null)?.length??0)+i)%PIN_COLORS.length],
+                                        })),
+                                    ]}
+                                    pendingPin={pendingPin}
+                                    onClickImage={pin => { setPendingPin(pin); setAErr(''); }}
+                                  />
+                                );
+                              })() : (m.fileUrl && m.fileUrl !== 'pending_upload') ? (
+                                // Fallback: manuscript cũ chỉ có fileUrl
                                 /\.(jpg|jpeg|png|gif|webp)$/i.test(m.fileUrl) ? (
-                                  // ── Ảnh: click-to-pin ──
                                   <AnnotationCanvas
                                     imageUrl={m.fileUrl}
                                     pins={[
-                                      // Pins đã lưu từ backend (m.annotations có x, y)
                                       ...(m.annotations ?? [])
-                                        .filter((a: any) => a.x != null && a.y != null)
-                                        .map((a: any, i: number) => ({
-                                          x:     a.x,
-                                          y:     a.y,
-                                          index: i,
-                                          color: PIN_COLORS[i % PIN_COLORS.length],
-                                        })),
-                                      // Pins vừa tạo trong session (chưa reload)
-                                      ...localPins.map((p, i) => ({
+                                        .filter((a:any) => a.x != null && a.y != null)
+                                        .map((a:any, i:number) => ({ x:a.x, y:a.y, index:i, color:PIN_COLORS[i%PIN_COLORS.length] })),
+                                      ...localPins.map((p,i) => ({
                                         ...p,
-                                        index: (m.annotations?.filter((a:any) => a.x != null)?.length ?? 0) + i,
-                                        color: PIN_COLORS[
-                                          ((m.annotations?.filter((a:any) => a.x != null)?.length ?? 0) + i)
-                                          % PIN_COLORS.length
-                                        ],
+                                        index: (m.annotations?.filter((a:any)=>a.x!=null)?.length??0)+i,
+                                        color: PIN_COLORS[((m.annotations?.filter((a:any)=>a.x!=null)?.length??0)+i)%PIN_COLORS.length],
                                       })),
                                     ]}
                                     pendingPin={pendingPin}
                                     onClickImage={pin => { setPendingPin(pin); setAErr(''); }}
                                   />
                                 ) : (
-                                  // ── PDF / file khác: embed + ghi chú text ──
                                   <div className="space-y-2">
                                     <div className="rounded-xl overflow-hidden border border-white/8">
                                       <div className="flex items-center justify-between px-4 py-2.5 bg-white/3 border-b border-white/5">
@@ -665,12 +748,10 @@ const ManuscriptReview = () => {
                                           <FileText className="w-3.5 h-3.5 text-amber-400" />File bản thảo
                                         </span>
                                         <div className="flex items-center gap-2">
-                                          <a href={m.fileUrl} download
-                                            className="text-[11px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
+                                          <a href={m.fileUrl} download className="text-[11px] text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
                                             <Download className="w-3 h-3" />Tải về
                                           </a>
-                                          <a href={m.fileUrl} target="_blank" rel="noopener noreferrer"
-                                            className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
+                                          <a href={m.fileUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 transition-colors">
                                             <ExternalLink className="w-3 h-3" />Mở tab mới
                                           </a>
                                         </div>
@@ -684,10 +765,6 @@ const ManuscriptReview = () => {
                                         </div>
                                       )}
                                     </div>
-                                    <p className="text-[10px] text-zinc-600 flex items-center gap-1">
-                                      <AlertCircle className="w-3 h-3" />
-                                      File không phải ảnh — dùng form bên dưới để ghi chú theo số trang
-                                    </p>
                                   </div>
                                 )
                               ) : (
@@ -750,7 +827,9 @@ const ManuscriptReview = () => {
 
                           {/* Actions */}
                           <div className="grid grid-cols-2 gap-3 pt-1">
-                            <ReturnBox m={m} rForm={rForm} setRForm={setRForm} rErr={rErr} onSubmit={() => handleReturn(m.id)} isPending={returnMutation.isPending} />
+                            <ReturnBox m={m} rErr={rErr} setRErr={setRErr}
+                              returnMutation={returnMutation}
+                              onDirectReturn={handleDirectReturn} />
                             <BoardBox m={m} onApprove={() => approveMutation.mutate(m.id)} isPending={approveMutation.isPending} />
                           </div>
                         </div>
@@ -865,10 +944,57 @@ const ManuscriptReview = () => {
 
 // ─── Sub-components ───────────────────────────────────────────────
 
-const ManuscriptInfo = ({ m, parsed }: { m: any; parsed: ReturnType<typeof parseDesc> }) => (
+const ManuscriptInfo = ({ m, parsed }: { m: any; parsed: ReturnType<typeof parseDesc> }) => {
+  const [pageIdx, setPageIdx] = useState(1);
+  const pages: any[] = m.pages ?? [];
+
+  return (
   <div className="space-y-3">
-    {/* File preview */}
-    {m.fileUrl && (
+    {/* Multi-page preview (bản thảo mới) */}
+    {pages.length > 0 ? (
+      <div className="rounded-xl border border-white/8 overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-white/3 border-b border-white/5">
+          <span className="text-[11px] font-semibold text-zinc-400">
+            Bản thảo — {pages.length} trang
+          </span>
+          {pages.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setPageIdx(p => Math.max(1, p - 1))}
+                disabled={pageIdx <= 1}
+                className="w-6 h-6 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-xs flex items-center justify-center transition-colors">‹</button>
+              <span className="text-[11px] text-zinc-500 tabular-nums">{pageIdx}/{pages.length}</span>
+              <button onClick={() => setPageIdx(p => Math.min(pages.length, p + 1))}
+                disabled={pageIdx >= pages.length}
+                className="w-6 h-6 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-xs flex items-center justify-center transition-colors">›</button>
+            </div>
+          )}
+        </div>
+        {(() => {
+          const pageObj = pages.find((p:any) => p.pageNumber === pageIdx) ?? pages[0];
+          return (
+            <img src={pageObj.imageUrl} alt={`Trang ${pageIdx}`}
+              className="w-full max-h-80 object-contain bg-black/20" />
+          );
+        })()}
+        {/* Thumbnail strip */}
+        {pages.length > 1 && (
+          <div className="flex gap-1.5 overflow-x-auto p-2 bg-white/2">
+            {pages.map((p:any) => (
+              <button key={p.pageNumber}
+                onClick={() => setPageIdx(p.pageNumber)}
+                className={`flex-shrink-0 w-9 h-12 rounded-md overflow-hidden border transition-all ${
+                  pageIdx === p.pageNumber
+                    ? 'border-emerald-400/60 ring-1 ring-emerald-400/30'
+                    : 'border-white/8 hover:border-white/20'
+                }`}>
+                <img src={p.thumbnailUrl ?? p.imageUrl} alt={`Trang ${p.pageNumber}`}
+                  className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    ) : (m.fileUrl && m.fileUrl !== 'pending_upload') && (
       <div className="rounded-xl border border-white/8 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-2.5 bg-white/3 border-b border-white/5">
           <span className="text-[11px] font-semibold text-zinc-400">Bản thảo đính kèm</span>
@@ -900,12 +1026,15 @@ const ManuscriptInfo = ({ m, parsed }: { m: any; parsed: ReturnType<typeof parse
         <InfoBlock label="Ngày nộp" value={new Date(m.submittedAt).toLocaleDateString('vi-VN')} />
       )}
       {parsed.mainText && <InfoBlock label="Mô tả" value={parsed.mainText} span />}
-      {parsed.fields.map((f, i) => (
-        <InfoBlock key={i} label={fKey(f.key)} value={f.value} />
-      ))}
+      {parsed.fields
+        .filter(f => !/schedule|lịch/i.test(f.key))
+        .map((f, i) => (
+          <InfoBlock key={i} label={fKey(f.key)} value={f.value} />
+        ))}
     </div>
   </div>
-);
+  );
+};
 
 const ExistingAnnotations = ({
   annotations, localPins
@@ -970,41 +1099,31 @@ const ExistingAnnotations = ({
   );
 };
 
-const ReturnBox = ({ m, rForm, setRForm, rErr, onSubmit, isPending }: any) => (
-  <div className="rounded-xl border border-orange-500/15 bg-orange-500/4 p-4 space-y-3">
-    <p className="text-[11px] font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
-      <RotateCcw className="w-3.5 h-3.5" />Trả lại Mangaka
-    </p>
-    <div className="grid grid-cols-2 gap-2">
-      {[
-        { v:'needs_minor_revision', l:'Sửa nhỏ',  desc:'Thoại, vài trang',     c:'bg-orange-500/15 border-orange-500/25 text-orange-300' },
-        { v:'needs_major_revision', l:'Sửa lớn',  desc:'Kịch bản, nhiều trang', c:'bg-red-500/15 border-red-500/25 text-red-300'          },
-      ].map(opt => (
-        <button key={opt.v}
-          onClick={() => setRForm((f: any) => ({ ...f, type:opt.v }))}
-          className={`flex flex-col gap-0.5 p-2.5 rounded-xl border text-left transition-all ${
-            rForm.type === opt.v ? opt.c : 'bg-white/3 border-white/6 hover:bg-white/5'
-          }`}>
-          <span className={`text-[12px] font-bold ${rForm.type===opt.v?'':'text-zinc-500'}`}>{opt.l}</span>
-          <span className={`text-[10px] ${rForm.type===opt.v?'opacity-70':'text-zinc-700'}`}>{opt.desc}</span>
-        </button>
-      ))}
+const ReturnBox = ({ m, rErr, setRErr, returnMutation, onDirectReturn }: any) => {
+  const noteCount = (m?.annotations ?? []).length;
+  const canReturn = noteCount > 0;
+
+  return (
+    <div className="rounded-xl border border-orange-500/15 bg-orange-500/4 p-4 space-y-3">
+      <p className="text-[11px] font-bold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+        <RotateCcw className="w-3.5 h-3.5" />Trả lại Mangaka
+      </p>
+      <p className="text-[11px] text-zinc-500 leading-relaxed">
+        {canReturn
+          ? <>Đã có <span className="text-orange-300 font-semibold">{noteCount} ghi chú</span> ở phần pin annotation. Bấm nút bên dưới để trả bản thảo về cho Mangaka chỉnh sửa theo các ghi chú đó.</>
+          : <>Chưa có ghi chú nào. Hãy đặt pin annotation và ghi chú cần sửa ở phần trên trước khi trả lại.</>}
+      </p>
+      {rErr && <p className="text-xs text-red-400">{rErr}</p>}
+      <button onClick={() => onDirectReturn(m.id, noteCount)}
+        disabled={returnMutation.isPending || !canReturn}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600/20 border border-orange-500/25 text-orange-300 text-sm font-semibold hover:bg-orange-600/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+        {returnMutation.isPending
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</>
+          : <><RotateCcw className="w-3.5 h-3.5"/>Trả lại Mangaka {canReturn && `(${noteCount} ghi chú)`}</>}
+      </button>
     </div>
-    <textarea rows={3} value={rForm.reason}
-      onChange={e => setRForm((f: any) => ({ ...f, reason:e.target.value }))}
-      placeholder="Mô tả cụ thể cần chỉnh sửa..."
-      className="w-full bg-white/5 border border-white/8 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-orange-500/40 resize-none transition-all" />
-    <div className="h-0.5 bg-white/5 rounded-full overflow-hidden">
-      <div className={`h-full rounded-full transition-all ${rForm.reason.length>=20?'bg-emerald-500':'bg-orange-500/40'}`}
-        style={{ width:`${Math.min((rForm.reason.length/20)*100,100)}%` }} />
-    </div>
-    {rErr && <p className="text-xs text-red-400">{rErr}</p>}
-    <button onClick={onSubmit} disabled={isPending}
-      className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-orange-600/20 border border-orange-500/25 text-orange-300 text-sm font-semibold hover:bg-orange-600/30 disabled:opacity-50 transition-all">
-      {isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</> : <><RotateCcw className="w-3.5 h-3.5"/>Trả lại</>}
-    </button>
-  </div>
-);
+  );
+};
 
 const BoardBox = ({ m, onApprove, isPending }: {
   m: any;
@@ -1031,16 +1150,21 @@ const BoardBox = ({ m, onApprove, isPending }: {
   </div>
 );
 
-const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending, onReset, isResetPending }: any) => (
+const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending, onReset, isResetPending }: any) => {
+  return (
   <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/4 p-4 space-y-4">
     <p className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
       <ArrowUpRight className="w-3.5 h-3.5" />Hồ sơ nộp Board
     </p>
+
+    {/* ── Đánh giá của Editor ── */}
+    <p className="text-[10px] font-bold text-emerald-400/70 uppercase tracking-wider flex items-center gap-1">
+      <MessageSquare className="w-3 h-3" />Đánh giá của bạn (Tantou Editor)
+    </p>
     {[
-      { key:'audienceSummary',    label:'Đối tượng độc giả *', icon:Users,      ph:'Nam 15-25 tuổi yêu thích action, fantasy...', required:true  },
-      { key:'marketingAngle',     label:'Điểm độc đáo / USP',  icon:Tag,        ph:'Hệ thống magic chưa có trên thị trường...', required:false },
-      { key:'whyItWillSell',      label:'Vì sao sẽ thành công *', icon:TrendingUp, ph:'Xu hướng isekai đang tăng, tác giả có 50k follower...', required:true },
-      { key:'editorNote',         label:'Ghi chú cho Board',   icon:MessageSquare, ph:'Thông tin bổ sung muốn chia sẻ...', required:false },
+      { key:'marketingAngle',  label:'Điểm độc đáo / USP',    icon:Tag,          ph:'Điểm nổi bật giúp series khác biệt trên thị trường...', required:false },
+      { key:'whyItWillSell',   label:'Vì sao sẽ thành công *', icon:TrendingUp,  ph:'Đánh giá tiềm năng thương mại, xu hướng thị trường, thế mạnh tác giả...', required:true },
+      { key:'editorNote',      label:'Ghi chú cho Board',     icon:MessageSquare, ph:'Nhận xét, khuyến nghị hoặc thông tin bổ sung cho Hội đồng...', required:false },
     ].map(field => (
       <div key={field.key}>
         <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-1.5 flex items-center gap-1">
@@ -1084,6 +1208,7 @@ const FullBoardForm = ({ bForm, setBForm, bErr, onSubmit, isPending, onReset, is
       </button>
     </div>
   </div>
-);
+  );
+};
 
 export default ManuscriptReview;

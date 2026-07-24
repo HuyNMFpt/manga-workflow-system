@@ -3,6 +3,10 @@ import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { Feather, X, ChevronDown, Upload, Check, FileText, Users, Loader2, ArrowRight, Sparkles } from 'lucide-react'
 import { GENRE_OPTIONS } from '@/lib/constants'
 import api from '@/lib/axios'
+import { convertImageIfNeeded, convertImageFilesIfNeeded } from '@/lib/imageConvert'
+
+type DraftMode = 'image' | 'pdf'
+interface DraftFileItem { id: string; file: File; preview: string }
 
 interface Props {
   onClose: () => void
@@ -56,8 +60,12 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
     plotSummary:      '',
     coverLetter:      '',
   })
-  const [draftFile,    setDraftFile]    = useState<File | null>(null)
-  const [draftPreview, setDraftPreview] = useState<string | null>(null)
+  const [draftMode,     setDraftMode]     = useState<DraftMode>('image')
+  const [draftItems,    setDraftItems]    = useState<DraftFileItem[]>([])
+  const [draftPdfFile,  setDraftPdfFile]  = useState<File | null>(null)
+  const [draftPdfPages, setDraftPdfPages] = useState<number | null>(null)
+  const [draftDragIdx,  setDraftDragIdx]  = useState<number | null>(null)
+  const [draftOverIdx,  setDraftOverIdx]  = useState<number | null>(null)
   const [msError,      setMsError]      = useState('')
 
   // ── Mutation 1: Create/Update series ────────────────────────
@@ -92,7 +100,7 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
     onError: (e: any) => setSeriesError(e.response?.data?.message ?? 'Tạo series thất bại'),
   })
 
-  // ── Mutation 2: Submit manuscript ───────────────────────────
+  // ── Mutation 2: Submit manuscript + upload trang bản thảo ───
   const submitMsMutation = useMutation({
     mutationFn: async () => {
       const fd = new FormData()
@@ -103,15 +111,34 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
       fd.append('characterSummary',    msForm.characterSummary)
       fd.append('plotSummary',         msForm.plotSummary || '')
       fd.append('coverLetter',         msForm.coverLetter || '')
-      if (draftFile) fd.append('file', draftFile)
       const res = await api.post('/manuscripts/submit', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
-      return res.data.data?.assignedEditorName ?? null
+      const manuscriptId = res.data.data?.manuscriptId ?? null
+      const editorName   = res.data.data?.assignedEditorName ?? null
+
+      // Upload trang bản thảo sau khi có manuscriptId
+      if (manuscriptId) {
+        if (draftMode === 'image' && draftItems.length > 0) {
+          const pfd = new FormData()
+          draftItems.forEach(item => pfd.append('files', item.file))
+          await api.post(`/manuscripts/${manuscriptId}/pages/batch`, pfd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+        } else if (draftMode === 'pdf' && draftPdfFile) {
+          const pfd = new FormData()
+          pfd.append('file', draftPdfFile)
+          await api.post(`/manuscripts/${manuscriptId}/pages/upload-pdf`, pfd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+        }
+      }
+      return editorName
     },
     onSuccess: (editorName) => {
       setAssignedEditor(editorName)
       qc.invalidateQueries({ queryKey: ['series'] })
+      qc.invalidateQueries({ queryKey: ['editor', 'manuscripts'] })
       onSuccess?.()
       setStep('success')
     },
@@ -119,15 +146,35 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   })
 
   // ── Handlers ────────────────────────────────────────────────
-  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null
-    setCoverFile(f)
-    setCoverPreview(f ? URL.createObjectURL(f) : null)
+  const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files?.[0] ?? null
+    if (!raw) { setCoverFile(null); setCoverPreview(null); return }
+    try {
+      const f = await convertImageIfNeeded(raw)
+      setCoverFile(f)
+      setCoverPreview(URL.createObjectURL(f))
+    } catch (err: any) {
+      alert(err.message ?? 'Lỗi xử lý ảnh bìa')
+      e.target.value = ''
+    }
   }
-  const handleDraftChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0] ?? null
-    setDraftFile(f)
-    setDraftPreview(f && f.type.startsWith('image/') ? URL.createObjectURL(f) : null)
+  const handleDraftChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.files?.[0] ?? null
+    if (!raw) { setDraftFile(null); setDraftPreview(null); return }
+    // PDF giữ nguyên, chỉ convert ảnh
+    if (!raw.type.startsWith('image/') && !/\.(webp|avif|heic|heif|jfif)$/i.test(raw.name)) {
+      setDraftFile(raw)
+      setDraftPreview(null)
+      return
+    }
+    try {
+      const f = await convertImageIfNeeded(raw)
+      setDraftFile(f)
+      setDraftPreview(URL.createObjectURL(f))
+    } catch (err: any) {
+      alert(err.message ?? 'Lỗi xử lý bản thảo')
+      e.target.value = ''
+    }
   }
 
   const handleStepOne = (e: React.FormEvent) => {
@@ -142,7 +189,8 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
   const handleStepTwo = (e: React.FormEvent) => {
     e.preventDefault()
     setMsError('')
-    if (!draftFile)             { setMsError('Vui lòng chọn file bản thảo sơ bộ'); return }
+    if (!draftMode || (draftMode === 'image' && draftItems.length === 0)) { setMsError('Vui lòng chọn ít nhất 1 trang bản thảo'); return }
+    if (draftMode === 'pdf' && !draftPdfFile) { setMsError('Vui lòng chọn file PDF bản thảo'); return }
     if (!msForm.targetAudience) { setMsError('Vui lòng chọn đối tượng độc giả'); return }
     submitMsMutation.mutate()
   }
@@ -221,7 +269,7 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
                       ? <img src={coverPreview} alt="cover" className="w-full h-full object-cover" />
                       : <Feather className="w-5 h-5 text-zinc-700" />}
                   </div>
-                  <input type="file" accept="image/png,image/jpeg,image/jpg" onChange={handleCoverChange} className="hidden" />
+                  <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/avif" onChange={handleCoverChange} className="hidden" />
                   <p className="text-[10px] text-zinc-700 mt-1 text-center">Ảnh bìa</p>
                 </label>
 
@@ -321,39 +369,132 @@ export default function CreateSeriesModal({ onClose, onSuccess, existingSeriesId
                   Bản thảo sơ bộ <span className="text-red-400">*</span>
                   <span className="text-zinc-700 normal-case tracking-normal font-normal ml-1">(sketch / rough pages)</span>
                 </label>
-                <label className={`flex items-center gap-4 w-full border-2 border-dashed rounded-xl p-4 cursor-pointer transition-all ${
-                  draftFile ? 'border-violet-500/40 bg-violet-500/5' : 'border-white/8 hover:border-violet-500/25 hover:bg-white/3'
-                }`}>
-                  <input type="file" accept="image/*,.pdf" onChange={handleDraftChange} className="hidden" />
-                  {draftPreview ? (
-                    <div className="w-16 h-20 rounded-lg overflow-hidden flex-shrink-0 border border-violet-500/20">
-                      <img src={draftPreview} alt="draft" className="w-full h-full object-cover" />
-                    </div>
-                  ) : draftFile ? (
-                    <div className="w-16 h-20 rounded-lg bg-violet-500/10 border border-violet-500/20 flex flex-col items-center justify-center gap-1 flex-shrink-0">
-                      <FileText className="w-6 h-6 text-violet-400" />
-                      <span className="text-[9px] text-violet-400">PDF</span>
-                    </div>
-                  ) : (
-                    <div className="w-16 h-20 rounded-lg bg-white/4 border border-white/8 flex items-center justify-center flex-shrink-0">
-                      <Upload className="w-5 h-5 text-zinc-700" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    {draftFile ? (
-                      <>
-                        <p className="text-sm font-semibold text-white truncate">{draftFile.name}</p>
-                        <p className="text-[11px] text-zinc-500 mt-0.5">{(draftFile.size / 1024).toFixed(0)} KB</p>
-                        <p className="text-[10px] text-violet-400 mt-1">Click để đổi file</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm text-zinc-400">Click để chọn file</p>
-                        <p className="text-[11px] text-zinc-600 mt-0.5">PNG · JPG · PDF</p>
-                      </>
+
+                {/* Mode toggle */}
+                <div className="flex gap-2 mb-3">
+                  {(['image', 'pdf'] as DraftMode[]).map(m => (
+                    <button key={m} type="button" onClick={() => {
+                      setDraftMode(m)
+                      setDraftItems([]); setDraftPdfFile(null); setDraftPdfPages(null)
+                    }}
+                      className={`flex-1 py-2 rounded-xl text-[12px] font-semibold border transition-all ${
+                        draftMode === m
+                          ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
+                          : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300'
+                      }`}>
+                      {m === 'image' ? '🖼 Nhiều ảnh' : '📄 PDF'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Image mode */}
+                {draftMode === 'image' && (
+                  <div className="space-y-2">
+                    <label className={`flex flex-col items-center justify-center w-full h-20 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                      draftItems.length > 0 ? 'border-violet-500/40 bg-violet-500/5' : 'border-white/8 hover:border-violet-500/25'
+                    }`}>
+                      <input type="file" accept="image/*" multiple className="hidden"
+                        onChange={async e => {
+                          if (!e.target.files) return
+                          const accepted = Array.from(e.target.files)
+                            .filter(f => f.type.startsWith('image/') || /\.(webp|avif|heic|heif|jfif)$/i.test(f.name))
+                          if (accepted.length === 0) return
+                          try {
+                            const converted = await convertImageFilesIfNeeded(accepted)
+                            const items: DraftFileItem[] = converted.map(f => ({
+                              id: Math.random().toString(36).slice(2), file: f, preview: URL.createObjectURL(f)
+                            }))
+                            setDraftItems(prev => [...prev, ...items])
+                          } catch (err: any) {
+                            alert(err.message ?? 'Lỗi xử lý ảnh')
+                          }
+                          e.target.value = ''
+                        }} />
+                      <Upload className="w-5 h-5 text-zinc-700 mb-1" />
+                      <p className="text-[11px] text-zinc-600">Click để chọn nhiều ảnh</p>
+                    </label>
+                    {draftItems.length > 0 && (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {draftItems.map((item, idx) => (
+                          <div key={item.id}
+                            draggable
+                            onDragStart={() => setDraftDragIdx(idx)}
+                            onDragOver={e => { e.preventDefault(); setDraftOverIdx(idx) }}
+                            onDrop={() => {
+                              if (draftDragIdx === null || draftDragIdx === idx) return
+                              const next = [...draftItems]
+                              const [moved] = next.splice(draftDragIdx, 1)
+                              next.splice(idx, 0, moved)
+                              setDraftItems(next)
+                              setDraftDragIdx(null); setDraftOverIdx(null)
+                            }}
+                            onDragEnd={() => { setDraftDragIdx(null); setDraftOverIdx(null) }}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-grab transition-all ${
+                              draftOverIdx === idx ? 'border-violet-500/50 bg-violet-500/10' : 'border-white/6 bg-white/3'
+                            } ${draftDragIdx === idx ? 'opacity-40' : ''}`}>
+                            <span className="text-[10px] text-zinc-600 w-4 font-mono">{idx+1}</span>
+                            <img src={item.preview} className="w-7 h-7 rounded object-cover border border-white/10" />
+                            <p className="flex-1 text-[11px] text-zinc-400 truncate">{item.file.name}</p>
+                            <button type="button" onClick={() => {
+                              URL.revokeObjectURL(item.preview)
+                              setDraftItems(prev => prev.filter(f => f.id !== item.id))
+                            }} className="text-zinc-700 hover:text-red-400"><X className="w-3 h-3"/></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {draftItems.length > 0 && (
+                      <p className="text-[10px] text-zinc-700">
+                        {draftItems.length} trang · Kéo thả để sắp xếp thứ tự
+                      </p>
                     )}
                   </div>
-                </label>
+                )}
+
+                {/* PDF mode */}
+                {draftMode === 'pdf' && (
+                  <div className="space-y-2">
+                    <label className={`flex items-center gap-3 w-full border-2 border-dashed rounded-xl p-3 cursor-pointer transition-all ${
+                      draftPdfFile ? 'border-violet-500/40 bg-violet-500/5' : 'border-white/8 hover:border-violet-500/25'
+                    }`}>
+                      <input type="file" accept=".pdf,application/pdf" className="hidden"
+                        onChange={async e => {
+                          const f = e.target.files?.[0] ?? null
+                          setDraftPdfFile(f)
+                          if (f) {
+                            try {
+                              const buf = await f.arrayBuffer()
+                              const text = new TextDecoder('latin1').decode(buf)
+                              const matches = text.match(/\/Type\s*\/Page[^s]/g)
+                              setDraftPdfPages(matches ? matches.length : null)
+                            } catch { setDraftPdfPages(null) }
+                          } else { setDraftPdfPages(null) }
+                        }} />
+                      {draftPdfFile ? (
+                        <>
+                          <div className="w-10 h-12 rounded bg-violet-500/10 border border-violet-500/20 flex flex-col items-center justify-center flex-shrink-0">
+                            <FileText className="w-5 h-5 text-violet-400" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-white truncate">{draftPdfFile.name}</p>
+                            <p className="text-[11px] text-zinc-500">
+                              {(draftPdfFile.size/1024/1024).toFixed(1)} MB
+                              {draftPdfPages != null && ` · ~${draftPdfPages} trang`}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-5 h-5 text-zinc-700" />
+                          <div>
+                            <p className="text-sm text-zinc-400">Click để chọn file PDF</p>
+                            <p className="text-[11px] text-zinc-600">Tối đa 50MB</p>
+                          </div>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                )}
               </div>
 
               {/* Description */}

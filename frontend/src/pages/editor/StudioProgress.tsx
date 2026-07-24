@@ -65,10 +65,206 @@ const DeadlineDisplay = ({ deadlineDate, daysUntilDeadline }: { deadlineDate?: s
   );
 };
 
+/* ── ChapterMiniCard — 1 dòng hiển thị chapter với deadline riêng ── */
+const ChapterMiniCard = ({
+  chapter, variant, onPublish,
+}: {
+  chapter: any;
+  variant: 'urgent' | 'upcoming' | 'ready';
+  onPublish?: (c:any) => void;
+}) => {
+  const cd = useDeadlineCountdown(chapter.deadline);
+  const isReady = chapter.status === 'approved';
+
+  // Style theo variant
+  const style = variant === 'urgent'
+    ? 'bg-red-500/6 border-red-500/20'
+    : variant === 'ready'
+    ? 'bg-emerald-500/6 border-emerald-500/20'
+    : 'bg-white/3 border-white/6';
+
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${style}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <span className="text-[12px] font-bold text-white truncate">
+              Chapter {chapter.chapterNumber}{chapter.title ? `: ${chapter.title}` : ''}
+            </span>
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+              chapter.status === 'approved'    ? 'bg-emerald-500/15 text-emerald-400' :
+              chapter.status === 'in_progress' ? 'bg-blue-500/15 text-blue-400'       :
+              chapter.status === 'draft'       ? 'bg-zinc-500/15 text-zinc-400'       :
+              'bg-white/5 text-zinc-500'
+            }`}>
+              {chapter.status === 'approved'    ? 'Sẵn sàng' :
+               chapter.status === 'in_progress' ? 'Đang làm' :
+               chapter.status === 'draft'       ? 'Bản nháp' : chapter.status}
+            </span>
+          </div>
+          <div className="text-[10px] text-zinc-500 flex items-center gap-1">
+            <Clock className="w-2.5 h-2.5 flex-shrink-0" />
+            {chapter.deadline
+              ? cd?.isOverdue
+                ? <span className="text-red-400 font-semibold">Quá hạn {cd.days > 0 ? `${cd.days} ngày` : `${cd.hours}g ${cd.minutes}p`}</span>
+                : cd
+                ? <span className={cd.days < 1 ? 'text-red-400 font-semibold' : cd.days <= 2 ? 'text-amber-400' : 'text-zinc-500'}>
+                    Hạn {new Date(chapter.deadline).toLocaleDateString('vi-VN')} · {cd.days > 0 ? `còn ${cd.days} ngày` : `còn ${cd.hours}g ${cd.minutes}p`}
+                  </span>
+                : `Hạn ${new Date(chapter.deadline).toLocaleDateString('vi-VN')}`
+              : <span className="text-zinc-700">Chưa có deadline</span>}
+          </div>
+        </div>
+        {isReady && onPublish && (
+          <button onClick={() => onPublish(chapter)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/25 text-teal-300 text-[10px] font-semibold hover:bg-teal-500/25 transition-all flex-shrink-0">
+            <Send className="w-3 h-3" />Xuất bản
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ── SeriesCard — 1 card cho series, tự fetch chapters ── */
+const SeriesCard = ({
+  series: s, onPublish,
+}: { series: any; onPublish: (c:any)=>void }) => {
+  const pct        = s.completionPercent ?? (s.totalPages > 0 ? Math.round((s.completedPages/s.totalPages)*100) : 0);
+  const isUrgent   = s.isUrgent || s.overdueTasks > 0 || s.daysUntilDeadline <= 2;
+  const assistants = s.assistantNames ?? s.assistants ?? [];
+
+  // Auto-fetch chapters của series này (cached tự động bởi React Query)
+  const { data: chaptersData = [] } = useQuery({
+    queryKey: ['chapters', s.seriesId],
+    queryFn: async () => {
+      const r = await api.get(`/chapters/series/${s.seriesId}`);
+      return r.data.data ?? [];
+    },
+    enabled: !!s.seriesId,
+    staleTime: 30_000,
+  });
+  const chapters: any[] = Array.isArray(chaptersData) ? chaptersData : [];
+
+  // Phân loại chapter:
+  // - Sắp đến hạn: chapter số nhỏ nhất chưa published
+  // - Kế tiếp: các chapter chưa published khác
+  // - Đã xuất bản: gộp lại chỉ đếm số lượng
+  const unpublished = chapters
+    .filter(c => c.status !== 'published')
+    .sort((a,b) => a.chapterNumber - b.chapterNumber);
+  const currentChapter  = unpublished[0];
+  const upcomingChapters = unpublished.slice(1);
+  const publishedCount  = chapters.filter(c => c.status === 'published').length;
+
+  return (
+    <div className={`rounded-2xl border bg-white/[0.015] overflow-hidden ${isUrgent ? 'border-red-500/20':'border-white/5'}`}>
+      <div className="px-6 py-5">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="text-[13px] font-bold text-white">{s.seriesTitle ?? s.title}</h3>
+              {isUrgent && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 tracking-wider">URGENT</span>}
+              {publishedCount > 0 && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                  {publishedCount} đã xuất bản
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-zinc-600">
+              {s.mangakaName}
+              {s.publishSchedule && (
+                <span className="ml-1.5 text-zinc-700">
+                  · lịch {s.publishSchedule === 'weekly' ? 'hàng tuần' : s.publishSchedule === 'biweekly' ? '2 tuần/lần' : 'hàng tháng'}
+                </span>
+              )}
+            </p>
+          </div>
+          <span className={`text-2xl font-black font-['Syne'] ${pct>=80?'text-emerald-400':pct>=50?'text-amber-400':'text-red-400'}`}>{Math.round(pct)}%</span>
+        </div>
+
+        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-4">
+          <div className={`h-full rounded-full transition-all ${pct>=80?'bg-emerald-500':pct>=50?'bg-amber-500':'bg-red-500'}`} style={{width:`${Math.min(pct,100)}%`}}/>
+        </div>
+
+        {/* Grid task stats — cho chapter đang làm */}
+        <div className="grid grid-cols-4 gap-3 text-center">
+          {[
+            { label:'Tổng',      value:s.totalPages,      color:'text-zinc-400'    },
+            { label:'Hoàn thành',value:s.completedPages,  color:'text-emerald-400' },
+            { label:'Đang làm',  value:s.inProgressPages, color:'text-blue-400'    },
+            { label:'Quá hạn',   value:s.overdueTasks,    color:s.overdueTasks>0?'text-red-400':'text-zinc-700' },
+          ].map((x,j)=>(
+            <div key={j} className="bg-white/3 rounded-xl py-2.5">
+              <div className={`text-lg font-black font-['Syne'] ${x.color}`}>{x.value ?? 0}</div>
+              <div className="text-[10px] text-zinc-700 mt-0.5">{x.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Trợ lý */}
+        {assistants.length > 0 && (
+          <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-white/5">
+            <span className="text-[10px] text-zinc-700 mr-1">Trợ lý:</span>
+            {assistants.map((a:string,j:number)=>(
+              <span key={j} className="text-[11px] text-zinc-500 bg-white/4 border border-white/6 px-2 py-0.5 rounded-md">{a}</span>
+            ))}
+          </div>
+        )}
+
+        {/* ═══ Chapter breakdown ═══ */}
+        {unpublished.length > 0 ? (
+          <div className="mt-4 pt-4 border-t border-white/5 space-y-2.5">
+            {/* Chapter sắp đến hạn */}
+            {currentChapter && (
+              <div className="space-y-1.5">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
+                  <AlertTriangle className="w-2.5 h-2.5" />Chapter sắp đến hạn
+                </p>
+                <ChapterMiniCard
+                  chapter={currentChapter}
+                  variant={
+                    currentChapter.status === 'approved' ? 'ready' :
+                    (currentChapter.deadline && new Date(currentChapter.deadline+'T23:59:59').getTime() - Date.now() < 3*86400000)
+                      ? 'urgent' : 'upcoming'
+                  }
+                  onPublish={onPublish}
+                />
+              </div>
+            )}
+
+            {/* Các chapter kế tiếp */}
+            {upcomingChapters.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-[9px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
+                  <BookOpen className="w-2.5 h-2.5" />Chapter kế tiếp ({upcomingChapters.length})
+                </p>
+                <div className="space-y-1.5">
+                  {upcomingChapters.map((c:any) => (
+                    <ChapterMiniCard key={c.id} chapter={c} variant="upcoming" onPublish={onPublish} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : chapters.length > 0 ? (
+          <p className="mt-4 pt-4 border-t border-white/5 text-[11px] text-emerald-400 text-center">
+            ✓ Tất cả chapter đã xuất bản
+          </p>
+        ) : (
+          <p className="mt-4 pt-4 border-t border-white/5 text-[11px] text-zinc-700 text-center">
+            Chưa có chapter nào
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const StudioProgress = () => {
   const qc = useQueryClient();
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [selectedSeries, setSelectedSeries] = useState<any>(null);
   const [publishTarget, setPublishTarget] = useState<any>(null);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
@@ -78,25 +274,13 @@ const StudioProgress = () => {
   });
   useEffect(() => { if (data) setLastUpdated(new Date()); }, [data]);
 
-  // GET /chapters/series/{seriesId} — lấy chapter list khi chọn series
-  const { data: chaptersData = [] } = useQuery({
-    queryKey: ['chapters', selectedSeries?.seriesId],
-    queryFn: async () => {
-      const r = await api.get(`/chapters/series/${selectedSeries.seriesId}`);
-      return r.data.data ?? [];
-    },
-    enabled: !!selectedSeries?.seriesId,
-  });
-  const chapters: any[] = Array.isArray(chaptersData) ? chaptersData : [];
-  // Chapter có thể publish: status = approved (tất cả task done, Mangaka đã duyệt)
-  const publishableChapters = chapters.filter((c: any) => c.status === 'approved');
-
   // PUT /chapters/{id}/status → published
   const publishMutation = useMutation({
     mutationFn: (chapterId: string) =>
       api.put(`/chapters/${chapterId}/status`, { status: 'published' }).then(r => r.data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['chapters', selectedSeries?.seriesId] });
+      // Invalidate mọi chapter query (tất cả series card sẽ tự refetch)
+      qc.invalidateQueries({ queryKey: ['chapters'] });
       qc.invalidateQueries({ queryKey: ['editor', 'studio-progress'] });
       setPublishTarget(null);
     },
@@ -141,118 +325,9 @@ const StudioProgress = () => {
             <Activity className="w-10 h-10 opacity-20"/>
             <p className="text-sm">Chưa có dữ liệu tiến độ</p>
           </div>
-        ) : series.map((s:any, i:number) => {
-          // ✅ Đúng field names từ StudioProgressDTO
-          const pct       = s.completionPercent ?? (s.totalPages > 0 ? Math.round((s.completedPages/s.totalPages)*100) : 0);
-          const isUrgent  = s.isUrgent || s.overdueTasks > 0 || s.daysUntilDeadline <= 2;
-          // ✅ assistantNames (không phải assistants)
-          const assistants = s.assistantNames ?? s.assistants ?? [];
-
-          return (
-            <div key={s.seriesId ?? i}
-              className={`rounded-2xl border bg-white/[0.015] overflow-hidden ${isUrgent ? 'border-red-500/20':'border-white/5'}`}>
-              <div className="px-6 py-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <h3 className="text-[13px] font-bold text-white">{s.seriesTitle ?? s.title}</h3>
-                      {isUrgent && <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 tracking-wider">URGENT</span>}
-                    </div>
-                    <p className="text-[11px] text-zinc-600">
-                      Chapter {s.currentChapter} · {s.mangakaName}
-                      <DeadlineDisplay deadlineDate={s.deadlineDate} daysUntilDeadline={s.daysUntilDeadline} />
-                    </p>
-                  </div>
-                  <span className={`text-2xl font-black font-['Syne'] ${pct>=80?'text-emerald-400':pct>=50?'text-amber-400':'text-red-400'}`}>{Math.round(pct)}%</span>
-                </div>
-
-                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden mb-4">
-                  <div className={`h-full rounded-full transition-all ${pct>=80?'bg-emerald-500':pct>=50?'bg-amber-500':'bg-red-500'}`} style={{width:`${Math.min(pct,100)}%`}}/>
-                </div>
-
-                <div className="grid grid-cols-4 gap-3 text-center">
-                  {[
-                    { label:'Tổng',      value:s.totalPages,      color:'text-zinc-400'    },
-                    { label:'Hoàn thành',value:s.completedPages,  color:'text-emerald-400' },
-                    { label:'Đang làm',  value:s.inProgressPages, color:'text-blue-400'    },
-                    { label:'Quá hạn',   value:s.overdueTasks,    color:s.overdueTasks>0?'text-red-400':'text-zinc-700' },
-                  ].map((x,j)=>(
-                    <div key={j} className="bg-white/3 rounded-xl py-2.5">
-                      <div className={`text-lg font-black font-['Syne'] ${x.color}`}>{x.value ?? 0}</div>
-                      <div className="text-[10px] text-zinc-700 mt-0.5">{x.label}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {assistants.length > 0 && (
-                  <div className="flex items-center gap-1.5 mt-4 pt-4 border-t border-white/5">
-                    <span className="text-[10px] text-zinc-700 mr-1">Trợ lý:</span>
-                    {assistants.map((a:string,j:number)=>(
-                      <span key={j} className="text-[11px] text-zinc-500 bg-white/4 border border-white/6 px-2 py-0.5 rounded-md">{a}</span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Nút Xuất bản — chỉ Editor thấy */}
-                <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                  <span className="text-[10px] text-zinc-700">
-                    {selectedSeries?.seriesId === s.seriesId
-                      ? publishableChapters.length > 0
-                        ? `${publishableChapters.length} chapter sẵn sàng xuất bản`
-                        : 'Chưa có chapter nào sẵn sàng'
-                      : ''}
-                  </span>
-                  <button
-                    onClick={() => setSelectedSeries(selectedSeries?.seriesId === s.seriesId ? null : s)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
-                      selectedSeries?.seriesId === s.seriesId
-                        ? 'bg-teal-500/20 border border-teal-500/30 text-teal-300'
-                        : 'bg-white/5 border border-white/8 text-zinc-400 hover:text-white hover:bg-white/8'
-                    }`}>
-                    <BookOpen className="w-3 h-3" />
-                    {selectedSeries?.seriesId === s.seriesId ? 'Ẩn chapters' : 'Xem chapters'}
-                  </button>
-                </div>
-
-                {/* Chapter list khi expand */}
-                {selectedSeries?.seriesId === s.seriesId && (
-                  <div className="mt-2 space-y-1.5">
-                    {chapters.length === 0 ? (
-                      <p className="text-[11px] text-zinc-700 text-center py-2">Chưa có chapter nào</p>
-                    ) : chapters.map((c: any) => (
-                      <div key={c.id} className="flex items-center justify-between px-3 py-2 bg-white/3 border border-white/5 rounded-xl">
-                        <div>
-                          <span className="text-[12px] font-semibold text-white">
-                            Chapter {c.chapterNumber}{c.title ? `: ${c.title}` : ''}
-                          </span>
-                          <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${
-                            c.status === 'published' ? 'bg-teal-500/15 text-teal-400' :
-                            c.status === 'approved'  ? 'bg-emerald-500/15 text-emerald-400' :
-                            'bg-zinc-500/15 text-zinc-500'
-                          }`}>
-                            {c.status === 'published' ? 'Đã xuất bản' :
-                             c.status === 'approved'  ? 'Sẵn sàng' :
-                             c.status === 'in_progress' ? 'Đang làm' : c.status}
-                          </span>
-                        </div>
-                        {c.status === 'approved' && (
-                          <button
-                            onClick={() => setPublishTarget(c)}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/25 text-teal-300 text-[11px] font-semibold hover:bg-teal-500/25 transition-all">
-                            <Send className="w-3 h-3" />Xuất bản
-                          </button>
-                        )}
-                        {c.status === 'published' && (
-                          <CheckCircle2 className="w-4 h-4 text-teal-500/60" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        ) : series.map((s:any) => (
+          <SeriesCard key={s.seriesId} series={s} onPublish={setPublishTarget} />
+        ))}
       </div>
 
       {/* ════ PUBLISH CONFIRM MODAL ════ */}

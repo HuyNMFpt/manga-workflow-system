@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import {
   Users, MousePointer, Trash2, Send, CheckCircle2,
-  AlertCircle, Loader2, ChevronDown, Crosshair, X
+  AlertCircle, AlertTriangle, Loader2, ChevronDown, Crosshair, X, Clock, Zap
 } from 'lucide-react';
 import api from '@/lib/axios';
 import { taskService } from '@/services/taskService';
@@ -27,12 +27,14 @@ const TASK_TYPES: { value:TaskType; label:string; color:string; dot:string; pinC
 
 interface LocalTask {
   id: number;
+  pageNumber: number;        // trang mà pin này thuộc về — BẮT BUỘC để tránh pin lẫn giữa các trang
   x: number; y: number;     // % position trên ảnh
   type: TaskType;
   assignedTo: string | null;
   title: string;
   description: string;
   priority: 'low'|'normal'|'high'|'urgent';
+  autoAssignInfo?: { reason: string; message?: string } | null; // kết quả lần auto-assign gần nhất
 }
 
 // ── Pin SVG ──────────────────────────────────────────────────────
@@ -59,6 +61,28 @@ const Pin = ({ color, index, onClick, onRemove, selected }: {
   </div>
 );
 
+const TASK_TYPE_VN: Record<string, string> = {
+  background: 'Vẽ nền', shading: 'Tô bóng', effect: 'Hiệu ứng',
+  screentone: 'Screentone', dialog: 'Hộp thoại', touch_up: 'Chỉnh sửa', other: 'Khác',
+};
+
+// Đặt SelectField ở module-level (KHÔNG được định nghĩa trong component body —
+// nếu không React sẽ coi nó là component type mới mỗi lần render và unmount/remount
+// toàn bộ <select>, gây mất focus và crash khó lường khi state đổi liên tục)
+const SelectField = ({ label, value, onChange, children, placeholder }: any) => (
+  <div>
+    {label && <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-1.5">{label}</label>}
+    <div className="relative">
+      <select value={value} onChange={onChange}
+        className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-violet-500/40 transition-all">
+        {placeholder && <option value="" className="bg-[#111118]">{placeholder}</option>}
+        {children}
+      </select>
+      <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-zinc-600 pointer-events-none"/>
+    </div>
+  </div>
+);
+
 export default function TaskAssignment() {
   const qc = useQueryClient();
   const location = useLocation();
@@ -73,6 +97,7 @@ export default function TaskAssignment() {
   const [tempTask,          setTempTask]           = useState<Partial<LocalTask>|null>(null);
   const [submitSuccess,     setSubmitSuccess]      = useState(false);
   const [submitError,       setSubmitError]        = useState('');
+  const [imgLoadState,      setImgLoadState]        = useState<'loading'|'loaded'|'error'>('loading');
 
   // Auto-select từ ChapterManager navigate
   useEffect(() => {
@@ -80,6 +105,18 @@ export default function TaskAssignment() {
     if (state?.seriesId)  setSelectedSeriesId(state.seriesId);
     if (state?.chapterId) setSelectedChapterId(state.chapterId);
   }, [location.state]);
+
+  // Reset trang/pin đang chọn mỗi khi đổi chapter — tránh selectedPageNum trỏ vào
+  // trang không tồn tại ở chapter mới (vd chapter cũ có 10 trang, chapter mới có 0)
+  useEffect(() => {
+    setSelectedPageNum(1);
+    setSelectedPinId(null);
+  }, [selectedChapterId]);
+
+  // Reset trạng thái loading ảnh mỗi khi đổi trang (kể cả trong cùng chapter)
+  useEffect(() => {
+    setImgLoadState('loading');
+  }, [selectedPageNum, selectedChapterId]);
 
   const { data:allSeries=[], isLoading:loadSeries } = useQuery({ queryKey:['series','my'], queryFn:fetchMySeries });
   const seriesList = (allSeries as any[]).filter((s:any) => ['approved','publishing'].includes(s.status));
@@ -93,9 +130,21 @@ export default function TaskAssignment() {
   });
 
   const selectedChapter = (chapters as any[]).find((c:any)=>c.id===selectedChapterId);
-  const pageCount = (selectedChapter as any)?.totalPages ?? 5;
+  const rawPageCount = (selectedChapter as any)?.totalPages;
+  const pageCount = (typeof rawPageCount === 'number' && Number.isFinite(rawPageCount) && rawPageCount >= 0)
+    ? rawPageCount : 5;
   // eslint-disable-next-line eqeqeq
-  const currentPageImage = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum)?.imageUrl ?? null;
+  const currentPage      = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum);
+  const currentPageImage = currentPage?.imageUrl ?? null;
+
+  // Preload ảnh trang kế tiếp — chạy sau render (useEffect), không phải trong render
+  const nextPage = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum + 1);
+  useEffect(() => {
+    if (nextPage?.imageUrl) {
+      const preload = new Image();
+      preload.src = nextPage.imageUrl;
+    }
+  }, [nextPage?.imageUrl]);
 
   const getTypeConfig = (type: TaskType) => TASK_TYPES.find(t=>t.value===type) ?? TASK_TYPES[TASK_TYPES.length-1];
 
@@ -104,6 +153,9 @@ export default function TaskAssignment() {
 
   const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!selectedChapterId) return;
+    // Chặn đặt pin nếu trang hiện tại đang có task active (chưa approved)
+    // — mô hình tuần tự: 1 trang chỉ 1 người làm tại 1 thời điểm
+    if (currentPage?.pageStatus === 'has_active_task') return;
     if ((e.target as HTMLElement).closest('.pin-element')) return;
     const container = e.currentTarget;
     const rect = container.getBoundingClientRect();
@@ -125,7 +177,7 @@ export default function TaskAssignment() {
       y = ((e.clientY - rect.top) / rect.height) * 100;
     }
     const newTask: Partial<LocalTask> = {
-      id: Date.now(), x, y,
+      id: Date.now(), pageNumber: selectedPageNum, x, y,
       type: selectedTaskType,
       assignedTo: null, title: '', description: '', priority: 'normal',
     };
@@ -135,13 +187,16 @@ export default function TaskAssignment() {
 
   const createMutation = useMutation({
     mutationFn: (t: LocalTask) => {
+      // QUAN TRỌNG: dùng t.pageNumber (trang THỰC của task này), không phải
+      // selectedPageNum (trang đang xem lúc bấm Gửi) — nếu không sẽ gán nhầm
+      // pageId khi Mangaka đặt pin ở nhiều trang khác nhau rồi gửi cùng lúc.
       // eslint-disable-next-line eqeqeq
-      const page = (pagesData as any[]).find((p:any) => p.pageNumber == selectedPageNum);
-      if (!page?.id) return Promise.reject(new Error('Trang này chưa được upload. Vui lòng upload trang trước khi giao task.'));
+      const page = (pagesData as any[]).find((p:any) => p.pageNumber == t.pageNumber);
+      if (!page?.id) return Promise.reject(new Error(`Trang ${t.pageNumber} chưa được upload. Vui lòng upload trang trước khi giao task.`));
       return taskService.create({
         pageId:      page.id,
         assignedTo:  t.assignedTo!,
-        title:       t.title || `${getTypeConfig(t.type).label} - Trang ${selectedPageNum}`,
+        title:       t.title || `${getTypeConfig(t.type).label} - Trang ${t.pageNumber}`,
         description: t.description,
         taskType:    t.type,
         priority:    t.priority,
@@ -163,19 +218,34 @@ export default function TaskAssignment() {
     } catch { setSubmitError('Có lỗi khi gửi task. Vui lòng thử lại.'); }
   };
 
-  const SelectField = ({ label, value, onChange, children, placeholder }: any) => (
-    <div>
-      {label && <label className="block text-[11px] font-bold tracking-[0.15em] uppercase text-zinc-600 mb-1.5">{label}</label>}
-      <div className="relative">
-        <select value={value} onChange={onChange}
-          className="w-full bg-[#0f0f1a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white appearance-none focus:outline-none focus:border-violet-500/40 transition-all">
-          {placeholder && <option value="" className="bg-[#111118]">{placeholder}</option>}
-          {children}
-        </select>
-        <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-zinc-600 pointer-events-none"/>
-      </div>
-    </div>
-  );
+  // ── Tự động giao task theo skill + workload ──
+  const [autoAssigning, setAutoAssigning] = useState(false);
+  const handleAutoAssign = async () => {
+    setSubmitError('');
+    const unassigned = tasks.filter(t => !t.assignedTo);
+    if (unassigned.length === 0) { setSubmitError('Không còn task nào cần tự động giao.'); return; }
+
+    setAutoAssigning(true);
+    try {
+      const results = await Promise.all(
+        unassigned.map(t =>
+          api.post('/tasks/auto-assign', { taskType: t.type })
+            .then(r => ({ taskId: t.id, ...r.data.data }))
+            .catch(() => ({ taskId: t.id, assignedTo: null, reason: 'error', message: 'Lỗi kết nối' }))
+        )
+      );
+      setTasks(prev => prev.map(t => {
+        const result = results.find(r => r.taskId === t.id);
+        if (!result) return t;
+        if (result.assignedTo) {
+          return { ...t, assignedTo: result.assignedTo, autoAssignInfo: { reason: 'skill_match' } };
+        }
+        return { ...t, autoAssignInfo: { reason: result.reason, message: result.message } };
+      }));
+    } finally {
+      setAutoAssigning(false);
+    }
+  };
 
   // Pin được chọn (để highlight trong sidebar)
   const selectedPin = tasks.find(t => t.id === selectedPinId);
@@ -204,7 +274,7 @@ export default function TaskAssignment() {
           </SelectField>
           {selectedSeriesId && (
             <SelectField label="2. Chọn chapter" value={selectedChapterId} placeholder="-- Chọn chapter --"
-              onChange={(e:any)=>{ setSelectedChapterId(e.target.value); setTasks([]); setSelectedPinId(null); }}>
+              onChange={(e:any)=>{ setSelectedChapterId(e.target.value); setTasks([]); setSelectedPinId(null); setSelectedPageNum(1); }}>
               {(chapters as any[]).length===0
                 ? <option disabled className="bg-[#111118]">-- Chưa có chapter nào --</option>
                 : (chapters as any[]).map((c:any)=>(
@@ -255,30 +325,78 @@ export default function TaskAssignment() {
                   <div className="flex gap-1 flex-wrap">
                     {Array.from({ length: Math.min(pageCount, 10) }, (_,i) => i+1).map(n => {
                       // eslint-disable-next-line eqeqeq
-                      const hasImage = (pagesData as any[]).some((p:any) => p.pageNumber == n);
-                      const pinCount = tasks.filter(t => /* task on this page */true).length; // simplified
+                      const pageObj = (pagesData as any[]).find((p:any) => p.pageNumber == n);
+                      const hasImage = !!pageObj;
+                      // pageStatus: 'no_task' | 'has_active_task' | 'ready' — backend field mới,
+                      // fallback 'no_task' nếu backend chưa deploy (không vỡ UI)
+                      const pageStatus = pageObj?.pageStatus ?? 'no_task';
+                      const dotColor =
+                        pageStatus === 'has_active_task' ? 'bg-blue-400'   :
+                        pageStatus === 'ready'            ? 'bg-emerald-400' :
+                        hasImage                          ? 'bg-zinc-500'  : '';
                       return (
-                        <button key={n} onClick={() => setSelectedPageNum(n)}
+                        <button key={n} onClick={() => { setSelectedPageNum(n); setSelectedPinId(null); }}
+                          title={
+                            pageStatus === 'has_active_task'
+                              ? `Đang: ${TASK_TYPE_VN[pageObj?.activeTaskType] ?? pageObj?.activeTaskType} — ${pageObj?.activeAssigneeName ?? 'đang xử lý'}`
+                              : pageStatus === 'ready' ? 'Sẵn sàng giao task tiếp theo'
+                              : hasImage ? 'Chưa có task nào' : 'Chưa có ảnh trang'
+                          }
                           className={`relative w-7 h-7 rounded-lg text-[11px] font-bold transition-all ${
                             selectedPageNum===n
                               ? 'bg-violet-600 text-white shadow-sm shadow-violet-600/40'
                               : 'bg-white/4 border border-white/6 text-zinc-500 hover:text-white hover:bg-white/8'
                           }`}>
                           {n}
-                          {hasImage && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-emerald-400 rounded-full border border-[#0a0a12]"/>}
+                          {dotColor && <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#0a0a12] ${dotColor}`}/>}
                         </button>
                       );
                     })}
                   </div>
                 </div>
+                <div className="flex items-center gap-3 mb-3 text-[9px] text-zinc-700">
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>Đang làm</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400"/>Sẵn sàng</span>
+                  <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-zinc-500"/>Có ảnh</span>
+                </div>
 
                 {/* Image + pins */}
                 <div
-                  className="relative bg-gradient-to-br from-zinc-900 to-zinc-950 aspect-[3/4] rounded-xl overflow-hidden cursor-crosshair select-none border border-white/5"
+                  className={`relative bg-gradient-to-br from-zinc-900 to-zinc-950 aspect-[3/4] rounded-xl overflow-hidden select-none border ${
+                    currentPage?.pageStatus === 'has_active_task'
+                      ? 'cursor-not-allowed border-blue-500/25'
+                      : 'cursor-crosshair border-white/5'
+                  }`}
                   onClick={handleImageClick}>
 
+                  {/* Overlay khoá — trang đang có task active, không cho đặt pin mới */}
+                  {currentPage?.pageStatus === 'has_active_task' && (
+                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-black/55 backdrop-blur-[1px] text-center px-6">
+                      <div className="w-9 h-9 rounded-full bg-blue-500/15 border border-blue-500/30 flex items-center justify-center">
+                        <Clock className="w-4 h-4 text-blue-400" />
+                      </div>
+                      <p className="text-[12px] font-bold text-white">
+                        Trang này đang "{TASK_TYPE_VN[currentPage?.activeTaskType] ?? currentPage?.activeTaskType}"
+                      </p>
+                      <p className="text-[11px] text-zinc-400">
+                        Giao cho {currentPage?.activeAssigneeName ?? 'Assistant'} · chờ Mangaka duyệt xong mới giao task tiếp theo
+                      </p>
+                    </div>
+                  )}
+
                   {currentPageImage
-                    ? <img ref={imgRef} src={currentPageImage} alt={`Trang ${selectedPageNum}`} className="absolute inset-0 w-full h-full object-contain" draggable={false}/>
+                    ? <>
+                        {imgLoadState !== 'loaded' && (
+                          <div className="absolute inset-0 bg-white/3 animate-pulse rounded" />
+                        )}
+                        <img ref={imgRef} src={currentPageImage} alt={`Trang ${selectedPageNum}`}
+                          className="absolute inset-0 w-full h-full object-contain"
+                          draggable={false}
+                          onLoad={() => setImgLoadState('loaded')}
+                          onError={() => setImgLoadState('error')}
+                          style={{ opacity: imgLoadState === 'loaded' ? 1 : 0, transition: 'opacity 0.25s' }}
+                        />
+                      </>
                     : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-zinc-800">
                         <MousePointer className="w-8 h-8"/>
@@ -290,8 +408,11 @@ export default function TaskAssignment() {
                     )
                   }
 
-                  {/* Pins */}
-                  {tasks.map((task, idx) => {
+                  {/* Pins — CHỈ hiện pin thuộc trang đang xem, tránh lẫn pin giữa các trang */}
+                  {tasks
+                    .filter(task => task.pageNumber === selectedPageNum)
+                    .map((task) => {
+                    const idx = tasks.indexOf(task); // giữ số thứ tự nhất quán theo toàn bộ danh sách task
                     const cfg = getTypeConfig(task.type);
                     return (
                       <div key={task.id}
@@ -308,8 +429,8 @@ export default function TaskAssignment() {
                     );
                   })}
 
-                  {/* Tooltip khi pin được chọn */}
-                  {selectedPin && (() => {
+                  {/* Tooltip khi pin được chọn — CHỈ hiện nếu pin đó thuộc trang đang xem */}
+                  {selectedPin && selectedPin.pageNumber === selectedPageNum && (() => {
                     const cfg = getTypeConfig(selectedPin.type);
                     return (
                       <div className="absolute z-30 pointer-events-none"
@@ -357,15 +478,31 @@ export default function TaskAssignment() {
                   <p className="text-xs text-zinc-700 text-center py-4">Không có trợ lý</p>
                 ) : (
                   <div className="divide-y divide-white/4">
-                    {(assistants as any[]).map((a:any) => (
-                      <div key={a.id} className="px-4 py-2.5 flex items-center gap-2.5">
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-600/40 to-fuchsia-600/40 border border-violet-500/20 flex items-center justify-center text-[10px] font-bold text-violet-300 flex-shrink-0">
-                          {a.name?.slice(0,1)}
+                    {(assistants as any[]).map((a:any) => {
+                      const taskCount = a.activeTaskCount ?? null;
+                      const isOverloaded = taskCount != null && taskCount >= 5;
+                      return (
+                        <div key={a.id} className="px-4 py-2.5 flex items-center gap-2.5">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-600/40 to-fuchsia-600/40 border border-violet-500/20 flex items-center justify-center text-[10px] font-bold text-violet-300 flex-shrink-0">
+                            {a.name?.slice(0,1)}
+                          </div>
+                          <p className="text-[12px] font-medium text-white truncate flex-1">{a.name ?? a.displayName ?? a.username ?? a.email}</p>
+                          {/* Workload badge */}
+                          {taskCount != null && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-md border tabular-nums ${
+                              isOverloaded
+                                ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                                : taskCount > 0
+                                  ? 'bg-white/5 text-zinc-400 border-white/10'
+                                  : 'bg-emerald-500/8 text-emerald-500 border-emerald-500/15'
+                            }`} title={`${taskCount} task đang active`}>
+                              {taskCount} task
+                            </span>
+                          )}
+                          <span className={`w-1.5 h-1.5 rounded-full ${(a.isActive||a.active)?'bg-emerald-400':'bg-zinc-600'}`}/>
                         </div>
-                        <p className="text-[12px] font-medium text-white truncate flex-1">{a.name ?? a.displayName ?? a.username ?? a.email}</p>
-                        <span className={`w-1.5 h-1.5 rounded-full ${(a.isActive||a.active)?'bg-emerald-400':'bg-zinc-600'}`}/>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -388,7 +525,10 @@ export default function TaskAssignment() {
                       const isSelected = selectedPinId===task.id;
                       return (
                         <div key={task.id}
-                          onClick={() => setSelectedPinId(isSelected ? null : task.id)}
+                          onClick={() => {
+                            setSelectedPinId(isSelected ? null : task.id);
+                            if (task.pageNumber !== selectedPageNum) setSelectedPageNum(task.pageNumber);
+                          }}
                           className={`p-3 cursor-pointer transition-colors ${isSelected?'bg-white/[0.04]':'hover:bg-white/[0.02]'}`}>
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
@@ -399,6 +539,7 @@ export default function TaskAssignment() {
                                 <path d="M14 27 L14 36" stroke={cfg.pinColor} strokeWidth="3" strokeLinecap="round"/>
                               </svg>
                               <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${cfg.color}`}>{cfg.label}</span>
+                              <span className="text-[10px] text-zinc-600">Trang {task.pageNumber}</span>
                             </div>
                             <button onClick={e=>{ e.stopPropagation(); setTasks(tasks.filter(t=>t.id!==task.id)); if(isSelected) setSelectedPinId(null); }}
                               className="text-zinc-700 hover:text-red-400 transition-colors">
@@ -411,13 +552,46 @@ export default function TaskAssignment() {
                             className="w-full bg-[#111118] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-white focus:outline-none focus:border-violet-500/30 transition-all appearance-none">
                             <option value="" className="bg-[#111118]">Chọn trợ lý</option>
                             {(assistants as any[]).map((a:any)=>(
-                              <option key={a.id} value={a.id} className="bg-[#111118]">{a.name ?? a.displayName ?? a.username ?? a.email}</option>
+                              <option key={a.id} value={a.id} className="bg-[#111118]">
+                                {a.name ?? a.displayName ?? a.username ?? a.email}
+                                {a.activeTaskCount != null ? ` — ${a.activeTaskCount} task đang làm` : ''}
+                              </option>
                             ))}
                           </select>
-                          {task.assignedTo && (
-                            <div className="flex items-center gap-1 mt-1.5">
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400"/>
-                              <span className="text-[10px] text-emerald-400">Đã phân công</span>
+                          {task.assignedTo && (() => {
+                            const selectedAsst = (assistants as any[]).find((a:any) => a.id === task.assignedTo);
+                            const cnt = selectedAsst?.activeTaskCount ?? null;
+                            const overloaded = cnt != null && cnt >= 5;
+                            return (
+                              <div className="mt-1.5 space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400"/>
+                                  <span className="text-[10px] text-emerald-400">Đã phân công</span>
+                                  {task.autoAssignInfo?.reason === 'skill_match' && (
+                                    <span className="flex items-center gap-0.5 text-[9px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded">
+                                      <Zap className="w-2 h-2" />Tự động
+                                    </span>
+                                  )}
+                                </div>
+                                {/* Cảnh báo overload */}
+                                {overloaded && (
+                                  <div className="flex items-start gap-1 px-1.5 py-1 rounded-md bg-amber-500/8 border border-amber-500/20">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-400 flex-shrink-0 mt-0.5"/>
+                                    <span className="text-[10px] text-amber-400 leading-tight">
+                                      Trợ lý này đang có {cnt} task chưa xong — cân nhắc trước khi giao thêm
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          {/* Auto-assign thất bại — không tìm được ai phù hợp */}
+                          {!task.assignedTo && task.autoAssignInfo && (
+                            <div className="mt-1.5 flex items-start gap-1 px-1.5 py-1.5 rounded-md bg-red-500/8 border border-red-500/20">
+                              <AlertCircle className="w-2.5 h-2.5 text-red-400 flex-shrink-0 mt-0.5"/>
+                              <span className="text-[10px] text-red-400 leading-tight">
+                                {task.autoAssignInfo.message ?? 'Không thể tự động giao — vui lòng chọn thủ công'}
+                              </span>
                             </div>
                           )}
                         </div>
@@ -432,6 +606,14 @@ export default function TaskAssignment() {
                 <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/8 border border-emerald-500/15 rounded-xl px-3 py-2 text-[11px]">
                   <CheckCircle2 className="w-3.5 h-3.5"/>Gửi thành công!
                 </div>
+              )}
+              {tasks.length > 0 && tasks.some(t => !t.assignedTo) && (
+                <button onClick={handleAutoAssign} disabled={autoAssigning}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500/12 border border-amber-500/25 text-amber-300 text-sm font-semibold hover:bg-amber-500/20 disabled:opacity-60 transition-all">
+                  {autoAssigning
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang tự động giao...</>
+                    : <><Zap className="w-3.5 h-3.5"/>Tự động giao tất cả</>}
+                </button>
               )}
               {tasks.length > 0 && (
                 <button onClick={handleSubmitAll} disabled={createMutation.isPending}

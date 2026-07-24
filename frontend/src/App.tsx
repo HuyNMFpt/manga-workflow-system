@@ -17,10 +17,12 @@ import SeriesSubmission from "@/pages/mangaka/SeriesSubmission"
 import TaskAssignment from "@/pages/mangaka/TaskAssignment"
 import PageReview from "@/pages/mangaka/PageReview"
 import MyRankings from "@/pages/mangaka/MyRankings"
+import MyTasks from "@/pages/mangaka/MyTasks"
 
 // Assistant Pages
 import AssistantDashboard from "@/pages/assistant/AssistantDashboard"
 import TaskList from "@/pages/assistant/TaskList"
+import SkillSettings from "@/pages/assistant/SkillSettings"
 import EarningsDashboard from "@/pages/assistant/EarningsDashboard"
 
 // Editor Pages
@@ -58,6 +60,7 @@ export default function App() {
               <Route path="/mangaka/chapters" element={<ChapterManager />} />
               <Route path="/mangaka/submit-series" element={<SeriesSubmission />} />
               <Route path="/mangaka/assign-tasks" element={<TaskAssignment />} />
+              <Route path="/mangaka/my-tasks"    element={<MyTasks />} />
               <Route path="/mangaka/review-pages" element={<PageReview />} />
               <Route path="/mangaka/rankings" element={<MyRankings />} />
             </Route>
@@ -68,6 +71,7 @@ export default function App() {
             <Route element={<AppLayout />}>
               <Route path="/assistant" element={<AssistantDashboard />} />
               <Route path="/assistant/tasks" element={<TaskList />} />
+              <Route path="/assistant/skills" element={<SkillSettings />} />
               <Route path="/assistant/earnings" element={<EarningsDashboard />} />
             </Route>
           </Route>

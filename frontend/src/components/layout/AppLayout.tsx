@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import {
   BookOpen, LayoutDashboard, ListTodo, FileText,
   BarChart2, Users, Bell, LogOut, Layers, X, CheckCheck, Clock,
-  PenTool, Feather, Film, Trophy, Star, KeyRound, Eye, EyeOff, CheckCircle2
+  PenTool, Feather, Film, Trophy, Star, KeyRound, Eye, EyeOff, CheckCircle2, ClipboardList
 } from "lucide-react"
 
 const NAV_ITEMS = {
@@ -18,12 +18,14 @@ const NAV_ITEMS = {
     { to: "/mangaka/series",       label: "Series",        icon: BookOpen                   },
     { to: "/mangaka/chapters",     label: "Chapter & Trang", icon: Layers                   },
     { to: "/mangaka/assign-tasks", label: "Giao việc",     icon: PenTool                    },
+    { to: "/mangaka/my-tasks",     label: "Task đã giao",  icon: ClipboardList              },
     { to: "/mangaka/review-pages", label: "Duyệt trang",   icon: Film                       },
     { to: "/mangaka/rankings",     label: "Xếp hạng",      icon: Trophy                     },
   ],
   assistant: [
     { to: "/assistant",           label: "Dashboard", icon: LayoutDashboard, end: true },
     { to: "/assistant/tasks",     label: "Công việc", icon: ListTodo                   },
+    { to: "/assistant/skills",    label: "Kỹ năng",   icon: Star                       },
     { to: "/assistant/earnings",  label: "Thu nhập",  icon: BarChart2                  },
   ],
   editor: [
@@ -308,6 +310,9 @@ export default function AppLayout() {
                       poll_updated:     { dot: 'bg-violet-400',  label: 'Kết quả poll'    },
                       series_cancelled: { dot: 'bg-red-600',     label: 'Series bị hủy'  },
                       submission_result:{ dot: 'bg-teal-400',    label: 'Kết quả nộp'    },
+                      board_rejected:   { dot: 'bg-orange-500',  label: 'Board từ chối'  },
+                      board_approved:   { dot: 'bg-emerald-500', label: 'Board duyệt'    },
+                      manuscript_submitted:{ dot: 'bg-blue-400', label: 'Bản thảo mới'   },
                     };
                     const style = typeStyle[n.type] ?? { dot: 'bg-zinc-500', label: n.type };
                     return (

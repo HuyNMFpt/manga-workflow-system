@@ -36,15 +36,16 @@ export interface LoginResponse {
 // SERIES
 // ============================================================
 
-// ✅ Backend enum: draft | under_editorial_review | submitted | approved | publishing | on_hiatus | cancelled
+// ✅ Backend enum: draft | under_editorial_review | submitted | approved | publishing | on_hiatus | rejected | cancelled
 export type SeriesStatus =
   | "draft"
-  | "under_editorial_review" // Mangaka đã nộp, Editor đang xét
-  | "submitted"    // Editor đã nộp lên Board, chờ duyệt
-  | "approved"     // Được Board duyệt
-  | "publishing"   // Đang sản xuất - xuất bản
-  | "on_hiatus"    // Tạm ngưng
-  | "cancelled"    // Đã hủy
+  | "under_editorial_review"
+  | "submitted"
+  | "approved"
+  | "publishing"
+  | "on_hiatus"
+  | "rejected"    // Board reject manuscript lần đầu — Mangaka được nộp lại
+  | "cancelled"   // Board cancel series đang publishing — vĩnh viễn
 
 export type PublicationSchedule = "weekly" | "biweekly" | "monthly" | "one_shot"
 
@@ -262,6 +263,9 @@ export type NotificationType =
   | "poll_updated"
   | "series_cancelled"
   | "submission_result"
+  | "board_approved"        // Board duyệt series → Mangaka + Editor
+  | "board_rejected"        // Board từ chối series → Mangaka
+  | "manuscript_submitted"  // Mangaka nộp bản thảo → Editor
 
 // ✅ Khớp với backend NotificationDTO
 export interface Notification {

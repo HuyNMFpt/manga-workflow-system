@@ -44,6 +44,7 @@ const MangakaDashboard = () => {
     approved:               { label: 'Được duyệt',      dot: 'bg-emerald-400'},
     publishing:             { label: 'Đang xuất bản',   dot: 'bg-violet-400' },
     on_hiatus:              { label: 'Tạm ngưng',        dot: 'bg-orange-400' },
+    rejected:               { label: 'Bị từ chối',       dot: 'bg-orange-500' },
     cancelled:              { label: 'Đã huỷ',           dot: 'bg-red-500'    },
   };
 
