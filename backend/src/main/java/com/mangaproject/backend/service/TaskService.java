@@ -72,7 +72,7 @@ public class TaskService {
                 .orElseThrow(() -> new RuntimeException("Độ ưu tiên không hợp lệ: " + priorityName)).getId());
 
         task.setStatus(Task.TaskStatus.pending);
-        if (request.getDueDate() != null) task.setDueDate(LocalDateTime.parse(request.getDueDate()));
+        if (request.getDueDate() != null) task.setDueDate(java.time.LocalDate.parse(request.getDueDate()).atStartOfDay());
 
         return mapToDTO(taskRepository.save(task), null, null, null);
     }

@@ -13,4 +13,5 @@ public class AnnotationDTO {
     private Double y;
     private Integer pageNumber;
     private String createdAt;
+    private String editorName; // tên Editor đặt pin — dùng để hiển thị tooltip trên UI
 }

@@ -21,6 +21,7 @@ public class BoardService {
     private final SeriesRepository seriesRepository;
     private final SubmissionRepository submissionRepository;
     private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptPageRepository manuscriptPageRepository;
     private final ReaderPollRepository readerPollRepository;
     private final UserRepository userRepository;
     private final BoardVoteRepository boardVoteRepository;
@@ -52,7 +53,8 @@ public class BoardService {
                     Series s = seriesRepository.findById(sid).orElse(null);
                     return s != null
                             && s.getStatus() != Series.SeriesStatus.publishing
-                            && s.getStatus() != Series.SeriesStatus.cancelled;
+                            && s.getStatus() != Series.SeriesStatus.cancelled
+                            && s.getStatus() != Series.SeriesStatus.rejected;
                 })
                 .collect(Collectors.toMap(
                         sub -> subToSeriesId.getOrDefault(sub.getId(), sub.getId()),
@@ -101,8 +103,7 @@ public class BoardService {
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
         List<Submission> allSubmissions = new ArrayList<>();
-        // voting trước (mới hơn, có đủ evaluation fields) → pending sau
-        // putIfAbsent giữ phần tử đầu tiên → voting luôn thắng pending cũ cùng seriesId
+        // voting trước → putIfAbsent giữ submission mới nhất (có đủ editor evaluation)
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
 
@@ -126,7 +127,8 @@ public class BoardService {
                     Series s = seriesMap.get(e.getKey());
                     return s != null
                             && s.getStatus() != Series.SeriesStatus.publishing
-                            && s.getStatus() != Series.SeriesStatus.cancelled;
+                            && s.getStatus() != Series.SeriesStatus.cancelled
+                            && s.getStatus() != Series.SeriesStatus.rejected;
                 })
                 .map(Map.Entry::getValue)
                 .collect(Collectors.toList());
@@ -187,6 +189,17 @@ public class BoardService {
             dto.setWhyItWillSell(sub.getWhyItWillSell());
             dto.setRecommendedSchedule(sub.getRecommendedSchedule());
             dto.setEditorNote(sub.getEditorNote());
+
+            // Map trang bản thảo cho Board xem
+            List<ManuscriptPageDTO> msPages = manuscriptPageRepository
+                    .findByManuscriptIdOrderByPageNumberAsc(sub.getManuscriptId())
+                    .stream()
+                    .map(p -> new ManuscriptPageDTO(
+                            p.getId(), p.getManuscriptId(), p.getPageNumber(),
+                            p.getImageUrl(), p.getThumbnailUrl(), p.getNotes()))
+                    .collect(java.util.stream.Collectors.toList());
+            dto.setManuscriptPages(msPages);
+
             return dto;
         }).collect(Collectors.toList());
     }
@@ -237,12 +250,19 @@ public class BoardService {
                     Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
                     if (series != null) {
                         series.setStatus(Series.SeriesStatus.publishing);
+                        series.setApprovedAt(LocalDateTime.now());
                         if (request.getSchedule() != null) {
                             try {
                                 series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
                                 series.setPublishScheduleId(
                                         lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
                             } catch (IllegalArgumentException ignored) {}
+                        }
+                        // Lưu ngày phát hành khi board approve
+                        if (request.getPublishStartDate() != null && !request.getPublishStartDate().isBlank()) {
+                            try {
+                                series.setPublishStartDate(java.time.LocalDate.parse(request.getPublishStartDate()));
+                            } catch (Exception ignored) {}
                         }
                         seriesRepository.save(series);
                     }
@@ -254,12 +274,16 @@ public class BoardService {
                 submission.setStatus(Submission.SubmissionStatus.rejected);
                 submission.setDecidedAt(LocalDateTime.now());
 
-                // Cập nhật series → cancelled
+                // Cập nhật series → rejected (nếu chưa từng publishing) hoặc cancelled
                 Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
                 if (ms != null) {
                     Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
                     if (series != null) {
-                        series.setStatus(Series.SeriesStatus.cancelled);
+                        if (series.getApprovedAt() == null) {
+                            series.setStatus(Series.SeriesStatus.rejected);
+                        } else {
+                            series.setStatus(Series.SeriesStatus.cancelled);
+                        }
                         seriesRepository.save(series);
 
                         // Gửi notification cho Mangaka
@@ -313,8 +337,8 @@ public class BoardService {
         // #8 — chỉ cho nhập poll cho series đang publishing
         if (series.getStatus() != Series.SeriesStatus.publishing) {
             throw new RuntimeException(
-                "Chỉ có thể nhập poll cho series đang xuất bản (publishing). "
-                + "Trạng thái hiện tại: " + series.getStatus().name()
+                    "Chỉ có thể nhập poll cho series đang xuất bản (publishing). "
+                            + "Trạng thái hiện tại: " + series.getStatus().name()
             );
         }
 
@@ -369,6 +393,20 @@ public class BoardService {
                     totalPublishing, atRiskThreshold, consecutiveLow);
         }
         seriesRepository.save(series);
+
+        // 3.2 — Notification poll_updated cho Mangaka
+        Notification pollNotif = new Notification();
+        pollNotif.setUserId(series.getMangakaId());
+        pollNotif.setType(Notification.NotificationType.poll_updated);
+        pollNotif.setNotificationTypeId(
+                lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.poll_updated));
+        pollNotif.setReferenceId(series.getId());
+        pollNotif.setReferenceType("series");
+        pollNotif.setMessage(String.format(
+                "Kết quả poll mới cho \"%s\": hạng %d (kỳ %s/%d, %d phiếu)",
+                series.getTitle(), autoRank, request.getPollPeriod(), request.getPollYear(), request.getVoteCount()
+        ));
+        notificationRepository.save(pollNotif);
 
         log.info("Poll data entered: seriesId={}, autoRank={}, votes={}",
                 request.getSeriesId(), autoRank, request.getVoteCount());
@@ -427,6 +465,25 @@ public class BoardService {
                 series.getCreatedAt() != null ? series.getCreatedAt().toString() : null,
                 series.getUpdatedAt() != null ? series.getUpdatedAt().toString() : null
         );
+    }
+
+    // ── Board Vote Details — xem chi tiết phiếu bầu ──────────────
+
+    public List<BoardVoteDetailDTO> getVoteDetails(String submissionId) {
+        return boardVoteRepository.findBySubmissionIdOrderByVotedAtAsc(submissionId)
+                .stream()
+                .map(v -> {
+                    String name = userRepository.findById(v.getVoterId())
+                            .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                            .orElse("Unknown");
+                    return new BoardVoteDetailDTO(
+                            v.getVoterId(), name,
+                            v.getVote().name(),
+                            v.getComment(),
+                            v.getVotedAt() != null ? v.getVotedAt().toString() : null
+                    );
+                })
+                .collect(Collectors.toList());
     }
 
     // ── Editorial Proposal — quyết định tập thể của Board (thay makeDecision) ──
@@ -557,21 +614,35 @@ public class BoardService {
         }
         seriesRepository.save(series);
 
-        // Thông báo cho Mangaka khi series bị cancel/hiatus
-        if (proposal.getActionType().equals("cancel") || proposal.getActionType().equals("hiatus")) {
-            Notification notification = new Notification();
-            notification.setUserId(series.getMangakaId());
-            notification.setType(Notification.NotificationType.series_at_risk);
-            notification.setNotificationTypeId(
-                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
-            notification.setReferenceId(series.getId());
-            notification.setReferenceType("series");
-            notification.setMessage(String.format(
-                    "Series \"%s\" đã được Hội đồng biên tập quyết định: %s",
-                    series.getTitle(),
-                    proposal.getActionType().equals("cancel") ? "hủy bỏ" : "tạm ngưng"
+        // 3.3 — Notification series_cancelled khi cancel
+        if (proposal.getActionType().equals("cancel")) {
+            Notification cancelNotif = new Notification();
+            cancelNotif.setUserId(series.getMangakaId());
+            cancelNotif.setType(Notification.NotificationType.series_cancelled);
+            cancelNotif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_cancelled));
+            cancelNotif.setReferenceId(series.getId());
+            cancelNotif.setReferenceType("series");
+            cancelNotif.setMessage(String.format(
+                    "Series \"%s\" đã bị Hội đồng biên tập hủy bỏ.",
+                    series.getTitle()
             ));
-            notificationRepository.save(notification);
+            notificationRepository.save(cancelNotif);
+        }
+        // Notification series_at_risk khi hiatus
+        if (proposal.getActionType().equals("hiatus")) {
+            Notification hiatusNotif = new Notification();
+            hiatusNotif.setUserId(series.getMangakaId());
+            hiatusNotif.setType(Notification.NotificationType.series_at_risk);
+            hiatusNotif.setNotificationTypeId(
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
+            hiatusNotif.setReferenceId(series.getId());
+            hiatusNotif.setReferenceType("series");
+            hiatusNotif.setMessage(String.format(
+                    "Series \"%s\" đã được Hội đồng biên tập quyết định: tạm ngưng.",
+                    series.getTitle()
+            ));
+            notificationRepository.save(hiatusNotif);
         }
     }
 
@@ -603,51 +674,51 @@ public class BoardService {
     // ── Xem rankings ─────────────────────────────────────────────
     public List<SeriesRankingDTO> getAllRankings() {
         return seriesRepository.findByStatusIn(
-                List.of(Series.SeriesStatus.publishing, Series.SeriesStatus.approved)
-        ).stream().map(series -> {
-            ReaderPoll latest = readerPollRepository
-                    .findTopBySeriesIdOrderByPollDateDesc(series.getId()).orElse(null);
-            ReaderPoll previous = latest != null
-                    ? readerPollRepository.findTopBySeriesIdAndPollDateBeforeOrderByPollDateDesc(
+                        List.of(Series.SeriesStatus.publishing, Series.SeriesStatus.approved)
+                ).stream().map(series -> {
+                    ReaderPoll latest = readerPollRepository
+                            .findTopBySeriesIdOrderByPollDateDesc(series.getId()).orElse(null);
+                    ReaderPoll previous = latest != null
+                            ? readerPollRepository.findTopBySeriesIdAndPollDateBeforeOrderByPollDateDesc(
                             series.getId(), latest.getPollDate()).orElse(null)
-                    : null;
+                            : null;
 
-            int curr = latest != null ? latest.getRankPosition() : 0;
-            int prev = previous != null ? previous.getRankPosition() : curr;
-            String trend = curr < prev ? "up" : curr > prev ? "down" : "stable";
+                    int curr = latest != null ? latest.getRankPosition() : 0;
+                    int prev = previous != null ? previous.getRankPosition() : curr;
+                    String trend = curr < prev ? "up" : curr > prev ? "down" : "stable";
 
-            // Đếm liên tiếp gần nhất với ngưỡng động 20% cuối bảng
-            int totalPub = seriesRepository.countByStatus(Series.SeriesStatus.publishing);
-            int thr = Math.max(1, (int) Math.ceil(totalPub * AT_RISK_BOTTOM_PCT));
-            List<ReaderPoll> recent = readerPollRepository
-                    .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
-            int consecutiveLow = 0;
-            if (totalPub > 1) {
-                for (ReaderPoll p : recent) {
-                    if (p.getRankPosition() != null
-                            && p.getRankPosition() > (totalPub - thr)) consecutiveLow++;
-                    else break;
-                }
-            }
+                    // Đếm liên tiếp gần nhất với ngưỡng động 20% cuối bảng
+                    int totalPub = seriesRepository.countByStatus(Series.SeriesStatus.publishing);
+                    int thr = Math.max(1, (int) Math.ceil(totalPub * AT_RISK_BOTTOM_PCT));
+                    List<ReaderPoll> recent = readerPollRepository
+                            .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
+                    int consecutiveLow = 0;
+                    if (totalPub > 1) {
+                        for (ReaderPoll p : recent) {
+                            if (p.getRankPosition() != null
+                                    && p.getRankPosition() > (totalPub - thr)) consecutiveLow++;
+                            else break;
+                        }
+                    }
 
-            Double rs = latest != null ? latest.getReaderScore() : null;
-            Integer rv = latest != null ? latest.getReaderVoteCount() : null;
-            Double ws = null;
-            if (rs != null) {
-                double v = rv != null ? rv : 0;
-                double R = (v * rs + 20 * 6.8) / (v + 20);
-                ws = Math.round(R * 100.0) / 100.0;
-            }
-            return new SeriesRankingDTO(
-                    series.getId(), series.getTitle(), curr, prev, trend,
-                    latest != null ? latest.getVoteCount() : 0,
-                    previous != null ? previous.getVoteCount() : 0,
-                    series.getCancellationRisk() != null && series.getCancellationRisk(),
-                    consecutiveLow,
-                    latest != null ? latest.getPollDate().toString() : null,
-                    rs, rv, ws
-            );
-        }).sorted(Comparator.comparingInt(r -> r.getCurrentRank() == 0 ? 999 : r.getCurrentRank()))
-        .collect(Collectors.toList());
+                    Double rs = latest != null ? latest.getReaderScore() : null;
+                    Integer rv = latest != null ? latest.getReaderVoteCount() : null;
+                    Double ws = null;
+                    if (rs != null) {
+                        double v = rv != null ? rv : 0;
+                        double R = (v * rs + 20 * 6.8) / (v + 20);
+                        ws = Math.round(R * 100.0) / 100.0;
+                    }
+                    return new SeriesRankingDTO(
+                            series.getId(), series.getTitle(), curr, prev, trend,
+                            latest != null ? latest.getVoteCount() : 0,
+                            previous != null ? previous.getVoteCount() : 0,
+                            series.getCancellationRisk() != null && series.getCancellationRisk(),
+                            consecutiveLow,
+                            latest != null ? latest.getPollDate().toString() : null,
+                            rs, rv, ws
+                    );
+                }).sorted(Comparator.comparingInt(r -> r.getCurrentRank() == 0 ? 999 : r.getCurrentRank()))
+                .collect(Collectors.toList());
     }
 }

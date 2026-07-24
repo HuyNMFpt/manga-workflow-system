@@ -57,6 +57,9 @@ public class Series {
     @Column(name = "cancellation_risk", nullable = false)
     private Boolean cancellationRisk = false;
 
+    @Column(name = "publish_start_date")
+    private java.time.LocalDate publishStartDate;
+
     @Column(name = "approved_at")
     private LocalDateTime approvedAt;
 
@@ -78,10 +81,11 @@ public class Series {
         approved,
         publishing,
         on_hiatus,
-        cancelled
+        rejected,                // Board từ chối lần đầu — Mangaka được nộp lại
+        cancelled                // Board cancel series đang publishing — vĩnh viễn
     }
 
     public enum PublishSchedule {
-        weekly, monthly
+        weekly, biweekly, monthly
     }
 }

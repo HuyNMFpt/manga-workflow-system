@@ -18,6 +18,7 @@ public class EditorService {
 
     private final SeriesRepository seriesRepository;
     private final ManuscriptRepository manuscriptRepository;
+    private final ManuscriptPageRepository manuscriptPageRepository;
     private final ManuscriptAnnotationRepository annotationRepository;
     private final ChapterRepository chapterRepository;
     private final TaskRepository taskRepository;
@@ -97,7 +98,7 @@ public class EditorService {
             // Days until deadline
             int daysLeft = latestChapter.getDeadline() != null
                     ? (int) java.time.temporal.ChronoUnit.DAYS.between(
-                            java.time.LocalDate.now(), latestChapter.getDeadline())
+                    java.time.LocalDate.now(), latestChapter.getDeadline())
                     : 999;
 
             // Danh sách assistant
@@ -123,7 +124,8 @@ public class EditorService {
                     total, completed, inProgress, pending, overdue,
                     daysLeft, daysLeft <= 3 || overdue > 0,
                     Math.round(percent * 10.0) / 10.0,
-                    assistantNames
+                    assistantNames,
+                    latestChapter.getDeadline() != null ? latestChapter.getDeadline().toString() : null
             ));
         }
 
@@ -143,7 +145,10 @@ public class EditorService {
                                 .map(a -> new AnnotationDTO(
                                         a.getId(), a.getNote(), a.getTag(),
                                         a.getX(), a.getY(), a.getPageNumber(),
-                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                                        userRepository.findById(a.getEditorId())
+                                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                                .orElse(null)
                                 ))
                                 .collect(Collectors.toList());
 
@@ -155,7 +160,9 @@ public class EditorService {
                                 m.getRejectionReason(),
                                 m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
                                 m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
-                                annotations
+                                annotations,
+                                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(m.getId())
+                                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
                         );
                         return dto;
                     })
@@ -193,7 +200,10 @@ public class EditorService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(Collectors.toList());
 
@@ -205,12 +215,19 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
-                annotations
+                annotations,
+                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(manuscript.getId())
+                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
         );
     }
 
     // ── Editor nộp lên Board ──────────────────────────────────────
     @org.springframework.transaction.annotation.Transactional
+    public void deleteAnnotation(String annotationId, String editorId) {
+        annotationRepository.deleteByIdAndEditorId(annotationId, editorId);
+        log.info("Annotation {} deleted by editor {}", annotationId, editorId);
+    }
+
     public SubmissionDTO submitToBoard(String manuscriptId, String editorId, SubmitToBoardRequest request) {
         Manuscript manuscript = manuscriptRepository.findById(manuscriptId)
                 .orElseThrow(() -> new RuntimeException("Manuscript not found"));
@@ -229,7 +246,7 @@ public class EditorService {
         manuscriptRepository.save(manuscript);
 
         // Tạo Submission lên Board
-        int submissionRound = (int) submissionRepository.countByManuscriptId(manuscriptId) + 1;
+        int submissionRound = submissionRepository.countBySeriesId(manuscript.getSeriesId()) + 1;
 
         Submission submission = new Submission();
         submission.setManuscriptId(manuscriptId);
@@ -292,8 +309,8 @@ public class EditorService {
         // Chỉ reset được khi đang approved (Sẵn sàng) — không reset khi đã nộp Board
         if (manuscript.getStatus() != Manuscript.ManuscriptStatus.approved) {
             throw new RuntimeException(
-                "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
-                "Hiện tại: " + manuscript.getStatus().name()
+                    "Chỉ có thể reset bản thảo đang ở trạng thái 'Sẵn sàng'. " +
+                            "Hiện tại: " + manuscript.getStatus().name()
             );
         }
 
@@ -313,7 +330,10 @@ public class EditorService {
                 .map(a -> new AnnotationDTO(
                         a.getId(), a.getNote(), a.getTag(),
                         a.getX(), a.getY(), a.getPageNumber(),
-                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null
+                        a.getCreatedAt() != null ? a.getCreatedAt().toString() : null,
+                        userRepository.findById(a.getEditorId())
+                                .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                                .orElse(null)
                 ))
                 .collect(java.util.stream.Collectors.toList());
 
@@ -325,7 +345,9 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
-                annotations
+                annotations,
+                manuscriptPageRepository.findByManuscriptIdOrderByPageNumberAsc(manuscript.getId())
+                        .stream().map(p -> new ManuscriptPageDTO(p.getId(), p.getManuscriptId(), p.getPageNumber(), p.getImageUrl(), p.getThumbnailUrl(), p.getNotes())).collect(java.util.stream.Collectors.toList())
         );
     }
 
@@ -391,6 +413,7 @@ public class EditorService {
                 manuscript.getRejectionReason(),
                 manuscript.getSubmittedAt() != null ? manuscript.getSubmittedAt().toString() : null,
                 manuscript.getCreatedAt() != null ? manuscript.getCreatedAt().toString() : null,
+                null,
                 null
         );
     }}

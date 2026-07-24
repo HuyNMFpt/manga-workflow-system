@@ -20,4 +20,5 @@ public class ManuscriptDTO {
     private String submittedAt;
     private String createdAt;
     private List<AnnotationDTO> annotations;
+    private List<ManuscriptPageDTO> pages; // danh sách trang bản thảo (multi-page)
 }

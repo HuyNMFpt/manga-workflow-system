@@ -88,6 +88,17 @@ public class BoardController {
     }
 
     /**
+     * GET /api/board/submissions/{submissionId}/votes
+     * Xem chi tiết danh sách phiếu bầu — Board cuối xem trước khi quyết định
+     */
+    @GetMapping("/submissions/{submissionId}/votes")
+    public ApiResponse<List<BoardVoteDetailDTO>> getVoteDetails(
+            @PathVariable String submissionId,
+            Authentication authentication) {
+        return ApiResponse.success(boardService.getVoteDetails(submissionId));
+    }
+
+    /**
      * POST /api/board/proposals
      * Board member đề xuất quyết định cancel/hiatus/reinstate/change_schedule — KHÔNG tự quyết ngay
      */

@@ -12,10 +12,12 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/pages")
@@ -56,6 +58,46 @@ public class PageController {
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ApiResponse<>(null, "Failed to upload page: " + e.getMessage(), false));
+        }
+    }
+
+    // ── Batch Upload — nhiều ảnh cùng lúc ────────────────────────
+    @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Batch upload pages", description = "Upload multiple page images at once")
+    public ResponseEntity<ApiResponse<List<PageDTO>>> uploadPages(
+            @RequestParam("chapterId") String chapterId,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "startPageNumber", required = false) Integer startPageNumber,
+            @RequestParam(value = "notes", required = false) String notes) {
+        try {
+            List<PageDTO> result = pageService.uploadPages(chapterId, files, startPageNumber, notes);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiResponse<>(result, "Upload thành công " + result.size() + " trang", true));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>(null, "Failed to batch upload: " + e.getMessage(), false));
+        }
+    }
+
+    // ── PDF Upload — extract từng trang thành ảnh ────────────────
+    @PostMapping(value = "/upload-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "Upload PDF", description = "Upload PDF and extract each page as image")
+    public ResponseEntity<ApiResponse<List<PageDTO>>> uploadPdf(
+            @RequestParam("chapterId") String chapterId,
+            @RequestParam("file") MultipartFile pdfFile,
+            @RequestParam(value = "startPageNumber", required = false) Integer startPageNumber) {
+        if (!Objects.requireNonNull(pdfFile.getOriginalFilename()).toLowerCase().endsWith(".pdf")) {
+            return ResponseEntity.badRequest()
+                    .body(new ApiResponse<>(null, "Chỉ chấp nhận file PDF", false));
+        }
+        try {
+            List<PageDTO> result = pageService.uploadPdf(chapterId, pdfFile, startPageNumber);
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(new ApiResponse<>(result,
+                            "Upload PDF thành công — " + result.size() + " trang được tạo", true));
+        } catch (IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiResponse<>(null, "Failed to upload PDF: " + e.getMessage(), false));
         }
     }
 

@@ -14,4 +14,7 @@ public interface BoardVoteRepository extends JpaRepository<BoardVote, String> {
     Optional<BoardVote> findBySubmissionIdAndVoterId(String submissionId, String voterId);
 
     long countBySubmissionId(String submissionId);
+
+    // Lấy danh sách vote chi tiết theo thứ tự thời gian — dùng cho getVoteDetails()
+    java.util.List<BoardVote> findBySubmissionIdOrderByVotedAtAsc(String submissionId);
 }

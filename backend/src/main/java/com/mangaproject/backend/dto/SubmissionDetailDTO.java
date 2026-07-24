@@ -1,6 +1,7 @@
 package com.mangaproject.backend.dto;
 
 import lombok.*;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -33,4 +34,5 @@ public class SubmissionDetailDTO {
     private String whyItWillSell;
     private String recommendedSchedule;
     private String editorNote;
+    private List<ManuscriptPageDTO> manuscriptPages; // trang bản thảo cho Board xem
 }

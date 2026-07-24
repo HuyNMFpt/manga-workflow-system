@@ -16,5 +16,6 @@ public class VoteRequest {
     @Size(min = 50, message = "Justification phải ít nhất 50 ký tự")
     private String justification;
 
-    private String schedule; // weekly, monthly — chỉ cần khi decision = approve
+    private String schedule;          // weekly | biweekly | monthly — khi decision = approve
+    private String publishStartDate;  // "YYYY-MM-DD" — khi decision = approve
 }

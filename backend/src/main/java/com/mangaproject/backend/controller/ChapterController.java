@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -49,8 +50,10 @@ public class ChapterController {
     @PostMapping
     @Operation(summary = "Create new chapter", description = "Create a new chapter for a series")
     public ResponseEntity<ApiResponse<ChapterDTO>> createChapter(
-            @Valid @RequestBody CreateChapterRequest request) {
-        ChapterDTO chapter = chapterService.createChapter(request);
+            @Valid @RequestBody CreateChapterRequest request,
+            Authentication authentication) {
+        String userId = (String) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.createChapter(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(chapter, "Chapter created successfully", true));
     }
@@ -75,13 +78,15 @@ public class ChapterController {
     @Operation(summary = "Update chapter status", description = "Change chapter status")
     public ResponseEntity<ApiResponse<ChapterDTO>> updateChapterStatus(
             @PathVariable String id,
-            @RequestBody Map<String, String> request) {
+            @RequestBody Map<String, String> request,
+            Authentication authentication) {
         String status = request.get("status");
         if (status == null || status.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>(null, "Status is required", false));
         }
-        ChapterDTO chapter = chapterService.updateChapterStatus(id, status);
+        String userId = (String) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.updateChapterStatus(id, status, userId);
         return ResponseEntity.ok(new ApiResponse<>(chapter, "Chapter status updated", true));
     }
 }
