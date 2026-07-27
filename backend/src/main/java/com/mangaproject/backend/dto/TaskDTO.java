@@ -22,6 +22,8 @@ public class TaskDTO {
     private String fileUrl;         // URL file kết quả Assistant đã nộp
     private String pageImageUrl;    // URL ảnh trang gốc (raw_file_url từ pages table)
     private String dueDate;
+    private java.math.BigDecimal paymentAmount;
+    private Boolean isPaid;
     private String submittedAt;
     private String approvedAt;
     private String createdAt;

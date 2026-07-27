@@ -76,7 +76,7 @@ public class ManuscriptService {
         manuscript.setSeriesId(request.getSeriesId());
         manuscript.setSubmittedBy(userId);
         manuscript.setVersion(nextVersion);
-        manuscript.setFileUrl(request.getFileUrl() != null ? request.getFileUrl() : "pending_upload");
+        manuscript.setFileUrl(request.getFileUrl()); // null nếu không có file — frontend tự xử lý
         manuscript.setDescription(buildDescription(request));
         manuscript.setStatus(Manuscript.ManuscriptStatus.submitted);
         manuscript.setSubmittedAt(LocalDateTime.now());
@@ -304,17 +304,22 @@ public class ManuscriptService {
                 .findByManuscriptIdOrderByPageNumberAsc(m.getId())
                 .stream().map(this::mapPageToDTO).collect(Collectors.toList());
 
-        ManuscriptDTO dto = new ManuscriptDTO(
-                m.getId(), m.getSeriesId(), seriesTitle,
-                series != null ? series.getStatus().name() : null,
-                m.getSubmittedBy(), m.getVersion(), m.getFileUrl(),
-                m.getDescription(), m.getStatus().name(),
-                m.getRejectionReason(),
-                m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null,
-                m.getCreatedAt() != null ? m.getCreatedAt().toString() : null,
-                annotations,
-                pages
-        );
+        ManuscriptDTO dto = new ManuscriptDTO();
+        dto.setId(m.getId());
+        dto.setSeriesId(m.getSeriesId());
+        dto.setSeriesTitle(seriesTitle);
+        dto.setSeriesStatus(series != null ? series.getStatus().name() : null);
+        dto.setSubmittedBy(m.getSubmittedBy());
+        dto.setVersion(m.getVersion());
+        dto.setFileUrl(m.getFileUrl());
+        dto.setDescription(m.getDescription());
+        dto.setStatus(m.getStatus().name());
+        dto.setRejectionReason(m.getRejectionReason());
+        dto.setSubmittedAt(m.getSubmittedAt() != null ? m.getSubmittedAt().toString() : null);
+        dto.setCreatedAt(m.getCreatedAt() != null ? m.getCreatedAt().toString() : null);
+        dto.setAnnotations(annotations);
+        dto.setPages(pages);
+        dto.setCoverUrl(series != null ? series.getCoverUrl() : null);
         return dto;
     }
 
@@ -333,13 +338,22 @@ public class ManuscriptService {
                     .orElse(null);
         }
 
-        return new SubmissionDTO(
-                s.getId(), manuscriptId, seriesId, seriesTitle,
-                s.getSubmittedBy(), s.getSubmissionRound(), s.getCoverLetter(),
-                s.getStatus().name(), s.getVoteYes(), s.getVoteNo(), s.getVoteAbstain(),
-                s.getVotingDeadline() != null ? s.getVotingDeadline().toString() : null,
-                s.getCreatedAt() != null ? s.getCreatedAt().toString() : null,
-                assignedEditorName
-        );
+        SubmissionDTO dto = new SubmissionDTO();
+        dto.setId(s.getId());
+        dto.setManuscriptId(manuscriptId);
+        dto.setSeriesId(seriesId);
+        dto.setSeriesTitle(seriesTitle);
+        dto.setSubmittedBy(s.getSubmittedBy());
+        dto.setSubmissionRound(s.getSubmissionRound());
+        dto.setCoverLetter(s.getCoverLetter());
+        dto.setStatus(s.getStatus().name());
+        dto.setVoteYes(s.getVoteYes());
+        dto.setVoteNo(s.getVoteNo());
+        dto.setVoteAbstain(s.getVoteAbstain());
+        dto.setVotingDeadline(s.getVotingDeadline() != null ? s.getVotingDeadline().toString() : null);
+        dto.setCreatedAt(s.getCreatedAt() != null ? s.getCreatedAt().toString() : null);
+        dto.setAssignedEditorName(assignedEditorName);
+        dto.setCoverUrl(series != null ? series.getCoverUrl() : null);
+        return dto;
     }
 }

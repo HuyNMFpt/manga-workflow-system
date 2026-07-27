@@ -5,7 +5,6 @@ import java.util.List;
 
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class StudioProgressDTO {
     private String seriesId;
     private String seriesTitle;
@@ -22,5 +21,9 @@ public class StudioProgressDTO {
     private boolean isUrgent;
     private double completionPercent;
     private List<String> assistantNames;
-    private String deadlineDate; // ISO date string "YYYY-MM-DD" — frontend dùng để tính real-time countdown
+    private String deadlineDate;
+    private String publishSchedule; // weekly|biweekly|monthly // ISO date string "YYYY-MM-DD" — frontend dùng để tính real-time countdown
+    private int publishedChapters;            // TODO 2: số chapter đã published
+    private int approvedChapters;             // TODO 2: số chapter approved (sẵn sàng xuất bản)
+    private List<ChapterSummaryDTO> chapters; // TODO 2: danh sách chapters cho Editor chọn publish
 }

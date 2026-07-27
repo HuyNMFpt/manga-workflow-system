@@ -5,7 +5,6 @@ import java.util.List;
 
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class ManuscriptDTO {
     private String id;
     private String seriesId;
@@ -21,4 +20,5 @@ public class ManuscriptDTO {
     private String createdAt;
     private List<AnnotationDTO> annotations;
     private List<ManuscriptPageDTO> pages; // danh sách trang bản thảo (multi-page)
+    private String coverUrl; // ảnh bìa series (null nếu chưa upload)
 }

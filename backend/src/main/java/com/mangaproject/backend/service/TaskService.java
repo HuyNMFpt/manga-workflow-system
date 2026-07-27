@@ -2,6 +2,7 @@ package com.mangaproject.backend.service;
 
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.Chapter;
+import com.mangaproject.backend.model.Notification;
 import com.mangaproject.backend.model.Page;
 import com.mangaproject.backend.model.Task;
 import com.mangaproject.backend.model.User;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -24,8 +26,11 @@ public class TaskService {
     private final PriorityLookupRepository priorityLookupRepository;
     private final TaskTypeLookupRepository taskTypeLookupRepository;
     private final PageRepository pageRepository;
+    private final ChapterService chapterService;
     private final ChapterRepository chapterRepository;
     private final UserRepository userRepository;
+    private final NotificationRepository notificationRepository;
+    private final LookupResolverService lookupResolverService;
 
     public PaginatedResponse<TaskDTO> getMyTasks(String userId, String status, int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
@@ -52,9 +57,28 @@ public class TaskService {
     }
 
     public TaskDTO createTask(CreateTaskRequest request) {
+        // Mục 2: Chặn task song song — 1 trang chỉ có 1 task active tại 1 thời điểm
+        List<Task> existingTasks = taskRepository.findByPageId(request.getPageId());
+        boolean hasActiveTask = existingTasks.stream()
+                .anyMatch(t -> t.getStatus() != Task.TaskStatus.approved);
+        if (hasActiveTask) {
+            Task active = existingTasks.stream()
+                    .filter(t -> t.getStatus() != Task.TaskStatus.approved)
+                    .findFirst().orElseThrow();
+            throw new RuntimeException(
+                    "Trang này đang có task chưa hoàn thành (" + active.getTaskType().name()
+                            + " — " + active.getStatus().name() + "). Chờ duyệt xong mới giao task tiếp theo.");
+        }
+
         Task task = new Task();
         task.setPageId(request.getPageId());
-        task.setAssignedTo(request.getAssignedTo());
+
+        // Skill-matching: nếu không chỉ định → tự tìm assistant phù hợp
+        String assignedTo = request.getAssignedTo();
+        if (assignedTo == null || assignedTo.isBlank()) {
+            assignedTo = findBestAssistant(request.getTaskType());
+        }
+        task.setAssignedTo(assignedTo);
         task.setAssignedBy(request.getAssignedBy());
         task.setTitle(request.getTitle());
         task.setDescription(request.getDescription());
@@ -74,7 +98,30 @@ public class TaskService {
         task.setStatus(Task.TaskStatus.pending);
         if (request.getDueDate() != null) task.setDueDate(java.time.LocalDate.parse(request.getDueDate()).atStartOfDay());
 
-        return mapToDTO(taskRepository.save(task), null, null, null);
+        // Đơn giá: dùng giá Mangaka nhập nếu có, không thì dùng giá mặc định theo loại task
+        java.math.BigDecimal paymentAmount = request.getPaymentAmount();
+        if (paymentAmount == null || paymentAmount.compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            paymentAmount = defaultPaymentAmount(task.getTaskType());
+        }
+        task.setPaymentAmount(paymentAmount);
+
+        Task saved = taskRepository.save(task);
+
+        // Gửi notification task_assigned cho Assistant
+        Page page = pageRepository.findById(request.getPageId()).orElse(null);
+        int pageNum = page != null ? page.getPageNumber() : 0;
+        Notification notif = new Notification();
+        notif.setUserId(saved.getAssignedTo());
+        notif.setType(Notification.NotificationType.task_assigned);
+        notif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                Notification.NotificationType.task_assigned));
+        notif.setMessage(String.format("Bạn được giao task mới: %s (trang %d)",
+                saved.getTaskType().name(), pageNum));
+        notif.setReferenceId(saved.getId());
+        notif.setReferenceType("task");
+        notificationRepository.save(notif);
+
+        return mapToDTO(saved, null, null, null);
     }
 
     // BR-01: pending | revision_needed → in_progress
@@ -122,8 +169,30 @@ public class TaskService {
         task.setApprovedAt(LocalDateTime.now());
         task = taskRepository.save(task); // reassign để lấy updatedAt mới nhất
 
+        // Gửi notification task_approved cho Assistant
+        Notification approveNotif = new Notification();
+        approveNotif.setUserId(task.getAssignedTo());
+        approveNotif.setType(Notification.NotificationType.task_approved);
+        approveNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                Notification.NotificationType.task_approved));
+        approveNotif.setMessage("Task của bạn đã được duyệt: " + task.getTaskType().name());
+        approveNotif.setReferenceId(task.getId());
+        approveNotif.setReferenceType("task");
+        notificationRepository.save(approveNotif);
+
         // Auto-approve chapter nếu tất cả task đã approved — dùng COUNT query tối ưu
         autoApproveChapterIfDone(task.getPageId());
+
+        // Mục 1: ghi resultFileUrl của task vào page.imageUrl
+        final String resultFileUrl = task.getResultFileUrl();
+        final String pageId = task.getPageId();
+        if (resultFileUrl != null && !resultFileUrl.isBlank()) {
+            pageRepository.findById(pageId).ifPresent(page -> {
+                page.setImageUrl(resultFileUrl);
+                pageRepository.save(page); // trigger @UpdateTimestamp
+                log.info("Page imageUrl updated from task result: pageId={}", page.getId());
+            });
+        }
 
         return mapToDTO(task, null, null, null);
     }
@@ -142,7 +211,79 @@ public class TaskService {
             throw new RuntimeException("Cần ghi rõ lý do yêu cầu sửa");
         task.setStatus(Task.TaskStatus.revision_needed);
         task.setRevisionNotes(note);
+        Task saved = taskRepository.save(task);
+
+        // Gửi notification revision_requested cho Assistant
+        Notification revNotif = new Notification();
+        revNotif.setUserId(saved.getAssignedTo());
+        revNotif.setType(Notification.NotificationType.revision_requested);
+        revNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                Notification.NotificationType.revision_requested));
+        revNotif.setMessage("Task của bạn cần chỉnh sửa: " + saved.getTaskType().name() + " — " + note);
+        revNotif.setReferenceId(saved.getId());
+        revNotif.setReferenceType("task");
+        notificationRepository.save(revNotif);
+
+        return mapToDTO(saved, null, null, null);
+    }
+
+    // ── Mangaka sửa task (chỉ pending/revision_needed) ───────────
+    @Transactional
+    public TaskDTO updateTask(String taskId, UpdateTaskRequest request, String mangakaId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task không tồn tại"));
+        if (!task.getAssignedBy().equals(mangakaId))
+            throw new RuntimeException("Bạn không có quyền sửa task này");
+        if (task.getStatus() != Task.TaskStatus.pending
+                && task.getStatus() != Task.TaskStatus.revision_needed)
+            throw new RuntimeException("Chỉ có thể sửa task ở trạng thái pending hoặc revision_needed");
+
+        // Đổi assignee → gửi notification cho assistant mới
+        if (request.getAssignedTo() != null && !request.getAssignedTo().equals(task.getAssignedTo())) {
+            String oldAssignee = task.getAssignedTo();
+            task.setAssignedTo(request.getAssignedTo());
+
+            // Notify assistant mới
+            Notification newNotif = new Notification();
+            newNotif.setUserId(request.getAssignedTo());
+            newNotif.setType(Notification.NotificationType.task_assigned);
+            newNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                    Notification.NotificationType.task_assigned));
+            newNotif.setMessage("Bạn được giao task mới: " + task.getTaskType().name());
+            newNotif.setReferenceId(task.getId());
+            newNotif.setReferenceType("task");
+            notificationRepository.save(newNotif);
+        }
+
+        if (request.getTitle() != null) task.setTitle(request.getTitle());
+        if (request.getDescription() != null) task.setDescription(request.getDescription());
+        if (request.getPriority() != null) {
+            try { task.setPriority(Task.Priority.valueOf(request.getPriority())); }
+            catch (IllegalArgumentException ignored) {}
+        }
+        if (request.getDueDate() != null) {
+            task.setDueDate(java.time.LocalDate.parse(request.getDueDate()).atStartOfDay());
+        }
+        if (request.getPaymentAmount() != null
+                && request.getPaymentAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
+            task.setPaymentAmount(request.getPaymentAmount());
+        }
+
         return mapToDTO(taskRepository.save(task), null, null, null);
+    }
+
+    // ── Mangaka huỷ task (chỉ pending) ───────────────────────────
+    @Transactional
+    public void deleteTask(String taskId, String mangakaId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task không tồn tại"));
+        if (!task.getAssignedBy().equals(mangakaId))
+            throw new RuntimeException("Bạn không có quyền huỷ task này");
+        if (task.getStatus() != Task.TaskStatus.pending)
+            throw new RuntimeException("Chỉ có thể huỷ task ở trạng thái pending");
+
+        taskRepository.delete(task);
+        log.info("Task deleted: taskId={}, by mangakaId={}", taskId, mangakaId);
     }
 
     // ── Tối ưu: dùng COUNT query thay vì load toàn bộ tasks ──────
@@ -154,17 +295,9 @@ public class TaskService {
             Chapter chapter = page.getChapter();
             if (chapter == null || chapter.getStatus() == Chapter.ChapterStatus.published) return;
 
-            String chapterId = chapter.getId();
-            long total = taskRepository.countByChapterId(chapterId);
-            if (total == 0) return; // không có task nào → không auto-approve
-
-            long nonApproved = taskRepository.countNonApprovedByChapterId(chapterId);
-            if (nonApproved == 0) {
-                chapter.setStatus(Chapter.ChapterStatus.approved);
-                chapterRepository.save(chapter);
-                log.info("Chapter {} '{}' auto-approved — tất cả {} task đã hoàn chỉnh",
-                        chapterId, chapter.getTitle(), total);
-            }
+            // Dùng refreshStatusIfReady thay vì đếm task trực tiếp
+            // — xử lý đúng cả case 0 task lẫn case đã hết task
+            chapterService.refreshStatusIfReady(chapter.getId());
         } catch (Exception e) {
             log.warn("autoApproveChapter failed for pageId={}: {}", pageId, e.getMessage());
         }
@@ -190,6 +323,63 @@ public class TaskService {
         return tasks.stream()
                 .map(t -> mapToDTO(t, pageMap.get(t.getPageId()), userMap.get(t.getAssignedTo()), userMap.get(t.getAssignedBy())))
                 .collect(Collectors.toList());
+    }
+
+    // ── Xác nhận đã thanh toán ───────────────────────────────────
+    @Transactional
+    public TaskDTO markPaid(String taskId, String userId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new RuntimeException("Task không tồn tại"));
+        if (task.getStatus() != Task.TaskStatus.approved) {
+            throw new RuntimeException("Chỉ có thể xác nhận thanh toán cho task đã được duyệt");
+        }
+        task.setIsPaid(true);
+        log.info("Task marked as paid: taskId={}, by={}", taskId, userId);
+        return mapToDTO(taskRepository.save(task), null, null, null);
+    }
+
+    // ── Giá mặc định theo loại task (VND) ───────────────────────
+    private static java.math.BigDecimal defaultPaymentAmount(Task.TaskType taskType) {
+        if (taskType == null) return new java.math.BigDecimal("20000");
+        return switch (taskType) {
+            case background  -> new java.math.BigDecimal("50000");
+            case shading     -> new java.math.BigDecimal("40000");
+            case effect      -> new java.math.BigDecimal("35000");
+            case screentone  -> new java.math.BigDecimal("30000");
+            case dialog      -> new java.math.BigDecimal("25000");
+            case touch_up    -> new java.math.BigDecimal("20000");
+            default          -> new java.math.BigDecimal("20000");
+        };
+    }
+
+    // Public wrapper — dùng cho /tasks/auto-assign endpoint
+    public String findBestAssistantPublic(String taskType) {
+        return findBestAssistant(taskType);
+    }
+
+    // ── Skill-matching: tìm assistant phù hợp với task type ─────
+    private String findBestAssistant(String taskType) {
+        List<com.mangaproject.backend.model.User> assistants =
+                userRepository.findByRole_NameAndIsActiveTrue("assistant");
+        if (assistants.isEmpty()) return null;
+
+        List<String> ids = assistants.stream()
+                .map(com.mangaproject.backend.model.User::getId).toList();
+        java.util.Map<String, Long> loadMap = taskRepository.countActiveTasksByAssistants(ids)
+                .stream().collect(java.util.stream.Collectors.toMap(
+                        row -> (String) row[0], row -> (Long) row[1]));
+
+        // Chỉ assign khi có skill khớp — không fallback
+        // Nếu không ai có skill khớp → trả null, Mangaka tự assign thủ công
+        return assistants.stream()
+                .filter(a -> {
+                    String skills = a.getSkills();
+                    return skills != null && skills.contains("\"" + taskType + "\"");
+                })
+                .min(java.util.Comparator.comparingLong(
+                        a -> loadMap.getOrDefault(a.getId(), 0L)))
+                .map(com.mangaproject.backend.model.User::getId)
+                .orElse(null); // null → frontend hiện cảnh báo đỏ, Mangaka tự chọn
     }
 
     private TaskDTO mapToDTO(Task task, Page page, User assignedToUser, User assignedByUser) {
@@ -239,6 +429,8 @@ public class TaskService {
         dto.setApprovedAt(task.getApprovedAt() != null ? task.getApprovedAt().toString() : null);
         dto.setCreatedAt(task.getCreatedAt().toString());
         dto.setUpdatedAt(task.getUpdatedAt() != null ? task.getUpdatedAt().toString() : null);
+        dto.setPaymentAmount(task.getPaymentAmount());
+        dto.setIsPaid(Boolean.TRUE.equals(task.getIsPaid()));
         return dto;
     }
 }

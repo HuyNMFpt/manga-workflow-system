@@ -21,6 +21,7 @@ public class ChapterDTO {
     private String deadline; // "YYYY-MM-DD"
     private Integer totalPages;
     private LocalDateTime publishedAt;
+    private LocalDateTime scheduledPublishAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<PageDTO> pages;

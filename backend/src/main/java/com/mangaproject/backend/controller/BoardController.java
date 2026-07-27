@@ -38,9 +38,31 @@ public class BoardController {
     }
 
     /**
+     * GET /api/board/me
+     * Cho frontend biết user hiện tại có phải Board trưởng không
+     */
+    @GetMapping("/me")
+    public ApiResponse<java.util.Map<String, Object>> getMyBoardInfo(Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(java.util.Map.of("isChair", user.isBoardChair()));
+    }
+
+    /**
+     * POST /api/board/decide
+     * Chỉ Board trưởng — ra quyết định cuối approve/reject
+     */
+    @PostMapping("/decide")
+    public ApiResponse<Void> decide(
+            @RequestBody DecideRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        boardService.decideSubmission(request, user.getId());
+        return ApiResponse.success(null, "Quyết định đã được ghi nhận");
+    }
+
+    /**
      * POST /api/board/vote
-     * Board member bỏ phiếu cho 1 submission
-     * Khi approve: kèm schedule (weekly/monthly)
+     * Board member thường bỏ phiếu tư vấn (không phải Board trưởng)
      */
     @PostMapping("/vote")
     public ApiResponse<SubmissionDTO> castVote(
@@ -53,7 +75,7 @@ public class BoardController {
 
     /**
      * POST /api/board/rankings/input
-     * Nhập dữ liệu bình chọn độc giả sau mỗi kỳ
+     * Nhập dữ liệu bình chọn độc giả sau mỗi kỳ (upsert: sửa nếu đã tồn tại)
      */
     @PostMapping("/rankings/input")
     public ApiResponse<ReaderPollDTO> inputPollData(
@@ -62,6 +84,31 @@ public class BoardController {
         User user = getUser(authentication);
         return ApiResponse.success(boardService.inputPollData(request, user.getId()),
                 "Dữ liệu bình chọn đã được cập nhật");
+    }
+
+    /**
+     * PUT /api/board/rankings/{id} — Sửa poll đã nhập theo pollId
+     */
+    @PutMapping("/rankings/{id}")
+    public ApiResponse<ReaderPollDTO> updatePollData(
+            @PathVariable String id,
+            @RequestBody PollInputRequest request,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(boardService.updatePollData(id, request, user.getId()),
+                "Poll đã được cập nhật");
+    }
+
+    /**
+     * DELETE /api/board/rankings/{id} — Xóa poll nhầm
+     */
+    @DeleteMapping("/rankings/{id}")
+    public ApiResponse<Void> deletePollData(
+            @PathVariable String id,
+            Authentication authentication) {
+        User user = getUser(authentication);
+        boardService.deletePollData(id, user.getId());
+        return ApiResponse.success(null, "Poll đã được xóa");
     }
 
     /**
@@ -126,12 +173,41 @@ public class BoardController {
 
     /**
      * GET /api/board/proposals
-     * Danh sách đề xuất đang chờ Board bỏ phiếu
+     * Danh sách proposals đang voting
      */
     @GetMapping("/proposals")
     public ApiResponse<List<EditorialProposalDTO>> getActiveProposals(Authentication authentication) {
         User user = getUser(authentication);
         return ApiResponse.success(boardService.getActiveProposals(user.getId()));
+    }
+
+    /**
+     * GET /api/board/proposals/history — TODO 1
+     * Lịch sử proposals đã quyết định
+     */
+    @GetMapping("/proposals/history")
+    public ApiResponse<List<EditorialProposalDTO>> getProposalHistory(Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(boardService.getProposalHistory(user.getId()));
+    }
+
+    /**
+     * GET /api/board/proposals/{id}/votes — TODO 3
+     * Chi tiết phiếu bầu của 1 proposal
+     */
+    @GetMapping("/proposals/{id}/votes")
+    public ApiResponse<com.mangaproject.backend.dto.ProposalVoteDetailsDTO> getProposalVoteDetails(
+            @PathVariable String id) {
+        return ApiResponse.success(boardService.getEditorialVoteDetails(id));
+    }
+
+    /**
+     * GET /api/board/hiatus-series
+     * Danh sách series on_hiatus cần Board đề xuất (Phục hồi/Huỷ)
+     */
+    @GetMapping("/hiatus-series")
+    public ApiResponse<List<SeriesRankingDTO>> getHiatusSeries() {
+        return ApiResponse.success(boardService.getHiatusSeries());
     }
 
     /**

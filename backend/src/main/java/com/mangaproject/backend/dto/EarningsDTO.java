@@ -12,6 +12,8 @@ public class EarningsDTO {
     private BigDecimal thisMonthEarnings;
     private int totalPagesApproved;
     private int thisMonthPagesApproved;
+    private java.math.BigDecimal pendingEarnings;  // chưa thanh toán (task approved nhưng chưa paid)
+    private java.math.BigDecimal paidEarnings;     // đã thanh toán
     private List<MonthlyEarning> monthlyHistory;
     private List<EarningByType> earningsByType;
 

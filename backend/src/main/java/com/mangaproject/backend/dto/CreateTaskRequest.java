@@ -27,4 +27,5 @@ public class CreateTaskRequest {
     private String priority;
 
     private String dueDate;
+    private java.math.BigDecimal paymentAmount; // đơn giá trang — null dùng default
 }

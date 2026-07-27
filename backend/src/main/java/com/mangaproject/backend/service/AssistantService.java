@@ -124,10 +124,24 @@ public class AssistantService {
                 })
                 .collect(Collectors.toList());
 
-        return new EarningsDTO(
-                totalEarnings, thisMonthEarnings,
-                allApproved.size(), thisMonthTasks.size(),
-                monthlyHistory, earningsByType
-        );
+        // Tất cả approved task = pending (chưa có payment_records xác nhận thanh toán)
+        // Khi implement PaymentRecord sau này sẽ split pending/paid ở đây
+        EarningsDTO dto = new EarningsDTO();
+        dto.setTotalEarnings(totalEarnings);
+        dto.setThisMonthEarnings(thisMonthEarnings);
+        dto.setTotalPagesApproved(allApproved.size());
+        dto.setThisMonthPagesApproved(thisMonthTasks.size());
+
+        // Split pending (chưa thanh toán) vs paid (đã thanh toán)
+        BigDecimal paidEarnings = allApproved.stream()
+                .filter(t -> Boolean.TRUE.equals(t.getIsPaid()) && t.getPaymentAmount() != null)
+                .map(Task::getPaymentAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        dto.setPaidEarnings(paidEarnings);
+        dto.setPendingEarnings(totalEarnings.subtract(paidEarnings));
+
+        dto.setMonthlyHistory(monthlyHistory);
+        dto.setEarningsByType(earningsByType);
+        return dto;
     }
 }
