@@ -67,6 +67,7 @@ const RankingBoard = () => {
   const [showInput,  setShowInput]  = useState(false);
   const [inputOk,    setInputOk]    = useState(false);
   const [inputError, setInputError] = useState('');
+  const [editingPollId, setEditingPollId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     seriesId:'', pollPeriod:'', pollYear: new Date().getFullYear().toString(),
@@ -87,11 +88,14 @@ const RankingBoard = () => {
   const rankings: any[] = Array.isArray(rankData) ? rankData : (rankData?.rankings ?? []);
 
   const inputMutation = useMutation({
-    mutationFn: (payload:any) => api.post('/board/rankings/input', payload).then(r=>r.data),
+    mutationFn: (payload:any) =>
+      editingPollId
+        ? api.put(`/board/rankings/${editingPollId}`, payload).then(r=>r.data)
+        : api.post('/board/rankings/input', payload).then(r=>r.data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey:['board','rankings'] });
       qc.invalidateQueries({ queryKey:['board','at-risk'] });
-      setInputOk(true); setShowInput(false);
+      setInputOk(true); setShowInput(false); setEditingPollId(null);
       setForm({ seriesId:'', pollPeriod:'', pollYear: new Date().getFullYear().toString(), voteCount:'', readerScore:'', readerVoteCount:'', notes:'', pollDate: new Date().toISOString().split('T')[0] });
       setTimeout(() => setInputOk(false), 3000);
     },
@@ -102,6 +106,19 @@ const RankingBoard = () => {
     setInputError('');
     if (!form.seriesId || !form.voteCount || !form.pollPeriod) {
       setInputError('Vui lòng điền đầy đủ: Series, kỳ, và số votes'); return;
+    }
+    // Chặn sớm phía client: nếu đang TẠO MỚI (không phải Sửa) và series này
+    // đã có sẵn đúng kỳ/năm đang nhập → báo ngay, khỏi cần round-trip API.
+    // Đây chỉ là lớp UX phụ — backend vẫn phải tự chặn ở API vì đây không
+    // phải nguồn sự thật duy nhất (form chỉ biết được kỳ MỚI NHẤT của mỗi
+    // series qua latestPollPeriod/latestPollYear, không biết hết lịch sử).
+    if (!editingPollId) {
+      const target = sortedRankings.find((r:any) => r.seriesId === form.seriesId);
+      if (target && target.latestPollPeriod === parseInt(form.pollPeriod)
+          && target.latestPollYear === parseInt(form.pollYear)) {
+        setInputError(`Series này đã có dữ liệu cho kỳ ${form.pollPeriod}/${form.pollYear} rồi. Bấm "Sửa" ở bảng xếp hạng để chỉnh lại thay vì nhập mới.`);
+        return;
+      }
     }
     const readerScoreVal     = form.readerScore     ? parseFloat(form.readerScore)     : null;
     const readerVoteCountVal = form.readerVoteCount ? parseInt(form.readerVoteCount)   : null;
@@ -133,7 +150,7 @@ const RankingBoard = () => {
     return (b.currentVotes ?? 0) - (a.currentVotes ?? 0);
   }).map((r, idx) => ({ ...r, currentRank: idx + 1 }));
 
-  const atRiskList = sortedRankings.filter((r:any) => r.isAtRisk);
+  const atRiskList = sortedRankings.filter((r:any) => r.atRisk);
 
   // C hiện tại để hiển thị ở legend
   const currentC = withR[0]?._C ?? C_DEFAULT;
@@ -155,7 +172,7 @@ const RankingBoard = () => {
             <h1 className="text-2xl font-black font-['Syne']">Bảng xếp hạng</h1>
             <p className="text-sm text-zinc-600 mt-1">Xếp hạng theo điểm đánh giá có trọng số của độc giả</p>
           </div>
-          <button onClick={() => setShowInput(!showInput)}
+          <button onClick={() => { setEditingPollId(null); setShowInput(!showInput); }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold shadow-lg shadow-teal-600/25 hover:shadow-teal-600/40 transition-all">
             <Upload className="w-4 h-4"/>Nhập dữ liệu
           </button>
@@ -199,14 +216,16 @@ const RankingBoard = () => {
         {showInput && (
           <div className="rounded-2xl border border-teal-500/20 bg-teal-500/5 p-6 space-y-4">
             <div className="flex items-start justify-between">
-              <p className="text-sm font-bold text-white">Nhập dữ liệu bình chọn kỳ này</p>
+              <p className="text-sm font-bold text-white">
+                {editingPollId ? 'Sửa dữ liệu poll' : 'Nhập dữ liệu bình chọn kỳ này'}
+              </p>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <div className="md:col-span-3">
                 <label className="block text-[10px] font-bold tracking-[0.1em] uppercase text-zinc-600 mb-1">Series *</label>
                 <div className="relative">
-                  <select value={form.seriesId} onChange={e=>setForm(p=>({...p,seriesId:e.target.value}))}
-                    className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:border-teal-500/40 transition-all">
+                  <select value={form.seriesId} disabled={!!editingPollId} onChange={e=>setForm(p=>({...p,seriesId:e.target.value}))}
+                    className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white appearance-none focus:outline-none focus:border-teal-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                     <option value="" className="bg-[#0a0a12]">-- Chọn series --</option>
                     {allSeries.filter((s:any)=>s.status==='publishing').map((s:any)=>(
                       <option key={s.id} value={s.id} className="bg-[#0a0a12]">{s.title}</option>
@@ -216,18 +235,22 @@ const RankingBoard = () => {
                 </div>
               </div>
               {[
-                { key:'pollPeriod', label:'Kỳ * (1-12)', type:'number', placeholder:'VD: 6'   },
-                { key:'pollYear',   label:'Năm *',        type:'number', placeholder:'VD: 2026' },
-                { key:'voteCount',  label:'Votes poll *', type:'number', placeholder:'VD: 2847' },
-                { key:'pollDate',   label:'Ngày poll',    type:'date',   placeholder:''         },
-              ].map(f=>(
-                <div key={f.key}>
-                  <label className="block text-[10px] font-bold tracking-[0.1em] uppercase text-zinc-600 mb-1">{f.label}</label>
-                  <input type={f.type} value={(form as any)[f.key]} placeholder={f.placeholder}
-                    onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))}
-                    className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500/40 transition-all"/>
-                </div>
-              ))}
+                { key:'pollPeriod', label:'Kỳ * (1-12)', type:'number', placeholder:'VD: 6',    locked:true  },
+                { key:'pollYear',   label:'Năm *',        type:'number', placeholder:'VD: 2026', locked:true  },
+                { key:'voteCount',  label:'Votes poll *', type:'number', placeholder:'VD: 2847', locked:false },
+                { key:'pollDate',   label:'Ngày poll',    type:'date',   placeholder:'',          locked:false },
+              ].map(f=>{
+                const isLocked = !!editingPollId && f.locked;
+                return (
+                  <div key={f.key}>
+                    <label className="block text-[10px] font-bold tracking-[0.1em] uppercase text-zinc-600 mb-1">{f.label}</label>
+                    <input type={f.type} value={(form as any)[f.key]} placeholder={f.placeholder}
+                      disabled={isLocked}
+                      onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))}
+                      className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"/>
+                  </div>
+                );
+              })}
 
               {/* Reader Score + Reader Vote Count — highlighted, dùng tính R */}
               <div className="md:col-span-3 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 grid grid-cols-2 gap-3">
@@ -262,10 +285,12 @@ const RankingBoard = () => {
             {inputError && <p className="text-xs text-red-400">{inputError}</p>}
             {inputOk    && <p className="text-xs text-emerald-400">✅ Nhập dữ liệu thành công!</p>}
             <div className="flex justify-end gap-2">
-              <button onClick={()=>setShowInput(false)} className="px-4 py-2 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors">Huỷ</button>
+              <button onClick={()=>{ setShowInput(false); setEditingPollId(null); }} className="px-4 py-2 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors">Huỷ</button>
               <button onClick={handleSubmitInput} disabled={inputMutation.isPending}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold disabled:opacity-60 flex items-center gap-2 transition-all">
-                {inputMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang nhập...</> : 'Xác nhận'}
+                {inputMutation.isPending
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>{editingPollId ? 'Đang lưu...' : 'Đang nhập...'}</>
+                  : (editingPollId ? 'Lưu thay đổi' : 'Xác nhận')}
               </button>
             </div>
           </div>
@@ -295,7 +320,7 @@ const RankingBoard = () => {
               const change = (r.previousRank ?? r.currentRank) - r.currentRank;
               return (
                 <div key={r.seriesId ?? idx}
-                  className={`grid grid-cols-[3rem_1fr_6rem_8rem_6rem_6rem] gap-3 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${r.isAtRisk?'bg-red-500/3':''}`}>
+                  className={`grid grid-cols-[3rem_1fr_6rem_8rem_6rem_6rem] gap-3 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${r.atRisk?'bg-red-500/3':''}`}>
                   {/* Rank */}
                   <div className="flex items-center justify-center">
                     {r.currentRank===1?<span className="text-xl">🥇</span>
@@ -305,9 +330,41 @@ const RankingBoard = () => {
                   </div>
                   {/* Title */}
                   <div>
-                    <p className="text-[13px] font-semibold text-white">{r.seriesTitle}</p>
-                    {r.isAtRisk && <p className="text-[10px] text-red-400 mt-0.5">⚠ {r.consecutiveLowPeriods} kỳ thấp</p>}
+                    <div className="flex items-center gap-2">
+                      <p className="text-[13px] font-semibold text-white">{r.seriesTitle}</p>
+                      {r.latestPollId && (
+                        <button
+                          onClick={() => {
+                            setEditingPollId(r.latestPollId);
+                            setForm({
+                              seriesId: r.seriesId,
+                              pollPeriod: r.latestPollPeriod != null ? String(r.latestPollPeriod) : '',
+                              pollYear: r.latestPollYear != null ? String(r.latestPollYear) : '',
+                              voteCount: r.currentVotes != null ? String(r.currentVotes) : '',
+                              readerScore: r.readerScore != null ? String(r.readerScore) : '',
+                              readerVoteCount: r.readerVoteCount != null ? String(r.readerVoteCount) : '',
+                              notes: '',
+                              pollDate: r.lastUpdate ? r.lastUpdate.slice(0, 10) : new Date().toISOString().split('T')[0],
+                            });
+                            setInputError('');
+                            setShowInput(true);
+                          }}
+                          className="text-[10px] font-semibold text-amber-400 hover:text-amber-300 hover:underline transition-colors flex-shrink-0"
+                        >
+                          Sửa
+                        </button>
+                      )}
+                    </div>
+                    {r.atRisk && <p className="text-[10px] text-red-400 mt-0.5">⚠ {r.consecutiveLowPeriods} kỳ thấp</p>}
                     {r._R == null && <p className="text-[10px] text-zinc-700 mt-0.5 italic">Chưa có reader rating</p>}
+                    {r.publishTotalCount > 0 && (
+                      <p className="text-[10px] text-zinc-600 mt-0.5">
+                        <span className={
+                          r.publishOnTimeRate >= 80 ? 'text-emerald-500' : r.publishOnTimeRate >= 50 ? 'text-amber-500' : 'text-red-500'
+                        }>{r.publishOnTimeRate}% đúng hạn</span>
+                        {' '}({r.publishTotalCount} chapter)
+                      </p>
+                    )}
                   </div>
                   {/* Poll votes */}
                   <div className="text-center text-sm font-bold text-white">{(r.currentVotes??0).toLocaleString()}</div>
@@ -327,7 +384,7 @@ const RankingBoard = () => {
                   </div>
                   {/* Status */}
                   <div className="flex justify-center">
-                    {r.isAtRisk
+                    {r.atRisk
                       ?<span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">At-risk</span>
                       :<span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Safe</span>}
                   </div>

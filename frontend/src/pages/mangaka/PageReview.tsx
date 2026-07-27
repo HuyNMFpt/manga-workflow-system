@@ -256,6 +256,14 @@ export default function PageReview() {
     mutationFn: ({ taskId, note }: { taskId:string; note:string }) => taskService.requestRevision(taskId, note),
     onSuccess: () => { qc.invalidateQueries({ queryKey:['tasks'] }); closeModal(); },
   });
+  const markPaidMutation = useMutation({
+    mutationFn: ({ taskId, isPaid }: { taskId:string; isPaid:boolean }) => taskService.markPaid(taskId, isPaid),
+    onSuccess: (updated:any) => {
+      qc.invalidateQueries({ queryKey:['tasks'] });
+      // Cập nhật ngay trong modal đang mở, khỏi phải đóng/mở lại mới thấy đổi
+      setSelectedTask((prev:any) => prev ? { ...prev, isPaid: updated?.isPaid ?? !prev.isPaid } : prev);
+    },
+  });
   const isSubmitting = approveMutation.isPending || revisionMutation.isPending;
   const handleConfirm = () => {
     if (!selectedTask || !reviewAction) return;
@@ -391,6 +399,16 @@ export default function PageReview() {
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${st.pill}`}>
                               {st.label}
                             </span>
+                            {task.status==='approved' && (
+                              <span title={task.isPaid ? 'Đã trả' : 'Chưa trả'}
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border w-fit -mt-1 ${
+                                  task.isPaid
+                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                    : 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
+                                }`}>
+                                {task.isPaid ? '✓ Đã trả' : 'Chưa trả'}
+                              </span>
+                            )}
                             <div className="flex items-center gap-1.5">
                               {canReview ? (
                                 <button
@@ -460,6 +478,29 @@ export default function PageReview() {
                 <div className="flex items-center gap-2 px-4 py-3 bg-emerald-500/8 border border-emerald-500/15 rounded-xl">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0"/>
                   <p className="text-[12px] text-emerald-300 font-semibold">Task đã hoàn chỉnh</p>
+                </div>
+              )}
+              {selectedTask.status==='approved' && (
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-white/[0.02] border border-white/6 rounded-xl">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-0.5">Thanh toán</p>
+                    <p className="text-[14px] font-bold text-white">
+                      {new Intl.NumberFormat('vi-VN', { style:'currency', currency:'VND' }).format(selectedTask.paymentAmount ?? 0)}
+                    </p>
+                  </div>
+                  <button
+                    disabled={markPaidMutation.isPending}
+                    onClick={() => markPaidMutation.mutate({ taskId: selectedTask.id, isPaid: !selectedTask.isPaid })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition-all disabled:opacity-60 ${
+                      selectedTask.isPaid
+                        ? 'bg-emerald-500/12 border-emerald-500/25 text-emerald-300 hover:bg-emerald-500/20'
+                        : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/8'
+                    }`}>
+                    {markPaidMutation.isPending
+                      ? <Loader2 className="w-3 h-3 animate-spin"/>
+                      : <CheckCircle2 className="w-3 h-3"/>}
+                    {selectedTask.isPaid ? 'Đã trả' : 'Đánh dấu đã trả'}
+                  </button>
                 </div>
               )}
               {selectedTask.status==='revision_needed' && (

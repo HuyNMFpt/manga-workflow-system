@@ -21,6 +21,7 @@ export const taskService = {
     description?: string;
     taskType: string;
     priority: string;
+    paymentAmount?: number;
     dueDate?: string;
     panelRegion?: Record<string, any>;
   }) => {
@@ -37,6 +38,10 @@ export const taskService = {
   },
   requestRevision: async (taskId: string, note: string) => {
     const res = await api.put<ApiResponse<Task>>(`/tasks/${taskId}/revision`, { note });
+    return res.data.data;
+  },
+  markPaid: async (taskId: string, isPaid: boolean) => {
+    const res = await api.patch<ApiResponse<Task>>(`/tasks/${taskId}/mark-paid`, { isPaid });
     return res.data.data;
   },
 };

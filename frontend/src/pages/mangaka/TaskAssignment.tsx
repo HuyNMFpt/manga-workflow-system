@@ -34,6 +34,7 @@ interface LocalTask {
   title: string;
   description: string;
   priority: 'low'|'normal'|'high'|'urgent';
+  paymentAmount: number;    // số tiền trả cho task này (VNĐ) — Mangaka nhập, tự điền gợi ý theo loại
   autoAssignInfo?: { reason: string; message?: string } | null; // kết quả lần auto-assign gần nhất
 }
 
@@ -64,6 +65,19 @@ const Pin = ({ color, index, onClick, onRemove, selected }: {
 const TASK_TYPE_VN: Record<string, string> = {
   background: 'Vẽ nền', shading: 'Tô bóng', effect: 'Hiệu ứng',
   screentone: 'Screentone', dialog: 'Hộp thoại', touch_up: 'Chỉnh sửa', other: 'Khác',
+};
+
+// Giá gợi ý theo loại task (VNĐ) — chỉ để tự điền sẵn cho nhanh, Mangaka vẫn
+// sửa tay được thoải mái. Không lưu DB, không có màn hình quản lý riêng —
+// đổi giá thì sửa thẳng ở đây.
+const SUGGESTED_PRICE: Record<TaskType, number> = {
+  background: 15000,
+  shading:     8000,
+  effect:     10000,
+  screentone:  7000,
+  dialog:      5000,
+  touch_up:    4000,
+  other:       6000,
 };
 
 // Đặt SelectField ở module-level (KHÔNG được định nghĩa trong component body —
@@ -180,6 +194,7 @@ export default function TaskAssignment() {
       id: Date.now(), pageNumber: selectedPageNum, x, y,
       type: selectedTaskType,
       assignedTo: null, title: '', description: '', priority: 'normal',
+      paymentAmount: SUGGESTED_PRICE[selectedTaskType],
     };
     setTempTask(newTask);
     setShowTaskForm(true);
@@ -200,6 +215,7 @@ export default function TaskAssignment() {
         description: t.description,
         taskType:    t.type,
         priority:    t.priority,
+        paymentAmount: t.paymentAmount ?? SUGGESTED_PRICE[t.type],
         panelRegion: JSON.stringify({ x: t.x, y: t.y, width: 0, height: 0 }),
         // Tự động lấy deadline từ chapter — task phải xong trước deadline chapter
         dueDate:     selectedChapter?.deadline ?? null,
@@ -676,6 +692,23 @@ export default function TaskAssignment() {
                       tempTask.priority===p.v ? p.c : 'bg-white/3 border-white/6 text-zinc-600 hover:text-zinc-300'
                     }`}>{p.l}</button>
                 ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">
+                Số tiền trả cho task này
+                <span className="text-zinc-700 normal-case tracking-normal font-normal ml-1.5">
+                  (gợi ý theo loại "{getTypeConfig(tempTask.type!).label}", có thể sửa)
+                </span>
+              </label>
+              <div className="relative">
+                <input type="number" min={0} step={1000}
+                  value={tempTask.paymentAmount ?? ''}
+                  onChange={e => setTempTask({...tempTask, paymentAmount: e.target.value === '' ? undefined : Number(e.target.value)})}
+                  placeholder="0"
+                  className="w-full bg-white/5 border border-white/8 rounded-xl pl-4 pr-14 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/40 transition-all"/>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[11px] text-zinc-600 font-semibold">VNĐ</span>
               </div>
             </div>
 

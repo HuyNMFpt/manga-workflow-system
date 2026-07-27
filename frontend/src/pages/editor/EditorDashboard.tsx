@@ -1,4 +1,4 @@
-import { FileText, CheckCircle2, AlertTriangle, Clock, ChevronRight, Loader2 } from 'lucide-react';
+import { FileText, CheckCircle2, AlertTriangle, Clock, ChevronRight, Loader2, TrendingUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
@@ -16,6 +16,12 @@ const EditorDashboard = () => {
     queryFn: async () => { const r = await api.get('/editor/manuscripts', { params:{ limit:4 } }); return r.data.data; },
   });
   const manuscripts = Array.isArray(msData) ? msData : (msData?.content ?? msData?.items ?? []);
+
+  // GET /editor/publish-stats — đúng hạn / trễ hạn
+  const { data: publishStats, isLoading: loadingPublishStats } = useQuery({
+    queryKey: ['editor', 'publish-stats'],
+    queryFn: async () => (await api.get('/editor/publish-stats')).data.data,
+  });
 
   // ✅ Đúng field names từ EditorStatsDTO
   const STAT_CARDS = [
@@ -94,6 +100,67 @@ const EditorDashboard = () => {
             </ul>
           )}
         </div>
+
+        {/* ═══ THỐNG KÊ ĐÚNG HẠN / TRỄ HẠN ═══ */}
+        {!loadingPublishStats && publishStats && publishStats.overall.totalPublished > 0 && (
+          <div className="rounded-2xl border border-white/5 bg-white/[0.015] overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/5">
+              <span className="text-sm font-bold text-white flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-teal-400" />Hiệu suất phát hành
+              </span>
+            </div>
+
+            {/* Overall summary */}
+            <div className="grid grid-cols-4 gap-px bg-white/4">
+              {[
+                { label: 'Đã xuất bản', value: publishStats.overall.totalPublished, color: 'text-zinc-300' },
+                { label: 'Đúng hạn', value: publishStats.overall.onTimeCount, color: 'text-emerald-400' },
+                { label: 'Trễ hạn', value: publishStats.overall.lateCount, color: publishStats.overall.lateCount > 0 ? 'text-red-400' : 'text-zinc-600' },
+                { label: 'Tỷ lệ đúng hạn', value: `${publishStats.overall.onTimeRate}%`, color: publishStats.overall.onTimeRate >= 80 ? 'text-emerald-400' : publishStats.overall.onTimeRate >= 50 ? 'text-amber-400' : 'text-red-400' },
+              ].map((s, i) => (
+                <div key={i} className="bg-[#110c05] px-5 py-4">
+                  <div className={`text-2xl font-black font-['Syne'] ${s.color}`}>{s.value}</div>
+                  <div className="text-[10px] text-zinc-600 mt-0.5">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {publishStats.overall.lateCount > 0 && (
+              <div className="px-6 py-2.5 bg-red-500/4 border-b border-white/5">
+                <p className="text-[11px] text-red-400">
+                  Trung bình trễ <span className="font-bold">{publishStats.overall.avgDaysLate} ngày</span> (tính trên các chapter trễ hạn)
+                </p>
+              </div>
+            )}
+
+            {/* Bảng theo series — series tệ nhất lên đầu */}
+            {publishStats.bySeries.length > 0 && (
+              <div className="divide-y divide-white/4">
+                {publishStats.bySeries.map((s: any) => (
+                  <div key={s.seriesId} className="px-6 py-3.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-white truncate">{s.seriesTitle}</p>
+                      <p className="text-[11px] text-zinc-600 mt-0.5">
+                        {s.totalPublished} chapter đã ra
+                        {s.worstChapterInfo && <span className="text-red-400 ml-1.5">· {s.worstChapterInfo}</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="w-16 h-1.5 bg-white/6 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${
+                          s.onTimeRate >= 80 ? 'bg-emerald-500' : s.onTimeRate >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                        }`} style={{ width: `${s.onTimeRate}%` }} />
+                      </div>
+                      <span className={`text-[12px] font-bold w-11 text-right ${
+                        s.onTimeRate >= 80 ? 'text-emerald-400' : s.onTimeRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                      }`}>{s.onTimeRate}%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <Link to="/editor/manuscripts" className="group rounded-2xl border border-amber-500/15 bg-amber-500/5 p-5 flex items-center justify-between hover:bg-amber-500/10 transition-all">

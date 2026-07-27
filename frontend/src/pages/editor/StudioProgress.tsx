@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Activity, AlertTriangle, RefreshCw, Loader2, Send, X, CheckCircle2, BookOpen, Clock } from 'lucide-react';
+import { Activity, AlertTriangle, RefreshCw, Loader2, Send, X, CheckCircle2, XCircle, BookOpen, Clock, Zap, CalendarClock } from 'lucide-react';
 import api from '@/lib/axios';
 
 /* ── Real-time deadline countdown ───────────────────────────────
@@ -74,13 +74,13 @@ const ChapterMiniCard = ({
   onPublish?: (c:any) => void;
 }) => {
   const cd = useDeadlineCountdown(chapter.deadline);
-  const isReady = chapter.status === 'approved';
+  const isReady = chapter.status === 'approved' || chapter.status === 'scheduled';
 
   // Style theo variant
   const style = variant === 'urgent'
     ? 'bg-red-500/6 border-red-500/20'
     : variant === 'ready'
-    ? 'bg-emerald-500/6 border-emerald-500/20'
+    ? chapter.status === 'scheduled' ? 'bg-violet-500/6 border-violet-500/20' : 'bg-emerald-500/6 border-emerald-500/20'
     : 'bg-white/3 border-white/6';
 
   return (
@@ -92,16 +92,25 @@ const ChapterMiniCard = ({
               Chapter {chapter.chapterNumber}{chapter.title ? `: ${chapter.title}` : ''}
             </span>
             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+              chapter.status === 'scheduled'   ? 'bg-violet-500/15 text-violet-400'  :
               chapter.status === 'approved'    ? 'bg-emerald-500/15 text-emerald-400' :
               chapter.status === 'in_progress' ? 'bg-blue-500/15 text-blue-400'       :
               chapter.status === 'draft'       ? 'bg-zinc-500/15 text-zinc-400'       :
               'bg-white/5 text-zinc-500'
             }`}>
-              {chapter.status === 'approved'    ? 'Sẵn sàng' :
+              {chapter.status === 'scheduled'   ? 'Đã đặt lịch' :
+               chapter.status === 'approved'    ? 'Sẵn sàng' :
                chapter.status === 'in_progress' ? 'Đang làm' :
                chapter.status === 'draft'       ? 'Bản nháp' : chapter.status}
             </span>
           </div>
+          {/* Hiện thời gian đã đặt lịch phát hành, nếu có */}
+          {chapter.status === 'scheduled' && chapter.scheduledPublishAt && (
+            <div className="text-[10px] text-violet-400 flex items-center gap-1 mb-0.5">
+              <CalendarClock className="w-2.5 h-2.5 flex-shrink-0" />
+              Phát hành: {new Date(chapter.scheduledPublishAt).toLocaleString('vi-VN', { dateStyle:'short', timeStyle:'short' })}
+            </div>
+          )}
           <div className="text-[10px] text-zinc-500 flex items-center gap-1">
             <Clock className="w-2.5 h-2.5 flex-shrink-0" />
             {chapter.deadline
@@ -117,8 +126,14 @@ const ChapterMiniCard = ({
         </div>
         {isReady && onPublish && (
           <button onClick={() => onPublish(chapter)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-500/15 border border-teal-500/25 text-teal-300 text-[10px] font-semibold hover:bg-teal-500/25 transition-all flex-shrink-0">
-            <Send className="w-3 h-3" />Xuất bản
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-semibold transition-all flex-shrink-0 ${
+              chapter.status === 'scheduled'
+                ? 'bg-violet-500/15 border-violet-500/25 text-violet-300 hover:bg-violet-500/25'
+                : 'bg-teal-500/15 border-teal-500/25 text-teal-300 hover:bg-teal-500/25'
+            }`}>
+            {chapter.status === 'scheduled'
+              ? <><CalendarClock className="w-3 h-3" />Đặt lại lịch</>
+              : <><Send className="w-3 h-3" />Xuất bản</>}
           </button>
         )}
       </div>
@@ -262,10 +277,54 @@ const SeriesCard = ({
   );
 };
 
+const ChecklistRow = ({ ok, label }: { ok: boolean; label: string }) => (
+  <div className="flex items-center gap-2">
+    {ok
+      ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+      : <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+    <span className={`text-[11px] ${ok ? 'text-zinc-400' : 'text-red-300'}`}>{label}</span>
+  </div>
+);
+
 const StudioProgress = () => {
   const qc = useQueryClient();
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [publishTarget, setPublishTarget] = useState<any>(null);
+
+  // GET /chapters/{id}/readiness — checklist trước khi publish
+  const { data: readiness, isLoading: loadingReadiness } = useQuery({
+    queryKey: ['chapter', 'readiness', publishTarget?.id],
+    queryFn: async () => (await api.get(`/chapters/${publishTarget.id}/readiness`)).data.data,
+    enabled: !!publishTarget?.id,
+  });
+  // 'now' = phát hành ngay, 'later' = đặt lịch
+  const [publishMode, setPublishMode] = useState<'now'|'later'>('now');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('09:00');
+  const [scheduleErr, setScheduleErr] = useState('');
+
+  // Khi mở modal cho 1 chapter — mặc định điền ngày = deadline đã tính theo
+  // publishSchedule (weekly/biweekly/monthly) mà Board đã duyệt, để Editor không
+  // phải tự nhớ tính lại nhịp độ. Editor vẫn có thể sửa nếu cần.
+  useEffect(() => {
+    if (publishTarget?.deadline) {
+      setScheduleDate(publishTarget.deadline);
+      setPublishMode('later');
+    } else {
+      setScheduleDate('');
+      setPublishMode('now');
+    }
+    setScheduleTime('09:00');
+    setScheduleErr('');
+  }, [publishTarget]);
+
+  // Cảnh báo nếu Editor chọn ngày lệch quá xa so với deadline gốc (nhịp độ đã cam kết)
+  const scheduleDriftDays = (() => {
+    if (!publishTarget?.deadline || !scheduleDate) return 0;
+    const original = new Date(publishTarget.deadline).getTime();
+    const chosen = new Date(scheduleDate).getTime();
+    return Math.round((chosen - original) / 86400000);
+  })();
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['editor','studio-progress'],
@@ -274,17 +333,21 @@ const StudioProgress = () => {
   });
   useEffect(() => { if (data) setLastUpdated(new Date()); }, [data]);
 
-  // PUT /chapters/{id}/status → published
+  // PUT /chapters/{id}/schedule — publishAt=null nghĩa là phát hành ngay
   const publishMutation = useMutation({
-    mutationFn: (chapterId: string) =>
-      api.put(`/chapters/${chapterId}/status`, { status: 'published' }).then(r => r.data),
+    mutationFn: ({ chapterId, publishAt }: { chapterId: string; publishAt: string | null }) =>
+      api.put(`/chapters/${chapterId}/schedule`, { publishAt }).then(r => r.data),
     onSuccess: () => {
       // Invalidate mọi chapter query (tất cả series card sẽ tự refetch)
       qc.invalidateQueries({ queryKey: ['chapters'] });
       qc.invalidateQueries({ queryKey: ['editor', 'studio-progress'] });
       setPublishTarget(null);
+      setPublishMode('now');
+      setScheduleDate('');
+      setScheduleTime('09:00');
+      setScheduleErr('');
     },
-    onError: (e: any) => alert(e.response?.data?.message ?? 'Xuất bản thất bại'),
+    onError: (e: any) => setScheduleErr(e.response?.data?.message ?? 'Xuất bản thất bại'),
   });
 
   const series = Array.isArray(data) ? data : (data?.studios ?? data?.series ?? []);
@@ -337,9 +400,9 @@ const StudioProgress = () => {
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
               <div className="flex items-center gap-2">
                 <Send className="w-4 h-4 text-teal-400" />
-                <h2 className="text-[13px] font-bold text-white">Xác nhận xuất bản</h2>
+                <h2 className="text-[13px] font-bold text-white">Xuất bản chapter</h2>
               </div>
-              <button onClick={() => setPublishTarget(null)}
+              <button onClick={() => { setPublishTarget(null); setScheduleErr(''); }}
                 className="w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-white transition-colors">
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -353,27 +416,157 @@ const StudioProgress = () => {
                 {publishTarget.totalPages && (
                   <p className="text-[11px] text-zinc-500 mt-0.5">{publishTarget.totalPages} trang</p>
                 )}
+                {publishTarget.deadline && (
+                  <p className="text-[11px] text-teal-400 mt-1 flex items-center gap-1">
+                    <CalendarClock className="w-3 h-3" />
+                    Theo lịch Board đã duyệt: {new Date(publishTarget.deadline).toLocaleDateString('vi-VN')}
+                  </p>
+                )}
               </div>
+
+              {/* ═══ CHECKLIST TRƯỚC KHI PUBLISH ═══ */}
+              {loadingReadiness ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
+                </div>
+              ) : readiness && (
+                <div className={`rounded-xl border px-4 py-3 space-y-2 ${
+                  readiness.ready ? 'bg-emerald-500/6 border-emerald-500/15' : 'bg-red-500/6 border-red-500/20'
+                }`}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 mb-1">
+                    Kiểm tra trước khi xuất bản
+                  </p>
+
+                  <ChecklistRow ok={readiness.hasPages}
+                    label={readiness.hasPages ? `${readiness.totalPages} trang đã upload` : 'Chưa có trang nào'} />
+
+                  <ChecklistRow ok={readiness.minPagesOk}
+                    label={readiness.minPagesOk
+                      ? `Đủ số trang tối thiểu`
+                      : `Cần tối thiểu 1 trang (hiện có ${readiness.totalPages})`} />
+
+                  <ChecklistRow ok={readiness.allImagesOk}
+                    label={readiness.allImagesOk
+                      ? 'Tất cả trang đã có ảnh'
+                      : `Còn ${readiness.missingImagePages?.length ?? 0} trang chưa có ảnh (trang ${(readiness.missingImagePages ?? []).join(', ')})`} />
+
+                  <ChecklistRow ok={readiness.noActiveTasksOk}
+                    label={readiness.noActiveTasksOk
+                      ? 'Không còn task nào dang dở'
+                      : `Còn ${readiness.activeTaskCount} task chưa hoàn thành`} />
+
+                  {readiness.sequenceWarning && (
+                    <div className="flex items-start gap-1.5 pt-1 mt-1 border-t border-white/6">
+                      <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-[11px] text-amber-400 leading-relaxed">
+                        Chapter trước đó chưa xuất bản — độc giả có thể bị nhảy cóc số chapter
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Chọn chế độ: Ngay / Đặt lịch */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => setPublishMode('now')}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border transition-all ${
+                    publishMode === 'now'
+                      ? 'bg-teal-500/15 border-teal-500/30 text-teal-300'
+                      : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300'
+                  }`}>
+                  <Zap className="w-4 h-4" />
+                  <span className="text-[12px] font-semibold">Phát hành ngay</span>
+                </button>
+                <button onClick={() => setPublishMode('later')}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border transition-all ${
+                    publishMode === 'later'
+                      ? 'bg-violet-500/15 border-violet-500/30 text-violet-300'
+                      : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300'
+                  }`}>
+                  <CalendarClock className="w-4 h-4" />
+                  <span className="text-[12px] font-semibold">Đặt lịch</span>
+                </button>
+              </div>
+
+              {/* Form đặt lịch — chỉ hiện khi chọn "later" */}
+              {publishMode === 'later' && (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1">Ngày</label>
+                      <input type="date" value={scheduleDate}
+                        min={new Date().toISOString().split('T')[0]}
+                        onChange={e => setScheduleDate(e.target.value)}
+                        className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/40" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1">Giờ</label>
+                      <input type="time" value={scheduleTime}
+                        onChange={e => setScheduleTime(e.target.value)}
+                        className="w-full bg-white/5 border border-white/8 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/40" />
+                    </div>
+                  </div>
+
+                  {/* Cảnh báo nếu lệch quá xa so với lịch Board đã duyệt (>3 ngày) */}
+                  {publishTarget.deadline && Math.abs(scheduleDriftDays) > 3 && (
+                    <div className="flex items-start gap-2 bg-orange-500/8 border border-orange-500/20 rounded-xl px-3 py-2.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-orange-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-[11px] text-orange-300 leading-relaxed">
+                        Ngày này {scheduleDriftDays > 0 ? 'trễ' : 'sớm'} <span className="font-semibold">{Math.abs(scheduleDriftDays)} ngày</span> so
+                        với lịch Board đã duyệt ({new Date(publishTarget.deadline).toLocaleDateString('vi-VN')}).
+                        Độc giả có thể bị ảnh hưởng nếu series cam kết ra đều đặn.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
               <div className="flex items-start gap-2.5 bg-amber-500/6 border border-amber-500/15 rounded-xl px-4 py-3">
                 <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                 <div>
                   <p className="text-[11px] font-semibold text-amber-300 mb-0.5">Không thể hoàn tác</p>
                   <p className="text-[11px] text-zinc-500 leading-relaxed">
-                    Sau khi xuất bản, chapter sẽ được phát hành. Đảm bảo đã kiểm tra lịch xuất bản và toàn bộ nội dung.
+                    {publishMode === 'now'
+                      ? 'Chapter sẽ được phát hành ngay lập tức. Đảm bảo đã kiểm tra toàn bộ nội dung.'
+                      : 'Chapter sẽ tự động phát hành đúng thời điểm đã chọn. Bạn có thể đặt lại lịch trước khi đến giờ.'}
                   </p>
                 </div>
               </div>
+
+              {scheduleErr && (
+                <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/15 rounded-lg px-3 py-2">{scheduleErr}</p>
+              )}
+
               <div className="flex gap-2 pt-1">
-                <button onClick={() => setPublishTarget(null)} disabled={publishMutation.isPending}
+                <button onClick={() => { setPublishTarget(null); setScheduleErr(''); }} disabled={publishMutation.isPending}
                   className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors disabled:opacity-50">
                   Huỷ
                 </button>
-                <button onClick={() => publishMutation.mutate(publishTarget.id)}
-                  disabled={publishMutation.isPending}
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-bold disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+                <button
+                  onClick={() => {
+                    setScheduleErr('');
+                    if (publishMode === 'now') {
+                      publishMutation.mutate({ chapterId: publishTarget.id, publishAt: null });
+                    } else {
+                      if (!scheduleDate) { setScheduleErr('Vui lòng chọn ngày phát hành'); return; }
+                      const publishAt = `${scheduleDate}T${scheduleTime}:00`;
+                      if (new Date(publishAt).getTime() <= Date.now()) {
+                        setScheduleErr('Thời gian phát hành phải ở tương lai'); return;
+                      }
+                      publishMutation.mutate({ chapterId: publishTarget.id, publishAt });
+                    }
+                  }}
+                  disabled={publishMutation.isPending || (readiness && !readiness.ready)}
+                  className={`flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-50 transition-all flex items-center justify-center gap-2 ${
+                    publishMode === 'now'
+                      ? 'bg-gradient-to-r from-teal-600 to-emerald-600'
+                      : 'bg-gradient-to-r from-violet-600 to-fuchsia-600'
+                  }`}>
                   {publishMutation.isPending
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang xuất bản...</>
-                    : <><Send className="w-3.5 h-3.5" />Xác nhận xuất bản</>}
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang xử lý...</>
+                    : publishMode === 'now'
+                      ? <><Send className="w-3.5 h-3.5" />Xác nhận xuất bản</>
+                      : <><CalendarClock className="w-3.5 h-3.5" />Đặt lịch phát hành</>}
                 </button>
               </div>
             </div>
