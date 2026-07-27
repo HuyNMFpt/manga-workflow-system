@@ -2,6 +2,7 @@ package com.mangaproject.backend.dto;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -15,4 +16,6 @@ public class UserDTO {
     private Boolean isActive;
     private String tempPassword;
     private String personalEmail;
+    private Boolean isBoardChair;
+    private List<String> skills;
 }

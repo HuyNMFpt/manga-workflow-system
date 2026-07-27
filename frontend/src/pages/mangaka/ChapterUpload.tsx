@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { convertImageFilesIfNeeded } from '@/lib/imageConvert';
 import { 
   Upload,
   Image as ImageIcon,
@@ -29,21 +30,28 @@ const ChapterUpload = () => {
     { id: 3, title: 'Starlight Academy', currentChapter: 8 }
   ];
 
-  const handleFileSelect = (files: FileList | null) => {
+  const handleFileSelect = async (files: FileList | null) => {
     if (!files) return;
 
-    const newPages: UploadedPage[] = [];
-    Array.from(files).forEach((file, index) => {
-      if (file.type.startsWith('image/')) {
-        const preview = URL.createObjectURL(file);
-        newPages.push({
-          id: `${Date.now()}-${index}`,
-          file,
-          preview,
-          order: pages.length + index
-        });
-      }
-    });
+    const accepted = Array.from(files).filter(
+      f => f.type.startsWith('image/') || /\.(webp|avif|heic|heif|jfif)$/i.test(f.name)
+    );
+    if (accepted.length === 0) return;
+
+    let converted: File[];
+    try {
+      converted = await convertImageFilesIfNeeded(accepted);
+    } catch (err: any) {
+      alert(err.message ?? 'Lỗi xử lý ảnh');
+      return;
+    }
+
+    const newPages: UploadedPage[] = converted.map((file, index) => ({
+      id: `${Date.now()}-${index}`,
+      file,
+      preview: URL.createObjectURL(file),
+      order: pages.length + index
+    }));
 
     setPages([...pages, ...newPages]);
   };
@@ -176,7 +184,7 @@ const ChapterUpload = () => {
         <input
           type="file"
           multiple
-          accept="image/png,image/jpeg,image/jpg"
+          accept="image/png,image/jpeg,image/jpg,image/webp,image/avif"
           onChange={(e) => handleFileSelect(e.target.files)}
           className="hidden"
           id="file-upload"

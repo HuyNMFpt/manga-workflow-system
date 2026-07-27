@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+import com.mangaproject.backend.model.User;
 
 @Service
 @RequiredArgsConstructor
@@ -47,6 +49,10 @@ public class SeriesService {
 
         if (request.getEditorId() != null) {
             series.setEditorId(request.getEditorId());
+        } else {
+            // Auto-assign editor có ít series active nhất
+            String autoEditorId = findLeastLoadedEditor();
+            if (autoEditorId != null) series.setEditorId(autoEditorId);
         }
 
         series = seriesRepository.save(series);
@@ -92,7 +98,7 @@ public class SeriesService {
 
     @Transactional
     public SeriesDTO updateSeries(String id, String title, String genre, String synopsis,
-                                   String coverUrl, String editorId, String mangakaId) {
+                                  String coverUrl, String editorId, String mangakaId) {
         Series series = seriesRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
@@ -122,10 +128,13 @@ public class SeriesService {
             throw new RuntimeException("Bạn không có quyền xóa series này");
         }
 
-        if (series.getStatus() != Series.SeriesStatus.draft
-                && series.getStatus() != Series.SeriesStatus.cancelled
-                && series.getStatus() != Series.SeriesStatus.under_editorial_review) {
-            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft, đang xét duyệt hoặc cancelled");
+        if (!List.of(
+                Series.SeriesStatus.draft,
+                Series.SeriesStatus.cancelled,
+                Series.SeriesStatus.under_editorial_review,
+                Series.SeriesStatus.rejected
+        ).contains(series.getStatus())) {
+            throw new RuntimeException("Chỉ có thể xóa series ở trạng thái draft, đang xét duyệt, đã bị từ chối hoặc cancelled");
         }
 
         // Cascade delete thủ công theo thứ tự FK
@@ -207,6 +216,17 @@ public class SeriesService {
                 .replaceAll("\\s+", "-")
                 .replaceAll("-+", "-")
                 + "-" + System.currentTimeMillis();
+    }
+
+    private String findLeastLoadedEditor() {
+        List<User> editors = userRepository.findByRole_NameAndIsActiveTrue("editor");
+        if (editors.isEmpty()) return null;
+        Map<String, Long> loadMap = seriesRepository.countActiveSeriesByEditor()
+                .stream().collect(Collectors.toMap(
+                        row -> (String) row[0], row -> (Long) row[1]));
+        return editors.stream()
+                .min(java.util.Comparator.comparingLong(e -> loadMap.getOrDefault(e.getId(), 0L)))
+                .map(User::getId).orElse(null);
     }
 
     private SeriesDTO mapToDTO(Series series) {

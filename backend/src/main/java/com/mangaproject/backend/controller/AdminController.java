@@ -65,6 +65,36 @@ public class AdminController {
         return ApiResponse.success(adminService.toggleActive(id));
     }
 
+    // PUT /api/admin/users/{id}/skills — Admin sửa kỹ năng của Assistant
+    @PutMapping("/users/{id}/skills")
+    public ApiResponse<Void> updateUserSkills(
+            @PathVariable String id,
+            @RequestBody java.util.Map<String, java.util.List<String>> body,
+            Authentication authentication) {
+        checkAdmin(authentication);
+        com.mangaproject.backend.model.User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        java.util.List<String> skills = body.containsKey("taskTypes")
+                ? body.get("taskTypes") : body.get("skills");
+        if (skills != null) {
+            user.setSkills("[" + skills.stream()
+                    .map(s -> "\"" + s + "\"")
+                    .collect(java.util.stream.Collectors.joining(",")) + "]");
+            userRepository.save(user);
+        }
+        return ApiResponse.success(null, "Kỹ năng đã được cập nhật");
+    }
+
+    // PUT /api/admin/users/{id}/set-board-chair — Đặt Board trưởng
+    @PutMapping("/users/{id}/set-board-chair")
+    public ApiResponse<Void> setBoardChair(
+            @PathVariable String id,
+            Authentication authentication) {
+        checkAdmin(authentication);
+        adminService.setBoardChair(id);
+        return ApiResponse.success(null, "Board trưởng đã được cập nhật");
+    }
+
     // POST /api/admin/users/{id}/reset-password — Admin reset mật khẩu tạm cho user
     @PostMapping("/users/{id}/reset-password")
     public ApiResponse<Void> resetPassword(

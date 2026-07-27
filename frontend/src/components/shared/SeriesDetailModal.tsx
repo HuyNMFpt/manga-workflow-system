@@ -34,12 +34,13 @@ interface Props {
 
 // ── Status config ─────────────────────────────────────────────────
 const STATUS_INFO: Record<string, { label: string; color: string; dot: string; desc: string }> = {
-  draft:       { label: 'Bản nháp',   color: 'text-zinc-400',    dot: 'bg-zinc-500',    desc: 'Chưa được nộp cho Editor'              },
-  submitted:   { label: 'Chờ duyệt',  color: 'text-amber-400',   dot: 'bg-amber-400',   desc: 'Đang chờ Editor xem xét'               },
-  approved:    { label: 'Đã duyệt',   color: 'text-emerald-400', dot: 'bg-emerald-400', desc: 'Board đã duyệt, đang chờ sản xuất'     },
-  publishing:  { label: 'Đang đăng',  color: 'text-violet-400',  dot: 'bg-violet-400',  desc: 'Đang trong quá trình sản xuất - xuất bản'},
-  on_hiatus:   { label: 'Tạm ngưng',  color: 'text-orange-400',  dot: 'bg-orange-400',  desc: 'Tạm ngưng theo quyết định của Editor'  },
-  cancelled:   { label: 'Đã hủy',     color: 'text-red-400',     dot: 'bg-red-500',     desc: 'Series đã bị hủy hoặc không được duyệt'},
+  draft:                  { label: 'Bản nháp',   color: 'text-zinc-400',    dot: 'bg-zinc-500',    desc: 'Chưa được nộp cho Editor'              },
+  submitted:              { label: 'Chờ duyệt',  color: 'text-amber-400',   dot: 'bg-amber-400',   desc: 'Đang chờ Editor xem xét'               },
+  approved:               { label: 'Đã duyệt',   color: 'text-emerald-400', dot: 'bg-emerald-400', desc: 'Board đã duyệt, đang chờ sản xuất'     },
+  publishing:             { label: 'Đang đăng',  color: 'text-violet-400',  dot: 'bg-violet-400',  desc: 'Đang trong quá trình sản xuất - xuất bản'},
+  on_hiatus:              { label: 'Tạm ngưng',  color: 'text-orange-400',  dot: 'bg-orange-400',  desc: 'Tạm ngưng theo quyết định của Editor'  },
+  rejected:               { label: 'Bị từ chối', color: 'text-orange-400',  dot: 'bg-orange-500',  desc: 'Board đã từ chối — bạn có thể chỉnh sửa và nộp lại'},
+  cancelled:              { label: 'Đã hủy',     color: 'text-red-400',     dot: 'bg-red-500',     desc: 'Series đã bị hủy hoặc không được duyệt'},
 }
 
 // ── Schedule label ─────────────────────────────────────────────────
@@ -49,6 +50,104 @@ const SCHEDULE_LABEL: Record<string, { label: string; desc: string }> = {
   monthly:  { label: 'Hàng tháng', desc: '1 chapter/tháng'  },
 }
 const scheduleInfo = (s?: string) => s ? (SCHEDULE_LABEL[s] ?? { label: s, desc: '' }) : null
+
+const TAG_LABEL: Record<string, string> = {
+  story: 'Kịch bản', dialogue: 'Thoại', art: 'Nghệ thuật', pacing: 'Nhịp độ', layout: 'Bố cục',
+}
+
+// Ảnh trang có pin overlay + danh sách note bên dưới
+function AnnotatedPageViewer({
+  pages, fallbackFileUrl, annotations,
+}: {
+  pages: any[]; fallbackFileUrl?: string; annotations: any[];
+}) {
+  // Gom annotation theo pageNumber
+  const byPage = new Map<number, any[]>()
+  annotations.forEach((a: any, i: number) => {
+    const pn = a.pageNumber ?? 1
+    if (!byPage.has(pn)) byPage.set(pn, [])
+    byPage.get(pn)!.push({ ...a, index: i + 1 })
+  })
+  const pageNumbers = Array.from(byPage.keys()).sort((a, b) => a - b)
+  const [current, setCurrent] = useState(pageNumbers[0] ?? 1)
+  const pagePins = byPage.get(current) ?? []
+
+  // Tìm imageUrl của trang hiện tại
+  const pageObj = pages.find(p => p.pageNumber === current) ?? pages[0]
+  const imageUrl = pageObj?.imageUrl
+    ?? (fallbackFileUrl && fallbackFileUrl !== 'pending_upload' && /\.(jpg|jpeg|png|gif|webp)$/i.test(fallbackFileUrl) ? fallbackFileUrl : null)
+
+  return (
+    <div className="space-y-3">
+      {/* Page navigator nếu > 1 trang */}
+      {pageNumbers.length > 1 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {pageNumbers.map(pn => (
+            <button key={pn} onClick={() => setCurrent(pn)}
+              className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-all ${
+                current === pn
+                  ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                  : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300'
+              }`}>
+              Trang {pn} <span className="opacity-60">({byPage.get(pn)!.length})</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Ảnh có pin overlay — CẤU TRÚC PHẢI KHỚP EDITOR:
+          wrapper inline-block ôm sát ảnh, pin tính % theo ảnh thật */}
+      {imageUrl ? (
+        <div className="w-full flex justify-center rounded-xl overflow-hidden border border-white/10 bg-black/30">
+          <div className="relative inline-block max-h-[500px]">
+            <img src={imageUrl} alt={`Trang ${current}`}
+              className="max-h-[500px] w-auto pointer-events-none select-none block"
+              draggable={false} />
+            {pagePins.filter(a => a.x != null && a.y != null).map((a: any) => (
+              <div key={a.index}
+                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                style={{ left: `${a.x}%`, top: `${a.y}%` }}>
+                <div className="w-6 h-6 rounded-full bg-amber-500 border-2 border-black shadow-lg flex items-center justify-center text-[10px] font-black text-black">
+                  {a.index}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="px-3 py-4 rounded-xl bg-white/3 border border-white/8 text-[11px] text-zinc-500">
+          Không xem được ảnh gốc — chỉ hiển thị danh sách ghi chú bên dưới.
+        </div>
+      )}
+
+      {/* Note list của trang hiện tại */}
+      <div className="space-y-1.5">
+        {pagePins.map((a: any) => (
+          <div key={a.index} className="flex items-start gap-2.5 px-3 py-2.5 bg-white/3 border border-white/6 rounded-xl">
+            <div className="w-5 h-5 rounded-full bg-amber-500 flex-shrink-0 flex items-center justify-center text-[9px] font-black text-black mt-0.5">
+              {a.index}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                {a.tag && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                    {TAG_LABEL[a.tag] ?? a.tag}
+                  </span>
+                )}
+                {a.x != null && a.y != null && (
+                  <span className="text-[10px] text-zinc-700">📍 {Math.round(a.x)}%, {Math.round(a.y)}%</span>
+                )}
+              </div>
+              <p className="text-[12px] text-zinc-300 mt-0.5 leading-relaxed">
+                {a.note?.replace(/\[[^\]]+\][^:]*:/g, '').trim() || a.note}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function SeriesDetailModal({ series, onClose }: Props) {
   const qc = useQueryClient()
@@ -68,7 +167,8 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
       return r.data.data ?? []
     },
     enabled: series.status === 'draft'
-          || series.status === 'under_editorial_review', // chỉ fetch khi cần
+          || series.status === 'under_editorial_review'
+          || series.status === 'rejected',
   })
   // Lấy manuscript mới nhất có rejectionReason (Editor vừa trả về)
   const latestRevision = (manuscripts as any[])
@@ -166,10 +266,10 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-[#111118] border border-violet-900/30 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden">
+      <div className="w-full max-w-md bg-[#111118] border border-violet-900/30 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden flex flex-col max-h-[calc(100vh-2rem)]">
 
         {/* Header */}
-        <div className="flex items-start justify-between px-6 py-4 border-b border-white/5">
+        <div className="flex items-start justify-between px-6 py-4 border-b border-white/5 flex-shrink-0">
           <div className="flex-1 min-w-0 pr-3">
             <div className="flex items-center gap-2 mb-0.5">
               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${st.dot}`} />
@@ -185,7 +285,7 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
         </div>
 
         {/* Body */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 flex-1 overflow-y-auto min-h-0">
 
           {/* ════ MAIN VIEW ════ */}
           {view === 'main' && (
@@ -197,6 +297,7 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
                 series.status === 'publishing'? 'bg-violet-500/8 border border-violet-500/15' :
                 series.status === 'on_hiatus' ? 'bg-orange-500/8 border border-orange-500/15' :
                 series.status === 'cancelled' ? 'bg-red-500/8 border border-red-500/15'       :
+                series.status === 'rejected'  ? 'bg-orange-500/8 border border-orange-500/15' :
                 'bg-emerald-500/8 border border-emerald-500/15'
               }`}>
                 <Info className={`w-4 h-4 flex-shrink-0 mt-0.5 ${st.color}`} />
@@ -206,6 +307,7 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
               {/* ── DRAFT actions ─────────────────────────── */}
               {(series.status === 'draft'
                 || series.status === 'under_editorial_review'
+                || series.status === 'rejected'
                 || series.status === 'cancelled') && (
                 <div className="space-y-3">
 
@@ -222,49 +324,22 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
                         <p className="text-[13px] text-orange-200 leading-relaxed">{latestRevision.rejectionReason}</p>
                       </div>
 
-                      {/* Annotations nếu có */}
+                      {/* Annotations với ảnh trang + pin overlay */}
                       {latestRevision.annotations?.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 mb-1.5 flex items-center gap-1">
+                        <div className="space-y-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />Ghi chú đánh dấu ({latestRevision.annotations.length})
                           </p>
-                          <div className="space-y-1.5">
-                            {latestRevision.annotations.map((a: any, i: number) => (
-                              <div key={i} className="flex items-start gap-2.5 px-3 py-2.5 bg-white/3 border border-white/6 rounded-xl">
-                                {/* Pin số */}
-                                <div className="w-5 h-5 rounded-full bg-amber-500 flex-shrink-0 flex items-center justify-center text-[9px] font-black text-black mt-0.5">
-                                  {i + 1}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {a.tag && (
-                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
-                                        {a.tag === 'story'    ? 'Kịch bản'   :
-                                         a.tag === 'dialogue' ? 'Thoại'      :
-                                         a.tag === 'art'      ? 'Nghệ thuật' :
-                                         a.tag === 'pacing'   ? 'Nhịp độ'   :
-                                         a.tag === 'layout'   ? 'Bố cục'    : a.tag}
-                                      </span>
-                                    )}
-                                    {a.pageNumber && (
-                                      <span className="text-[10px] text-zinc-600">Trang {a.pageNumber}</span>
-                                    )}
-                                    {a.x != null && a.y != null && (
-                                      <span className="text-[10px] text-zinc-700">📍{Math.round(a.x)}%, {Math.round(a.y)}%</span>
-                                    )}
-                                  </div>
-                                  <p className="text-[12px] text-zinc-300 mt-0.5 leading-relaxed">
-                                    {a.note?.replace(/\[[^\]]+\][^:]*:/g, '').trim() || a.note}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
+                          <AnnotatedPageViewer
+                            pages={latestRevision.pages ?? []}
+                            fallbackFileUrl={latestRevision.fileUrl}
+                            annotations={latestRevision.annotations}
+                          />
                         </div>
                       )}
 
                       {/* File bản thảo để xem lại */}
-                      {latestRevision.fileUrl && (
+                      {(latestRevision.fileUrl && latestRevision.fileUrl !== 'pending_upload') && (
                         <a href={latestRevision.fileUrl} target="_blank" rel="noopener noreferrer"
                           className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/3 border border-white/6 text-[12px] text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">
                           <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
@@ -282,10 +357,14 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
                     <PenLine className="w-4 h-4 text-violet-400 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-semibold text-violet-300">
-                        {latestRevision ? 'Chỉnh sửa và nộp lại' : 'Tiếp tục nộp series'}
+                        {series.status === 'rejected'
+                          ? 'Chỉnh sửa và nộp lại cho Board'
+                          : latestRevision ? 'Chỉnh sửa và nộp lại' : 'Tiếp tục nộp series'}
                       </p>
                       <p className="text-[11px] text-zinc-600">
-                        {latestRevision ? 'Cập nhật theo yêu cầu của Editor rồi nộp lại' : 'Điền thông tin còn thiếu và nộp cho Editor'}
+                        {series.status === 'rejected'
+                          ? 'Board đã từ chối — hãy cải thiện bản thảo và thử lại'
+                          : latestRevision ? 'Cập nhật theo yêu cầu của Editor rồi nộp lại' : 'Điền thông tin còn thiếu và nộp cho Editor'}
                       </p>
                     </div>
                   </button>
@@ -505,7 +584,7 @@ export default function SeriesDetailModal({ series, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center">
+        <div className="px-6 py-4 border-t border-white/5 flex justify-between items-center flex-shrink-0">
           {/* Back or Close */}
           <button
             onClick={() => view === 'main' ? onClose() : setView('main')}

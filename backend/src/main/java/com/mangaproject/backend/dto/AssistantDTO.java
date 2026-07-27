@@ -1,6 +1,7 @@
 package com.mangaproject.backend.dto;
 
 import lombok.*;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -11,4 +12,6 @@ public class AssistantDTO {
     private String email;
     private String avatarUrl;
     private boolean isActive;
+    private long activeTaskCount;
+    private List<String> skills; // kỹ năng assistant đăng ký
 }

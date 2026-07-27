@@ -44,6 +44,16 @@ const VotingQueue = () => {
   const [submitError, setSubmitError] = useState('');
   const [submitted,   setSubmitted]   = useState<string[]>([]);
   const [viewingVotesFor, setViewingVotesFor] = useState<string | null>(null);
+  const [msPageIdx, setMsPageIdx] = useState<Record<string, number>>({}); // submissionId → currentPage
+
+  // ── GET /board/me — kiểm tra user có phải Board trưởng ──
+  const { data: boardMe } = useQuery({
+    queryKey: ['board', 'me'],
+    queryFn: async () => (await api.get('/board/me')).data.data,
+    retry: 1,
+    staleTime: Infinity,
+  });
+  const isChair = boardMe?.isChair === true;
 
   // ── Vote details query (cho người vote cuối xem ý kiến trước) ──
   const { data: voteDetails = [] } = useQuery({
@@ -72,7 +82,7 @@ const VotingQueue = () => {
       return r.data.data ?? [];
     },
     retry: 1,
-    staleTime: 0,                    // Luôn coi data là stale → refetch khi focus tab
+    staleTime: 30_000,               // Giữ cache 30s — tránh refetch overwrite sau khi vote
     refetchOnWindowFocus: true,      // Refetch ngay khi switch tab/window về
     refetchInterval: 15000,          // Fallback poll mỗi 15s nếu không switch tab
     refetchIntervalInBackground: false,
@@ -108,9 +118,8 @@ const VotingQueue = () => {
   const voteMutation = useMutation({
     mutationFn: (data: any) => api.post('/board/vote', data).then(r => r.data),
     onSuccess: (res, vars) => {
-      const updated = res.data; // SubmissionDTO với voteYes/status mới
+      const updated = res.data;
 
-      // Nếu submission đã được approve (đủ phiếu) → ẩn row khỏi queue
       const isApproved = updated?.status === 'approved' || updated?.status === 'rejected';
       if (isApproved) {
         setSubmitted(prev => [...prev, vars.submissionId]);
@@ -120,7 +129,7 @@ const VotingQueue = () => {
       setVoteForm(EMPTY_FORM);
       setSubmitError('');
 
-      // Update voteYes/voteNo trong cache ngay từ response
+      // Update cache ngay từ response — không refetch lại để tránh overwrite
       if (updated) {
         qc.setQueryData(['board', 'voting-queue'], (old: any) => {
           if (!old) return old;
@@ -130,20 +139,35 @@ const VotingQueue = () => {
           }
           return list.map((s: any) =>
             (s.submissionId ?? s.id) === vars.submissionId
-              ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, voteAbstain: updated.voteAbstain, hasVoted: true }
+              ? { ...s, voteYes: updated.voteYes, voteNo: updated.voteNo, voteAbstain: updated.voteAbstain, hasVoted: true, status: updated.status }
               : s
           );
         });
       }
 
-      // Invalidate stats (dashboard) ngay
+      // Chỉ invalidate stats và khi submission đã xong
       qc.invalidateQueries({ queryKey: ['board', 'stats'] });
-      // Invalidate voting queue sau 1.5s để tránh overwrite cache mới vừa set
-      setTimeout(() => {
+      if (isApproved) {
         qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
-      }, 1500);
+        qc.invalidateQueries({ queryKey: ['board', 'rankings'] });
+      }
     },
     onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Lỗi xảy ra'),
+  });
+
+  // ── POST /board/decide — chỉ Board trưởng quyết định chung cuộc ──
+  const decideMutation = useMutation({
+    mutationFn: (data: any) => api.post('/board/decide', data).then(r => r.data),
+    onSuccess: (_res, vars) => {
+      setSubmitted(prev => [...prev, vars.submissionId]);
+      setExpandedId(null);
+      setVoteForm(EMPTY_FORM);
+      setSubmitError('');
+      qc.invalidateQueries({ queryKey: ['board', 'voting-queue'] });
+      qc.invalidateQueries({ queryKey: ['board', 'stats'] });
+      qc.invalidateQueries({ queryKey: ['board', 'rankings'] });
+    },
+    onError: (e: any) => setSubmitError(e.response?.data?.message ?? 'Không gửi được quyết định'),
   });
 
   // ── Helpers ───────────────────────────────────────────────────
@@ -167,26 +191,33 @@ const VotingQueue = () => {
     }
   };
 
-  const handleVote = (submissionId: string, isLastVoter: boolean) => {
+  const handleVote = (submissionId: string, chairMode: boolean) => {
     setSubmitError('');
     if (!voteForm.decision) { setSubmitError('Vui lòng chọn quyết định'); return; }
     if (voteForm.justification.length < 50) {
       setSubmitError(`Justification cần ít nhất 50 ký tự (hiện tại: ${voteForm.justification.length})`);
       return;
     }
-    if (isLastVoter && voteForm.decision === 'approve' && !voteForm.publishStartDate) {
-      setSubmitError('Vui lòng chọn ngày phát hành chính thức');
-      return;
+    if (chairMode) {
+      if (voteForm.decision === 'approve' && !voteForm.publishStartDate) {
+        setSubmitError('Vui lòng chọn ngày phát hành chính thức');
+        return;
+      }
+      decideMutation.mutate({
+        submissionId,
+        decision:         voteForm.decision,
+        reason:           voteForm.justification,
+        publishSchedule:  voteForm.decision === 'approve' ? voteForm.schedule : undefined,
+        publishStartDate: voteForm.decision === 'approve' ? voteForm.publishStartDate : undefined,
+      });
+    } else {
+      voteMutation.mutate({
+        submissionId,
+        decision:      voteForm.decision,
+        justification: voteForm.justification,
+        schedule:      voteForm.schedule,
+      });
     }
-    voteMutation.mutate({
-      submissionId,
-      decision:         voteForm.decision,
-      justification:    voteForm.justification,
-      schedule:         voteForm.schedule,
-      publishStartDate: isLastVoter && voteForm.decision === 'approve'
-                          ? voteForm.publishStartDate
-                          : undefined,
-    });
   };
 
   // ── Loading / Error ───────────────────────────────────────────
@@ -240,7 +271,8 @@ const VotingQueue = () => {
           const tab          = getTab(id);
           const totalVoted   = (s.voteYes ?? 0) + (s.voteNo ?? 0) + (s.voteAbstain ?? 0);
           // Người vote cuối (board trưởng) = người sắp làm quorum đủ 3
-          const isLastVoter  = totalVoted === 2 && !s.hasVoted;
+          const chairWaiting = isChair && totalVoted < 2 && !isDone;
+          const isLastVoter  = isChair && totalVoted >= 2 && !isDone;
 
           return (
             <div key={id} className={`rounded-2xl border overflow-hidden transition-all ${
@@ -255,6 +287,13 @@ const VotingQueue = () => {
                   isDone ? 'cursor-default' : 'cursor-pointer hover:bg-white/[0.02]'
                 }`}
                 onClick={() => !isDone && handleToggle(id)}>
+
+                {/* Ảnh bìa series */}
+                <div className="w-11 h-14 rounded-lg bg-gradient-to-br from-teal-900/40 to-emerald-900/20 border border-teal-500/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {s.coverUrl
+                    ? <img src={s.coverUrl} alt={s.seriesTitle} className="w-full h-full object-cover" />
+                    : <BookOpen className="w-4 h-4 text-teal-400/40" />}
+                </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
@@ -325,7 +364,55 @@ const VotingQueue = () => {
                   {tab === 'manuscript' && (
                     <div className="px-6 py-5 space-y-4">
                       {/* fileUrl từ SubmissionDetailDTO — Mangaka upload lúc tạo series */}
-                      {s.fileUrl ? (
+                      {(s.manuscriptPages?.length ?? 0) > 0 ? (
+                        // ── Multi-page viewer (bản thảo mới) ──
+                        <div className="space-y-3">
+                          {/* Page navigator */}
+                          {s.manuscriptPages.length > 1 && (
+                            <div className="flex items-center justify-between">
+                              <p className="text-[11px] text-zinc-600">
+                                Trang <span className="text-white font-semibold">{msPageIdx[s.submissionId] ?? 1}</span>/{s.manuscriptPages.length}
+                              </p>
+                              <div className="flex items-center gap-1.5">
+                                <button onClick={() => setMsPageIdx(p => ({...p, [s.submissionId]: Math.max(1, (p[s.submissionId]??1)-1)}))}
+                                  disabled={(msPageIdx[s.submissionId]??1) <= 1}
+                                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-sm transition-colors">‹ Trước</button>
+                                <button onClick={() => setMsPageIdx(p => ({...p, [s.submissionId]: Math.min(s.manuscriptPages.length, (p[s.submissionId]??1)+1)}))}
+                                  disabled={(msPageIdx[s.submissionId]??1) >= s.manuscriptPages.length}
+                                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/8 text-zinc-400 hover:bg-white/10 disabled:opacity-30 text-sm transition-colors">Sau ›</button>
+                              </div>
+                            </div>
+                          )}
+                          {/* Page image */}
+                          {(() => {
+                            const curPage = msPageIdx[s.submissionId] ?? 1;
+                            const pageObj = s.manuscriptPages.find((p:any) => p.pageNumber === curPage) ?? s.manuscriptPages[0];
+                            return (
+                              <div className="rounded-xl overflow-hidden border border-white/8 bg-black/20">
+                                <img src={pageObj.imageUrl} alt={`Trang ${curPage}`}
+                                  className="w-full object-contain max-h-[500px]" />
+                              </div>
+                            );
+                          })()}
+                          {/* Thumbnail strip */}
+                          {s.manuscriptPages.length > 1 && (
+                            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                              {s.manuscriptPages.map((p:any) => (
+                                <button key={p.pageNumber}
+                                  onClick={() => setMsPageIdx(prev => ({...prev, [s.submissionId]: p.pageNumber}))}
+                                  className={`flex-shrink-0 w-12 h-16 rounded-lg overflow-hidden border transition-all ${
+                                    (msPageIdx[s.submissionId]??1) === p.pageNumber
+                                      ? 'border-teal-400/60 ring-1 ring-teal-400/30'
+                                      : 'border-white/8 hover:border-white/20'
+                                  }`}>
+                                  <img src={p.thumbnailUrl ?? p.imageUrl} alt={`Trang ${p.pageNumber}`}
+                                    className="w-full h-full object-cover" />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (s.fileUrl && s.fileUrl !== 'pending_upload') ? (
                         <>
                           {/* Action bar */}
                           <div className="flex items-center justify-between">
@@ -526,15 +613,28 @@ const VotingQueue = () => {
                       {/* ── Cột trái: form vote ── */}
                       <div className="space-y-4">
 
-                      {/* Banner board trưởng */}
+                      {/* Banner board trưởng — được quyết */}
                       {isLastVoter && (
                         <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
                           <Clock className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-[12px] font-bold text-amber-300">Bạn là người vote cuối cùng</p>
+                            <p className="text-[12px] font-bold text-amber-300">Bạn là Board trưởng — quyết định của bạn là kết quả chung cuộc</p>
                             <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">
-                              Xem ý kiến của 2 thành viên trước ở bên phải trước khi đưa ra quyết định.
+                              Đã đủ 2 ý kiến tư vấn (xem bên phải). Bạn có thể Approve hoặc Reject bất kể ý kiến 2 thành viên.
                               Nếu approve, cần chọn lịch và ngày phát hành chính thức.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Banner board trưởng — chờ đủ ý kiến */}
+                      {chairWaiting && (
+                        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-zinc-500/8 border border-white/10">
+                          <Loader2 className="w-4 h-4 text-zinc-400 flex-shrink-0 mt-0.5 animate-spin" />
+                          <div>
+                            <p className="text-[12px] font-bold text-zinc-300">Chờ ý kiến tư vấn ({totalVoted}/2)</p>
+                            <p className="text-[11px] text-zinc-600 mt-0.5 leading-relaxed">
+                              Bạn là Board trưởng. Cần đủ 2 ý kiến tư vấn từ thành viên trước khi đưa ra quyết định chung cuộc.
                             </p>
                           </div>
                         </div>
@@ -545,12 +645,12 @@ const VotingQueue = () => {
                         <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">
                           Quyết định *
                         </label>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className={`grid ${isChair ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
                           {[
                             { v: 'approve',  l: 'Approve', c: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' },
                             { v: 'reject',   l: 'Reject',  c: 'bg-red-500/15 border-red-500/30 text-red-300'             },
                             { v: 'revision', l: 'Cần sửa', c: 'bg-amber-500/15 border-amber-500/30 text-amber-300'       },
-                          ].map(d => (
+                          ].filter(d => !isChair || d.v !== 'revision').map(d => (
                             <button key={d.v}
                               onClick={() => setVoteForm(f => ({ ...f, decision: d.v as any }))}
                               className={`py-2.5 rounded-xl border text-[12px] font-bold transition-all ${
@@ -675,11 +775,15 @@ const VotingQueue = () => {
                         </button>
                         <button
                           onClick={() => handleVote(id, isLastVoter)}
-                          disabled={voteMutation.isPending}
+                          disabled={voteMutation.isPending || decideMutation.isPending || chairWaiting}
                           className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-sm font-semibold shadow-lg shadow-teal-600/20 hover:shadow-teal-600/35 disabled:opacity-60 transition-all flex items-center gap-2">
-                          {voteMutation.isPending
+                          {(voteMutation.isPending || decideMutation.isPending)
                             ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang gửi...</>
-                            : <><Check className="w-3.5 h-3.5" />Xác nhận vote</>}
+                            : chairWaiting
+                            ? <><Clock className="w-3.5 h-3.5" />Chờ đủ ý kiến ({totalVoted}/2)</>
+                            : isLastVoter
+                            ? <><Check className="w-3.5 h-3.5" />Gửi quyết định chung cuộc</>
+                            : <><Check className="w-3.5 h-3.5" />Gửi ý kiến tư vấn</>}
                         </button>
                       </div>
                       </div>{/* end cột trái */}
@@ -717,6 +821,19 @@ const VotingQueue = () => {
                               </div>
                               {v.comment && (
                                 <p className="text-[11px] text-zinc-500 leading-relaxed">{v.comment}</p>
+                              )}
+                              {/* Lịch xuất bản member đã chọn */}
+                              {/* Lịch xuất bản chỉ hiển thị khi member Approve — Reject không cần lịch */}
+                              {v.schedule && v.vote === 'yes' && (
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <BookOpen className="w-3 h-3 text-zinc-500" />
+                                  <span className="text-[10px] text-zinc-500">Lịch đề xuất:</span>
+                                  <span className="text-[10px] font-semibold text-teal-400">
+                                    {v.schedule === 'weekly'   ? 'Hàng tuần'  :
+                                     v.schedule === 'biweekly' ? '2 tuần/lần' :
+                                     v.schedule === 'monthly'  ? 'Hàng tháng' : v.schedule}
+                                  </span>
+                                </div>
                               )}
                               <p className="text-[9px] text-zinc-700 mt-1.5">
                                 {new Date(v.votedAt).toLocaleString('vi-VN')}

@@ -5,9 +5,12 @@ import com.mangaproject.backend.model.User;
 import com.mangaproject.backend.repository.UserRepository;
 import com.mangaproject.backend.service.ManuscriptService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/manuscripts")
@@ -78,6 +81,43 @@ public class ManuscriptController {
     @GetMapping("/series/{seriesId}")
     public ApiResponse<List<ManuscriptDTO>> getBySeriesId(@PathVariable String seriesId) {
         return ApiResponse.success(manuscriptService.getBySeriesId(seriesId));
+    }
+
+    /**
+     * GET /api/manuscripts/{id}/pages
+     * Lấy danh sách trang bản thảo
+     */
+    @GetMapping("/{id}/pages")
+    public ApiResponse<List<ManuscriptPageDTO>> getPages(@PathVariable String id) {
+        return ApiResponse.success(manuscriptService.getPages(id));
+    }
+
+    /**
+     * POST /api/manuscripts/{id}/pages/batch
+     * Upload nhiều ảnh trang bản thảo cùng lúc
+     */
+    @PostMapping(value = "/{id}/pages/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<List<ManuscriptPageDTO>> uploadPages(
+            @PathVariable String id,
+            @RequestParam("files") List<MultipartFile> files,
+            @RequestParam(value = "notes", required = false) String notes) {
+        return ApiResponse.success(manuscriptService.uploadPages(id, files, notes),
+                "Upload thành công " + files.size() + " trang bản thảo");
+    }
+
+    /**
+     * POST /api/manuscripts/{id}/pages/upload-pdf
+     * Upload PDF bản thảo — extract từng trang thành ảnh
+     */
+    @PostMapping(value = "/{id}/pages/upload-pdf", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<List<ManuscriptPageDTO>> uploadPdf(
+            @PathVariable String id,
+            @RequestParam("file") MultipartFile pdfFile) {
+        if (!Objects.requireNonNull(pdfFile.getOriginalFilename()).toLowerCase().endsWith(".pdf")) {
+            return new ApiResponse<>(null, "Chỉ chấp nhận file PDF", false);
+        }
+        List<ManuscriptPageDTO> result = manuscriptService.uploadPdf(id, pdfFile);
+        return ApiResponse.success(result, "Upload PDF thành công — " + result.size() + " trang");
     }
 
     private User getUser(Authentication authentication) {

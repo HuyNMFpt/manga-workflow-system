@@ -5,13 +5,24 @@ import com.mangaproject.backend.model.Chapter;
 import com.mangaproject.backend.model.Page;
 import com.mangaproject.backend.repository.ChapterRepository;
 import com.mangaproject.backend.repository.PageRepository;
+import com.mangaproject.backend.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -23,6 +34,9 @@ public class PageService {
     private final PageRepository pageRepository;
     private final ChapterRepository chapterRepository;
     private final FileStorageService fileStorageService;
+    private final TaskRepository taskRepository;
+    private final com.mangaproject.backend.repository.UserRepository userRepository;
+    private final ChapterService chapterService;
 
     @Transactional(readOnly = true)
     public List<PageDTO> getPagesByChapter(String chapterId) {
@@ -130,6 +144,149 @@ public class PageService {
         return mapToDTO(page);
     }
 
+    // ── Update notes + status cùng lúc ───────────────────────────
+    public PageDTO updatePage(String id, String notes, String status) {
+        Page page = pageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Page not found"));
+        if (notes != null) page.setNotes(notes);
+        if (status != null) {
+            try { page.setStatus(Page.PageStatus.valueOf(status)); }
+            catch (IllegalArgumentException e) {
+                throw new RuntimeException("Status không hợp lệ: " + status);
+            }
+        }
+        return mapToDTO(pageRepository.save(page));
+    }
+
+    // ── Batch Upload — nhiều ảnh cùng lúc ──────────────────────────
+    @Transactional
+    public List<PageDTO> uploadPages(String chapterId, List<MultipartFile> files,
+                                     Integer startPageNumber, String notes) throws IOException {
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new RuntimeException("Chapter not found"));
+
+        int nextPage = startPageNumber != null ? startPageNumber :
+                pageRepository.findMaxPageNumberByChapterId(chapterId)
+                        .map(max -> max + 1)
+                        .orElse(1);
+
+        List<PageDTO> result = new ArrayList<>();
+        for (MultipartFile file : files) {
+            if (pageRepository.existsByChapter_IdAndPageNumber(chapterId, nextPage)) {
+                throw new RuntimeException("Trang " + nextPage + " đã tồn tại trong chapter này");
+            }
+
+            String folder = String.format("chapters/%s/pages", chapterId);
+            String imageUrl = fileStorageService.storeFile(file, folder);
+            String thumbnailUrl = fileStorageService.storeThumbnail(file, folder);
+
+            Page page = new Page();
+            page.setChapter(chapter);
+            page.setPageNumber(nextPage);
+            page.setImageUrl(imageUrl);
+            page.setThumbnailUrl(thumbnailUrl);
+            page.setNotes(notes);
+            page.setStatus(Page.PageStatus.in_progress);
+            result.add(mapToDTO(pageRepository.save(page)));
+
+            log.info("Batch upload: chapter={}, page={}", chapterId, nextPage);
+            nextPage++;
+        }
+
+        // Cập nhật total_pages của chapter
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+        // Chapter 0 task: recheck status sau khi upload trang
+        chapterService.refreshStatusIfReady(chapterId);
+
+        return result;
+    }
+
+    // ── PDF Upload — extract từng trang PDF thành ảnh ────────────
+    @Transactional
+    public List<PageDTO> uploadPdf(String chapterId, MultipartFile pdfFile,
+                                   Integer startPageNumber) throws IOException {
+        Chapter chapter = chapterRepository.findById(chapterId)
+                .orElseThrow(() -> new RuntimeException("Chapter not found"));
+
+        int nextPage = startPageNumber != null ? startPageNumber :
+                pageRepository.findMaxPageNumberByChapterId(chapterId)
+                        .map(max -> max + 1)
+                        .orElse(1);
+
+        List<PageDTO> result = new ArrayList<>();
+
+        try (PDDocument document = Loader.loadPDF(pdfFile.getBytes())) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            int totalPdfPages = document.getNumberOfPages();
+
+            for (int i = 0; i < totalPdfPages; i++) {
+                // Render trang PDF thành ảnh 150 DPI
+                BufferedImage image = renderer.renderImageWithDPI(i, 150, ImageType.RGB);
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                ImageIO.write(image, "jpg", baos);
+                byte[] imageBytes = baos.toByteArray();
+
+                // Wrap thành MultipartFile để tái dùng FileStorageService
+                MultipartFile mockFile = new ByteArrayMultipartFile(
+                        "page_" + (i + 1) + ".jpg",
+                        "image/jpeg",
+                        imageBytes
+                );
+
+                String folder = String.format("chapters/%s/pages", chapterId);
+                String imageUrl = fileStorageService.storeFile(mockFile, folder);
+                String thumbnailUrl = fileStorageService.storeThumbnail(mockFile, folder);
+
+                Page page = new Page();
+                page.setChapter(chapter);
+                page.setPageNumber(nextPage + i);
+                page.setImageUrl(imageUrl);
+                page.setThumbnailUrl(thumbnailUrl);
+                page.setNotes("PDF trang " + (i + 1));
+                page.setStatus(Page.PageStatus.in_progress);
+                result.add(mapToDTO(pageRepository.save(page)));
+
+                log.info("PDF extract: chapter={}, page={}/{}", chapterId, i + 1, totalPdfPages);
+            }
+        }
+
+        // Cập nhật total_pages
+        long totalPages = pageRepository.countByChapter_Id(chapterId);
+        chapter.setTotalPages((int) totalPages);
+        chapterRepository.save(chapter);
+        // Chapter 0 task: recheck status sau khi upload PDF
+        chapterService.refreshStatusIfReady(chapterId);
+
+        return result;
+    }
+
+    // ── ByteArrayMultipartFile — wrap byte[] thành MultipartFile ──
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final String contentType;
+        private final byte[] content;
+
+        public ByteArrayMultipartFile(String name, String contentType, byte[] content) {
+            this.name = name;
+            this.contentType = contentType;
+            this.content = content;
+        }
+
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return name; }
+        @Override public String getContentType() { return contentType; }
+        @Override public boolean isEmpty() { return content.length == 0; }
+        @Override public long getSize() { return content.length; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public InputStream getInputStream() { return new ByteArrayInputStream(content); }
+        @Override public void transferTo(java.io.File dest) throws IOException {
+            java.nio.file.Files.write(dest.toPath(), content);
+        }
+    }
+
     private PageDTO mapToDTO(Page page) {
         PageDTO dto = new PageDTO();
         dto.setId(page.getId());
@@ -141,6 +298,31 @@ public class PageService {
         dto.setNotes(page.getNotes());
         dto.setCreatedAt(page.getCreatedAt());
         dto.setUpdatedAt(page.getUpdatedAt());
+
+        // Mục 3: tính pageStatus + activeTaskType + activeAssigneeName từ tasks
+        List<com.mangaproject.backend.model.Task> tasks = taskRepository.findByPageId(page.getId());
+        if (tasks.isEmpty()) {
+            dto.setPageStatus("no_task");
+        } else {
+            com.mangaproject.backend.model.Task activeTask = tasks.stream()
+                    .filter(t -> t.getStatus() != com.mangaproject.backend.model.Task.TaskStatus.approved)
+                    .findFirst()
+                    .orElse(null);
+
+            if (activeTask == null) {
+                // Tất cả task đã approved → sẵn sàng giao task tiếp
+                dto.setPageStatus("ready");
+            } else {
+                // Đang có task chưa xong → chặn giao task mới
+                dto.setPageStatus("has_active_task");
+                dto.setActiveTaskType(activeTask.getTaskType() != null ? activeTask.getTaskType().name() : null);
+                if (activeTask.getAssignedTo() != null) {
+                    final String assigneeId = activeTask.getAssignedTo();
+                    userRepository.findById(assigneeId).ifPresent(u ->
+                            dto.setActiveAssigneeName(u.getName() != null ? u.getName() : u.getUsername()));
+                }
+            }
+        }
         return dto;
     }
 }

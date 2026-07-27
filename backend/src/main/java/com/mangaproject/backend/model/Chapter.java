@@ -42,6 +42,9 @@ public class Chapter {
     @Column(name = "published_at")
     private LocalDate publishedAt;
 
+    @Column(name = "scheduled_publish_at")
+    private LocalDateTime scheduledPublishAt;
+
     @Column(name = "total_pages", nullable = false)
     private Integer totalPages = 0;
 
@@ -64,6 +67,6 @@ public class Chapter {
     private LocalDateTime deletedAt;
 
     public enum ChapterStatus {
-        in_progress, pending_review, editor_review, approved, published
+        in_progress, pending_review, editor_review, approved, scheduled, published
     }
 }

@@ -3,6 +3,7 @@ package com.mangaproject.backend.controller;
 import com.mangaproject.backend.dto.*;
 import com.mangaproject.backend.model.User;
 import com.mangaproject.backend.repository.UserRepository;
+import com.mangaproject.backend.service.FileStorageService;
 import com.mangaproject.backend.service.SeriesService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -17,6 +18,7 @@ public class SeriesController {
 
     private final SeriesService seriesService;
     private final UserRepository userRepository;
+    private final FileStorageService fileStorageService;
 
     @GetMapping
     public ApiResponse<List<SeriesDTO>> getAllSeries(
@@ -48,9 +50,20 @@ public class SeriesController {
         request.setTitle(title);
         request.setGenre(genre);
         request.setSynopsis(synopsis);
-        request.setCoverUrl(coverUrl);
         request.setSchedule(schedule);
         request.setEditorId(editorId);
+
+        // Mục 5: lưu file cover trước, ghi đè coverUrl string
+        if (cover != null && !cover.isEmpty()) {
+            try {
+                String uploadedUrl = fileStorageService.storeFile(cover, "series/covers");
+                request.setCoverUrl(uploadedUrl);
+            } catch (Exception e) {
+                request.setCoverUrl(coverUrl); // fallback về string nếu upload lỗi
+            }
+        } else {
+            request.setCoverUrl(coverUrl); // giữ nguyên string URL nếu không có file
+        }
 
         return ApiResponse.success(seriesService.createSeries(request, user.getId()));
     }
@@ -86,7 +99,15 @@ public class SeriesController {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        return ApiResponse.success(seriesService.updateSeries(id, title, genre, synopsis, coverUrl, editorId, user.getId()));
+        // Mục 5: lưu file cover mới nếu có, không thì giữ coverUrl string
+        String resolvedCoverUrl = coverUrl;
+        if (cover != null && !cover.isEmpty()) {
+            try {
+                resolvedCoverUrl = fileStorageService.storeFile(cover, "series/covers");
+            } catch (Exception ignored) {}
+        }
+
+        return ApiResponse.success(seriesService.updateSeries(id, title, genre, synopsis, resolvedCoverUrl, editorId, user.getId()));
     }
 
     @DeleteMapping("/{id}")

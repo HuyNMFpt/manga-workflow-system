@@ -81,7 +81,8 @@ public class Series {
         approved,
         publishing,
         on_hiatus,
-        cancelled
+        rejected,                // Board từ chối lần đầu — Mangaka được nộp lại
+        cancelled                // Board cancel series đang publishing — vĩnh viễn
     }
 
     public enum PublishSchedule {

@@ -6,7 +6,7 @@ import {
   Users, Plus, Search, MoreHorizontal, Check, X, Loader2,
   AlertCircle, RefreshCw, Shield, Mail, UserCog, ToggleLeft,
   ToggleRight, KeyRound, Trash2, LogOut, CheckCircle2, Eye, EyeOff,
-  Building2, User
+  Building2, User, Crown, Star
 } from 'lucide-react'
 import api from '@/lib/axios'
 
@@ -38,6 +38,7 @@ export default function AdminPortal() {
   const [showCreate,   setShowCreate]   = useState(false)
   const [editUser,     setEditUser]     = useState<any>(null)
   const [deleteUser,   setDeleteUser]   = useState<any>(null)
+  const [editSkillsUser, setEditSkillsUser] = useState<any>(null)
   const [createdUser,  setCreatedUser]  = useState<{ name:string; email:string; companyEmail:string; tempPassword:string; personalEmail?:string } | null>(null)
 
   // Create form
@@ -142,6 +143,16 @@ export default function AdminPortal() {
     mutationFn: (id: string) => api.post(`/admin/users/${id}/reset-password`).then(r => r.data),
     onSuccess: () => { setMenuId(null); alert('Đã gửi mật khẩu tạm mới qua email.') },
     onError: (e:any) => alert(e.response?.data?.message ?? 'Lỗi reset mật khẩu'),
+  })
+
+  // ── PUT /api/admin/users/{id}/set-board-chair ─────────────
+  const setChairMutation = useMutation({
+    mutationFn: (id: string) => api.put(`/admin/users/${id}/set-board-chair`).then(r => r.data),
+    onSuccess: () => {
+      setMenuId(null); setMenuPos(null)
+      qc.invalidateQueries({ queryKey: ['admin', 'users'] })
+    },
+    onError: (e:any) => alert(e.response?.data?.message ?? 'Không đặt được Board trưởng'),
   })
 
   // Handlers
@@ -300,9 +311,16 @@ export default function AdminPortal() {
                 <p className="text-[12px] text-zinc-500 truncate">{u.email}</p>
 
                 {/* Role */}
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border w-fit ${roleColor(u.role)}`}>
-                  {roleLabel(u.role)}
-                </span>
+                <div className="flex items-center gap-1.5 w-fit">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border w-fit ${roleColor(u.role)}`}>
+                    {roleLabel(u.role)}
+                  </span>
+                  {u.isBoardChair && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-amber-500/12 text-amber-300 border-amber-500/25 flex items-center gap-0.5" title="Board trưởng">
+                      <Crown className="w-2.5 h-2.5" />Trưởng
+                    </span>
+                  )}
+                </div>
 
                 {/* Toggle active */}
                 <button onClick={() => toggleMutation.mutate(u.id)}
@@ -553,6 +571,13 @@ export default function AdminPortal() {
         </div>
       )}
 
+      {/* ════ EDIT SKILLS MODAL ════ */}
+      {editSkillsUser && (
+        <EditSkillsModal user={editSkillsUser}
+          onClose={() => setEditSkillsUser(null)}
+          onSuccess={() => { setEditSkillsUser(null); qc.invalidateQueries({ queryKey: ['admin','users'] }); qc.invalidateQueries({ queryKey: ['assistants'] }) }} />
+      )}
+
       {/* ════ DELETE CONFIRM MODAL ════ */}
       {deleteUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
@@ -604,6 +629,21 @@ export default function AdminPortal() {
               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] text-zinc-300 hover:bg-white/5 transition-colors">
               <KeyRound className="w-3.5 h-3.5" />Reset mật khẩu
             </button>
+            {/* Đặt làm Board trưởng — chỉ board_member chưa phải trưởng */}
+            {u.role === 'board_member' && !u.isBoardChair && u.isActive !== false && (
+              <button onClick={() => { setChairMutation.mutate(u.id) }}
+                disabled={setChairMutation.isPending}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] text-amber-300 hover:bg-amber-500/8 transition-colors disabled:opacity-50">
+                <Crown className="w-3.5 h-3.5" />Đặt làm Board trưởng
+              </button>
+            )}
+            {/* Sửa kỹ năng — chỉ role assistant */}
+            {u.role === 'assistant' && (
+              <button onClick={() => { setEditSkillsUser(u); setMenuId(null); setMenuPos(null) }}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] text-blue-300 hover:bg-blue-500/8 transition-colors">
+                <Star className="w-3.5 h-3.5" />Sửa kỹ năng
+              </button>
+            )}
             <div className="border-t border-white/5 my-0.5" />
             <button onClick={() => { setDeleteUser(u); setMenuId(null); setMenuPos(null) }}
               className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] text-red-400 hover:bg-red-500/8 transition-colors">
@@ -615,6 +655,84 @@ export default function AdminPortal() {
 
       {/* Backdrop for dropdown */}
       {menuId && <div className="fixed inset-0 z-[9998]" onClick={() => { setMenuId(null); setMenuPos(null) }} />}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────
+// EditSkillsModal — Admin sửa kỹ năng của 1 Assistant
+// ────────────────────────────────────────────────────────────
+const TASK_TYPES_ADMIN = [
+  { value: 'background', label: 'Vẽ nền' },
+  { value: 'shading',    label: 'Tô bóng' },
+  { value: 'effect',     label: 'Hiệu ứng' },
+  { value: 'screentone', label: 'Screentone' },
+  { value: 'dialog',     label: 'Hộp thoại' },
+  { value: 'touch_up',   label: 'Chỉnh sửa' },
+  { value: 'other',      label: 'Khác' },
+]
+
+const EditSkillsModal = ({ user, onClose, onSuccess }: { user: any; onClose: () => void; onSuccess: () => void }) => {
+  const [selected, setSelected] = useState<string[]>(user.skills ?? [])
+  const [err, setErr] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: (taskTypes: string[]) => api.put(`/admin/users/${user.id}/skills`, { taskTypes }).then(r => r.data),
+    onSuccess,
+    onError: (e: any) => setErr(e.response?.data?.message ?? 'Không cập nhật được kỹ năng'),
+  })
+
+  const toggle = (v: string) => setSelected(prev => prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      onClick={() => !mutation.isPending && onClose()}>
+      <div onClick={e => e.stopPropagation()}
+        className="w-full max-w-sm bg-[#111118] border border-blue-900/30 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-white/6 flex items-center gap-2">
+          <Star className="w-4 h-4 text-blue-400" />
+          <h2 className="text-[13px] font-bold text-white">Sửa kỹ năng — {user.name}</h2>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-[11px] text-zinc-600">
+            Chọn những loại công việc mà {user.name} có khả năng đảm nhận.
+            Hệ thống dùng thông tin này để tự động giao task phù hợp.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {TASK_TYPES_ADMIN.map(t => {
+              const isSelected = selected.includes(t.value)
+              return (
+                <button key={t.value} onClick={() => toggle(t.value)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[12px] font-semibold transition-all ${
+                    isSelected
+                      ? 'bg-blue-500/15 border-blue-500/30 text-blue-300'
+                      : 'bg-white/3 border-white/8 text-zinc-500 hover:text-zinc-300'
+                  }`}>
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                    isSelected ? 'bg-blue-500 border-blue-500' : 'border-zinc-700'
+                  }`}>
+                    {isSelected && <CheckCircle2 className="w-3 h-3 text-white" strokeWidth={3} />}
+                  </div>
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+          {err && <p className="text-xs text-red-400 bg-red-500/8 border border-red-500/15 rounded-lg px-3 py-2">{err}</p>}
+        </div>
+        <div className="flex gap-2 px-5 py-4 border-t border-white/6">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-white/8 text-zinc-400 text-sm hover:bg-white/5 transition-colors">
+            Huỷ
+          </button>
+          <button onClick={() => { setErr(''); mutation.mutate(selected) }} disabled={mutation.isPending}
+            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2 transition-all">
+            {mutation.isPending
+              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Đang lưu...</>
+              : <><CheckCircle2 className="w-3.5 h-3.5" />Lưu ({selected.length})</>}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

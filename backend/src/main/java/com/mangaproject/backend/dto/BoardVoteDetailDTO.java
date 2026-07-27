@@ -8,7 +8,8 @@ import lombok.*;
 public class BoardVoteDetailDTO {
     private String voterId;
     private String voterName;
-    private String vote;       // "approve" | "reject" | "abstain"
+    private String vote;       // "yes" | "no" | "abstain"
     private String comment;
+    private String schedule;   // weekly/biweekly/monthly member đề xuất
     private String votedAt;
 }

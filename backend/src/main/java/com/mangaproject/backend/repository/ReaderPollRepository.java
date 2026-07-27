@@ -20,4 +20,12 @@ public interface ReaderPollRepository extends JpaRepository<ReaderPoll, String> 
     // Tự tính rankPosition từ voteCount trong cùng kỳ (#4)
     int countByPollPeriodAndPollYearAndVoteCountGreaterThan(
             Integer pollPeriod, Integer pollYear, Integer voteCount);
+
+    // Chặn duplicate: cùng series + kỳ + năm chỉ nhập 1 lần
+    boolean existsBySeriesIdAndPollPeriodAndPollYear(
+            String seriesId, Integer pollPeriod, Integer pollYear);
+
+    // Upsert: tìm poll đã tồn tại để cập nhật
+    Optional<ReaderPoll> findBySeriesIdAndPollPeriodAndPollYear(
+            String seriesId, Integer pollPeriod, Integer pollYear);
 }

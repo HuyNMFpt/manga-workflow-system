@@ -24,4 +24,12 @@ public interface ChapterRepository extends JpaRepository<Chapter, String> {
     long countBySeries_Id(String seriesId);
     List<Chapter> findBySeriesId(String seriesId);
     void deleteBySeriesId(String seriesId);
+
+    // TODO 2: đếm chapters published trong khoảng thời gian
+    @Query("SELECT COUNT(c) FROM Chapter c WHERE c.status = 'published' AND c.publishedAt >= :afterDate")
+    int countPublishedAfter(@Param("afterDate") java.time.LocalDate afterDate);
+
+    // Scheduler: tìm chapter đã đến giờ publish
+    List<Chapter> findByStatusAndScheduledPublishAtBefore(
+            Chapter.ChapterStatus status, java.time.LocalDateTime time);
 }

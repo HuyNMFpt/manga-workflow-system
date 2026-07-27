@@ -12,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.mangaproject.backend.model.User;
 
 import java.util.List;
 import java.util.Map;
@@ -53,8 +52,8 @@ public class ChapterController {
     public ResponseEntity<ApiResponse<ChapterDTO>> createChapter(
             @Valid @RequestBody CreateChapterRequest request,
             Authentication authentication) {
-        User user = (User) authentication.getPrincipal();
-        ChapterDTO chapter = chapterService.createChapter(request, user.getId());
+        String userId = (String) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.createChapter(request, userId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new ApiResponse<>(chapter, "Chapter created successfully", true));
     }
@@ -86,8 +85,31 @@ public class ChapterController {
             return ResponseEntity.badRequest()
                     .body(new ApiResponse<>(null, "Status is required", false));
         }
-        User user = (User) authentication.getPrincipal();
-        ChapterDTO chapter = chapterService.updateChapterStatus(id, status, user.getId());
+        String userId = (String) authentication.getPrincipal();
+        ChapterDTO chapter = chapterService.updateChapterStatus(id, status, userId);
         return ResponseEntity.ok(new ApiResponse<>(chapter, "Chapter status updated", true));
+    }
+
+    /**
+     * GET /api/chapters/{id}/readiness
+     * Pre-publish validation: kiểm tra chapter đủ điều kiện xuất bản chưa
+     */
+    @GetMapping("/{id}/readiness")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> checkReadiness(
+            @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(chapterService.checkReadiness(id)));
+    }
+
+    /**
+     * PUT /api/chapters/{id}/schedule
+     * Đặt lịch xuất bản — publishAt=null nghĩa là phát hành ngay
+     */
+    @PutMapping("/{id}/schedule")
+    public ResponseEntity<ApiResponse<ChapterDTO>> schedulePublish(
+            @PathVariable String id,
+            @RequestBody Map<String, String> request) {
+        String publishAt = request.get("publishAt");
+        ChapterDTO chapter = chapterService.schedulePublish(id, publishAt);
+        return ResponseEntity.ok(new ApiResponse<>(chapter, "Đã đặt lịch xuất bản", true));
     }
 }

@@ -6,6 +6,7 @@ import {
   Loader2, AlertCircle, X, Trash2, Info
 } from 'lucide-react';
 import api from '@/lib/axios';
+import { convertImageFilesIfNeeded } from '@/lib/imageConvert';
 
 const genres = [
   'Shonen','Seinen','Shojo','Josei','Kodomo',
@@ -102,19 +103,32 @@ const SeriesSubmission = () => {
   });
 
   // ── File helpers ───────────────────────────────────────────────
-  const processFiles = (files: File[]) => {
+  const processFiles = async (files: File[]) => {
     setUploadError('');
-    const newFiles: UploadedFile[] = files
-      .filter(f => f.type.startsWith('image/') || f.type === 'application/pdf')
-      .map(f => ({
-        id:         Date.now() + Math.random(),
-        file:       f,
-        previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
-      }));
-    if (newFiles.length === 0) {
-      setUploadError('Chỉ chấp nhận file ảnh (PNG, JPG) hoặc PDF');
+    // Tách ảnh (cần convert nếu webp) và PDF (giữ nguyên)
+    const images = files.filter(
+      f => f.type.startsWith('image/') || /\.(webp|avif|heic|heif|jfif)$/i.test(f.name)
+    );
+    const pdfs   = files.filter(f => f.type === 'application/pdf');
+
+    if (images.length === 0 && pdfs.length === 0) {
+      setUploadError('Chỉ chấp nhận file ảnh (PNG, JPG, WEBP) hoặc PDF');
       return;
     }
+
+    let convertedImages: File[] = [];
+    try {
+      convertedImages = images.length > 0 ? await convertImageFilesIfNeeded(images) : [];
+    } catch (err: any) {
+      setUploadError(err.message ?? 'Lỗi xử lý ảnh');
+      return;
+    }
+
+    const newFiles: UploadedFile[] = [...convertedImages, ...pdfs].map(f => ({
+      id:         Date.now() + Math.random(),
+      file:       f,
+      previewUrl: f.type.startsWith('image/') ? URL.createObjectURL(f) : null,
+    }));
     setUploadedFiles(prev => [...prev, ...newFiles]);
   };
 
@@ -379,7 +393,7 @@ const SeriesSubmission = () => {
                   ? 'border-violet-500 bg-violet-500/8 scale-[1.01]'
                   : 'border-white/8 hover:border-violet-500/30 hover:bg-white/3'
               }`}>
-              <input type="file" accept="image/png,image/jpeg,image/jpg,application/pdf"
+              <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp,image/avif,application/pdf"
                 multiple onChange={handleFileInput}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
               <Upload className="w-10 h-10 text-zinc-700 mx-auto mb-3" />

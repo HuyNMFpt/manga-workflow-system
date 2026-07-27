@@ -21,4 +21,8 @@ public class EditorialProposalDTO {
     private String status;
     private boolean hasVoted;
     private String createdAt;
+    private String decidedAt;  // TODO 1: thời điểm quyết định
+    private int totalVotes;    // TODO 1: tổng phiếu đã bỏ
+    private int quorum;        // TODO 1: ngưỡng quorum động
+    private String votingDeadline; // deadline bỏ phiếu — frontend countdown
 }

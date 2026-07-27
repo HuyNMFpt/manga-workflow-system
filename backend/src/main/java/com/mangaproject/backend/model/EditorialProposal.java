@@ -44,6 +44,9 @@ public class EditorialProposal {
     @Column(name = "decided_at")
     private LocalDateTime decidedAt;
 
+    @Column(name = "voting_deadline")
+    private LocalDateTime votingDeadline; // deadline bỏ phiếu — set khi tạo proposal
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
