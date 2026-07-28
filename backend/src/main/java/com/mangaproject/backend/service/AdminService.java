@@ -169,6 +169,8 @@ public class AdminService {
         dto.setIsActive(user.getIsActive());
         dto.setTempPassword(null);
         dto.setPersonalEmail(user.getPersonalEmail());
+        dto.setIsBoardChair(user.isBoardChair());
+        dto.setSkills(parseSkills(user.getSkills()));
         return dto;
     }
 
@@ -183,6 +185,41 @@ public class AdminService {
         dto.setIsActive(user.getIsActive());
         dto.setTempPassword(tempPassword);
         dto.setPersonalEmail(user.getPersonalEmail());
+        dto.setIsBoardChair(user.isBoardChair());
+        dto.setSkills(parseSkills(user.getSkills()));
         return dto;
+    }
+
+    private java.util.List<String> parseSkills(String skillsJson) {
+        if (skillsJson == null || skillsJson.isBlank() || skillsJson.equals("[]"))
+            return java.util.Collections.emptyList();
+        String stripped = skillsJson.trim().replaceAll("^\\[|\\]$", "");
+        if (stripped.isBlank()) return java.util.Collections.emptyList();
+        return java.util.Arrays.stream(stripped.split(","))
+                .map(s -> s.trim().replaceAll("^\"|\"$", ""))
+                .filter(s -> !s.isBlank())
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public void setBoardChair(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!"board_member".equals(user.getRoleName())) {
+            throw new RuntimeException("Chỉ Board Member mới có thể được đặt làm Board trưởng");
+        }
+        if (Boolean.FALSE.equals(user.getIsActive())) {
+            throw new RuntimeException("Không thể đặt tài khoản đã vô hiệu hoá làm Board trưởng");
+        }
+
+        // Bỏ flag người cũ — đảm bảo chỉ 1 trưởng
+        userRepository.findByIsBoardChairTrue().ifPresent(oldChair -> {
+            oldChair.setBoardChair(false);
+            userRepository.save(oldChair);
+        });
+
+        user.setBoardChair(true);
+        userRepository.save(user);
     }
 }

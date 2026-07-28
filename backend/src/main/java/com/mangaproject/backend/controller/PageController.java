@@ -140,4 +140,16 @@ public class PageController {
         PageDTO page = pageService.updatePageStatus(id, status);
         return ResponseEntity.ok(new ApiResponse<>(page, "Page status updated", true));
     }
+
+    // ── Update notes + status cùng lúc ───────────────────────────
+    @PutMapping("/{id}")
+    @Operation(summary = "Update page", description = "Update page notes and/or status")
+    public ResponseEntity<ApiResponse<PageDTO>> updatePage(
+            @PathVariable String id,
+            @RequestBody Map<String, String> request) {
+        String notes = request.get("notes");
+        String status = request.get("status");
+        PageDTO page = pageService.updatePage(id, notes, status);
+        return ResponseEntity.ok(new ApiResponse<>(page, "Page updated", true));
+    }
 }

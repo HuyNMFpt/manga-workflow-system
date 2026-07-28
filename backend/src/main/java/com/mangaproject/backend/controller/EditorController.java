@@ -113,6 +113,16 @@ public class EditorController {
         return ApiResponse.success(editorService.getStudioProgress(user.getId()));
     }
 
+    /**
+     * GET /api/editor/publish-stats
+     * Thống kê xuất bản: đúng hạn / trễ hạn theo series
+     */
+    @GetMapping("/publish-stats")
+    public ApiResponse<java.util.Map<String, Object>> getPublishStats(Authentication authentication) {
+        User user = getUser(authentication);
+        return ApiResponse.success(editorService.getPublishStats(user.getId()));
+    }
+
     private User getUser(Authentication authentication) {
         return userRepository.findByEmail(authentication.getName())
                 .orElseThrow(() -> new RuntimeException("User not found"));

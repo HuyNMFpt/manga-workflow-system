@@ -29,15 +29,16 @@ public class BoardService {
     private final LookupResolverService lookupResolverService;
     private final EditorialProposalRepository editorialProposalRepository;
     private final EditorialVoteRepository editorialVoteRepository;
+    private final com.mangaproject.backend.repository.ChapterRepository chapterRepository;
 
     // 20% cuối bảng xếp hạng bị tính là "kỳ thấp" — dễ điều chỉnh sau này
     private static final double AT_RISK_BOTTOM_PCT = 0.2;
 
     // ── Dashboard stats ──────────────────────────────────────────
     public BoardStatsDTO getStats() {
-        // Chờ vote: dedup theo seriesId — mỗi series chỉ tính 1 lần dù có nhiều submission (nộp lại nhiều lần)
+        // Chờ vote: chỉ đếm submission đã được Editor nộp lên Board (voting)
+        // Bỏ pending — pending là Mangaka nộp cho Editor, chưa qua Board
         List<Submission> pendingOrVoting = new ArrayList<>();
-        pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
         pendingOrVoting.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
 
         // Cache seriesId để tránh N+1 queries
@@ -89,7 +90,12 @@ public class BoardService {
                 ))
                 .size();
 
-        return new BoardStatsDTO(pendingVotes, totalActive, atRisk, decisionsThisMonth);
+        return new BoardStatsDTO(pendingVotes, totalActive, atRisk, decisionsThisMonth,
+                // TODO 2: proposals đã thông qua tháng này
+                editorialProposalRepository.countByStatusAndDecidedAtAfter(
+                        EditorialProposal.ProposalStatus.approved, startOfMonth),
+                // TODO 2: chapters được xuất bản tháng này
+                chapterRepository.countPublishedAfter(startOfMonth.toLocalDate()));
     }
 
     // Lấy seriesId của một submission thông qua manuscript liên kết.
@@ -103,9 +109,9 @@ public class BoardService {
     // ── Voting Queue — danh sách submissions chờ vote ────────────
     public List<SubmissionDetailDTO> getPendingSubmissions(String boardMemberId) {
         List<Submission> allSubmissions = new ArrayList<>();
-        // voting trước → putIfAbsent giữ submission mới nhất (có đủ editor evaluation)
+        // CHỈ lấy voting — Editor đã nộp lên Board
+        // Bỏ pending — pending là Mangaka nộp cho Editor, Board không được thấy
         allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.voting));
-        allSubmissions.addAll(submissionRepository.findByStatusOrderByCreatedAtDesc(Submission.SubmissionStatus.pending));
 
         // Dedup: chỉ lấy submission mới nhất theo seriesId (không phải manuscriptId — mỗi lần
         // Mangaka nộp lại sẽ tạo manuscript mới với id khác, nên dedup theo manuscriptId không
@@ -121,14 +127,12 @@ public class BoardService {
         Map<String, Series> seriesMap = seriesRepository.findAllById(latestBySeriesId.keySet()).stream()
                 .collect(Collectors.toMap(Series::getId, s -> s));
 
-        // Filter: bỏ series đã publishing hoặc cancelled
+        // Filter: chỉ hiện series đang ở trạng thái submitted (Editor đã nộp lên Board)
+        // Bỏ series chưa được Editor submit, đã publishing, cancelled, rejected
         List<Submission> submissions = latestBySeriesId.entrySet().stream()
                 .filter(e -> {
                     Series s = seriesMap.get(e.getKey());
-                    return s != null
-                            && s.getStatus() != Series.SeriesStatus.publishing
-                            && s.getStatus() != Series.SeriesStatus.cancelled
-                            && s.getStatus() != Series.SeriesStatus.rejected;
+                    return s != null && s.getStatus() == Series.SeriesStatus.submitted;
                 })
                 .map(Map.Entry::getValue)
                 .collect(Collectors.toList());
@@ -200,6 +204,11 @@ public class BoardService {
                     .collect(java.util.stream.Collectors.toList());
             dto.setManuscriptPages(msPages);
 
+            // coverUrl từ series — frontend VotingQueue card
+            if (series != null) dto.setCoverUrl(series.getCoverUrl());
+            // submittedAt — thời điểm Editor nộp lên Board
+            dto.setSubmittedAt(sub.getCreatedAt() != null ? sub.getCreatedAt().toString() : null);
+
             return dto;
         }).collect(Collectors.toList());
     }
@@ -207,6 +216,14 @@ public class BoardService {
     // ── Vote ─────────────────────────────────────────────────────
     @Transactional
     public SubmissionDTO castVote(VoteRequest request, String boardMemberId) {
+        User voter = userRepository.findById(boardMemberId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Board trưởng không vote tư vấn — dùng /board/decide
+        if (voter.isBoardChair()) {
+            throw new RuntimeException("Board trưởng dùng chức năng Quyết định, không vote tư vấn");
+        }
+
         Submission submission = submissionRepository.findById(request.getSubmissionId())
                 .orElseThrow(() -> new RuntimeException("Submission not found"));
 
@@ -220,6 +237,7 @@ public class BoardService {
         boardVote.setSubmissionId(request.getSubmissionId());
         boardVote.setVoterId(boardMemberId);
         boardVote.setComment(request.getJustification());
+        boardVote.setSchedule(request.getSchedule()); // lịch xuất bản member đề xuất
         switch (request.getDecision()) {
             case "approve"  -> boardVote.setVote(BoardVote.VoteChoice.yes);
             case "reject"   -> boardVote.setVote(BoardVote.VoteChoice.no);
@@ -228,87 +246,36 @@ public class BoardService {
         boardVoteRepository.save(boardVote);
 
         submission.setStatus(Submission.SubmissionStatus.voting);
-
-        // Fix: dùng đúng giá trị frontend gửi (approve/reject/abstain)
         switch (request.getDecision()) {
             case "approve" -> submission.setVoteYes(submission.getVoteYes() + 1);
             case "reject"  -> submission.setVoteNo(submission.getVoteNo() + 1);
             default        -> submission.setVoteAbstain(submission.getVoteAbstain() + 1);
         }
 
-        // Kiểm tra kết quả: cần 3 vote yes để approve (có thể điều chỉnh)
+        // Khi đủ 2 ý kiến tư vấn → notify Board trưởng cần quyết định
         int totalVotes = submission.getVoteYes() + submission.getVoteNo() + submission.getVoteAbstain();
-        if (totalVotes >= 3) {
-            if (submission.getVoteYes() > submission.getVoteNo()) {
-                // Approved
-                submission.setStatus(Submission.SubmissionStatus.approved);
-                submission.setDecidedAt(LocalDateTime.now());
-
-                // Cập nhật series
-                Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
-                if (ms != null) {
-                    Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
-                    if (series != null) {
-                        series.setStatus(Series.SeriesStatus.publishing);
-                        series.setApprovedAt(LocalDateTime.now());
-                        if (request.getSchedule() != null) {
-                            try {
-                                series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getSchedule()));
-                                series.setPublishScheduleId(
-                                        lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
-                            } catch (IllegalArgumentException ignored) {}
-                        }
-                        // Lưu ngày phát hành khi board approve
-                        if (request.getPublishStartDate() != null && !request.getPublishStartDate().isBlank()) {
-                            try {
-                                series.setPublishStartDate(java.time.LocalDate.parse(request.getPublishStartDate()));
-                            } catch (Exception ignored) {}
-                        }
-                        seriesRepository.save(series);
-                    }
-                    ms.setStatus(Manuscript.ManuscriptStatus.publishing);
-                    manuscriptRepository.save(ms);
-                }
-            } else {
-                // Rejected
-                submission.setStatus(Submission.SubmissionStatus.rejected);
-                submission.setDecidedAt(LocalDateTime.now());
-
-                // Cập nhật series → rejected (nếu chưa từng publishing) hoặc cancelled
-                Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
-                if (ms != null) {
-                    Series series = seriesRepository.findById(ms.getSeriesId()).orElse(null);
-                    if (series != null) {
-                        if (series.getApprovedAt() == null) {
-                            series.setStatus(Series.SeriesStatus.rejected);
-                        } else {
-                            series.setStatus(Series.SeriesStatus.cancelled);
-                        }
-                        seriesRepository.save(series);
-
-                        // Gửi notification cho Mangaka
-                        Notification notification = new Notification();
-                        notification.setUserId(series.getMangakaId());
-                        notification.setType(Notification.NotificationType.submission_result);
-                        notification.setNotificationTypeId(
-                                lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.submission_result));
-                        notification.setReferenceId(series.getId());
-                        notification.setReferenceType("series");
-                        notification.setMessage(String.format(
-                                "Series \"%s\" đã bị Hội đồng biên tập từ chối. Bạn có thể cập nhật và nộp lại.",
-                                series.getTitle()
-                        ));
-                        notificationRepository.save(notification);
-                    }
-                    ms.setStatus(Manuscript.ManuscriptStatus.rejected);
-                    manuscriptRepository.save(ms);
-                }
-            }
+        if (totalVotes >= 2) {
+            Manuscript msForNotif = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
+            final String seriesTitleForNotif = msForNotif != null
+                    ? seriesRepository.findById(msForNotif.getSeriesId()).map(Series::getTitle).orElse("") : "";
+            final String submissionIdForNotif = submission.getId();
+            userRepository.findByIsBoardChairTrue().ifPresent(chair -> {
+                Notification notif = new Notification();
+                notif.setUserId(chair.getId());
+                notif.setType(Notification.NotificationType.submission_result);
+                notif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                        Notification.NotificationType.submission_result));
+                notif.setMessage("Đã đủ 2 ý kiến tư vấn cho series \"" + seriesTitleForNotif
+                        + "\" — chờ quyết định của bạn");
+                notif.setReferenceId(submissionIdForNotif);
+                notif.setReferenceType("submission");
+                notificationRepository.save(notif);
+            });
         }
 
         submission = submissionRepository.save(submission);
 
-        // Resolve seriesId và seriesTitle cho response
+        // Build response DTO
         Manuscript msForDto = manuscriptRepository.findById(submission.getManuscriptId()).orElse(null);
         String resolvedSeriesId = msForDto != null ? msForDto.getSeriesId() : "";
         String resolvedSeriesTitle = "";
@@ -317,15 +284,126 @@ public class BoardService {
                     .map(Series::getTitle).orElse("");
         }
 
-        return new SubmissionDTO(
-                submission.getId(), submission.getManuscriptId(), resolvedSeriesId, resolvedSeriesTitle,
-                submission.getSubmittedBy(), submission.getSubmissionRound(),
-                submission.getCoverLetter(), submission.getStatus().name(),
-                submission.getVoteYes(), submission.getVoteNo(), submission.getVoteAbstain(),
-                submission.getVotingDeadline() != null ? submission.getVotingDeadline().toString() : null,
-                submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null,
-                null
-        );
+        SubmissionDTO dto = new SubmissionDTO();
+        dto.setId(submission.getId());
+        dto.setManuscriptId(submission.getManuscriptId());
+        dto.setSeriesId(resolvedSeriesId);
+        dto.setSeriesTitle(resolvedSeriesTitle);
+        dto.setSubmittedBy(submission.getSubmittedBy());
+        dto.setSubmissionRound(submission.getSubmissionRound());
+        dto.setCoverLetter(submission.getCoverLetter());
+        dto.setStatus(submission.getStatus().name());
+        dto.setVoteYes(submission.getVoteYes());
+        dto.setVoteNo(submission.getVoteNo());
+        dto.setVoteAbstain(submission.getVoteAbstain());
+        dto.setVotingDeadline(submission.getVotingDeadline() != null ? submission.getVotingDeadline().toString() : null);
+        dto.setCreatedAt(submission.getCreatedAt() != null ? submission.getCreatedAt().toString() : null);
+        // Thêm coverUrl từ series
+        if (msForDto != null) {
+            seriesRepository.findById(msForDto.getSeriesId())
+                    .ifPresent(s -> dto.setCoverUrl(s.getCoverUrl()));
+        }
+        return dto;
+    }
+
+    // ── Board trưởng ra quyết định cuối ──────────────────────────
+    @Transactional
+    public void decideSubmission(DecideRequest request, String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (!user.isBoardChair()) {
+            throw new RuntimeException("Chỉ Board trưởng mới được đưa ra quyết định");
+        }
+
+        Submission submission = submissionRepository.findById(request.getSubmissionId())
+                .orElseThrow(() -> new RuntimeException("Submission not found"));
+        if (submission.getDecidedAt() != null) {
+            throw new RuntimeException("Submission này đã được quyết định rồi");
+        }
+
+        long totalVotes = submission.getVoteYes() + submission.getVoteNo() + submission.getVoteAbstain();
+        if (totalVotes < 2) {
+            throw new RuntimeException("Cần đủ 2 ý kiến tư vấn trước khi quyết định (hiện có " + totalVotes + ")");
+        }
+
+        Manuscript ms = manuscriptRepository.findById(submission.getManuscriptId())
+                .orElseThrow(() -> new RuntimeException("Manuscript not found"));
+        Series series = seriesRepository.findById(ms.getSeriesId())
+                .orElseThrow(() -> new RuntimeException("Series not found"));
+
+        if ("approve".equals(request.getDecision())) {
+            submission.setStatus(Submission.SubmissionStatus.approved);
+            series.setStatus(Series.SeriesStatus.publishing);
+            series.setApprovedAt(LocalDateTime.now());
+            if (request.getPublishSchedule() != null) {
+                try {
+                    series.setPublishSchedule(Series.PublishSchedule.valueOf(request.getPublishSchedule()));
+                    series.setPublishScheduleId(
+                            lookupResolverService.resolvePublishScheduleId(series.getPublishSchedule()));
+                } catch (IllegalArgumentException ignored) {}
+            }
+            if (request.getPublishStartDate() != null && !request.getPublishStartDate().isBlank()) {
+                try {
+                    series.setPublishStartDate(java.time.LocalDate.parse(request.getPublishStartDate()));
+                } catch (Exception ignored) {}
+            }
+            ms.setStatus(Manuscript.ManuscriptStatus.publishing);
+
+            // Notification board_approved cho Mangaka
+            Notification mangakaNotif = new Notification();
+            mangakaNotif.setUserId(series.getMangakaId());
+            mangakaNotif.setType(Notification.NotificationType.board_approved);
+            mangakaNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                    Notification.NotificationType.board_approved));
+            mangakaNotif.setReferenceId(series.getId());
+            mangakaNotif.setReferenceType("series");
+            mangakaNotif.setMessage(String.format(
+                    "🎉 Series \"%s\" đã được Board duyệt xuất bản!", series.getTitle()));
+            notificationRepository.save(mangakaNotif);
+
+            // Notification board_approved cho Editor (nếu có)
+            if (series.getEditorId() != null) {
+                Notification editorNotif = new Notification();
+                editorNotif.setUserId(series.getEditorId());
+                editorNotif.setType(Notification.NotificationType.board_approved);
+                editorNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                        Notification.NotificationType.board_approved));
+                editorNotif.setReferenceId(series.getId());
+                editorNotif.setReferenceType("series");
+                editorNotif.setMessage(String.format(
+                        "🎉 Series \"%s\" đã được Board duyệt xuất bản!", series.getTitle()));
+                notificationRepository.save(editorNotif);
+            }
+        } else {
+            submission.setStatus(Submission.SubmissionStatus.rejected);
+            if (series.getApprovedAt() == null) {
+                series.setStatus(Series.SeriesStatus.rejected);
+            } else {
+                series.setStatus(Series.SeriesStatus.cancelled);
+            }
+            ms.setStatus(Manuscript.ManuscriptStatus.rejected);
+
+            // Notification board_rejected cho Mangaka
+            Notification rejectNotif = new Notification();
+            rejectNotif.setUserId(series.getMangakaId());
+            rejectNotif.setType(Notification.NotificationType.board_rejected);
+            rejectNotif.setNotificationTypeId(lookupResolverService.resolveNotificationTypeId(
+                    Notification.NotificationType.board_rejected));
+            rejectNotif.setReferenceId(series.getId());
+            rejectNotif.setReferenceType("series");
+            rejectNotif.setMessage(String.format(
+                    "Series \"%s\" đã bị Board từ chối. Bạn có thể chỉnh sửa và nộp lại.",
+                    series.getTitle()));
+            notificationRepository.save(rejectNotif);
+        }
+
+        submission.setDecidedAt(LocalDateTime.now());
+        submissionRepository.save(submission);
+        manuscriptRepository.save(ms);
+        seriesRepository.save(series);
+
+        log.info("Board chair decided: submissionId={}, decision={}, userId={}",
+                request.getSubmissionId(), request.getDecision(), userId);
     }
 
     // ── Nhập poll data ────────────────────────────────────────────
@@ -342,12 +420,22 @@ public class BoardService {
             );
         }
 
-        // #4 — Tự tính rankPosition từ voteCount, không nhận từ request nữa
+        // Chặn cứng: series này đã có dữ liệu cho đúng kỳ/năm này rồi thì báo lỗi,
+        // không tự ý ghi đè. Muốn sửa phải dùng PUT /rankings/{id}.
+        if (readerPollRepository.existsBySeriesIdAndPollPeriodAndPollYear(
+                request.getSeriesId(), request.getPollPeriod(), request.getPollYear())) {
+            throw new RuntimeException(String.format(
+                "Series \"%s\" đã có dữ liệu cho kỳ %d/%d rồi. Dùng nút \"Sửa\" để chỉnh lại thay vì nhập mới.",
+                series.getTitle(), request.getPollPeriod(), request.getPollYear()));
+        }
+
+        // #4 — Tự tính rankPosition từ voteCount trong cùng kỳ
         int autoRank = readerPollRepository.countByPollPeriodAndPollYearAndVoteCountGreaterThan(
                 request.getPollPeriod(), request.getPollYear(), request.getVoteCount()
         ) + 1;
 
         ReaderPoll poll = new ReaderPoll();
+
         poll.setSeriesId(request.getSeriesId());
         poll.setEnteredBy(boardMemberId);
         poll.setPollPeriod(request.getPollPeriod());
@@ -426,6 +514,69 @@ public class BoardService {
      * Giữ lại method này để không breaking change nếu frontend còn gọi, nhưng KHÔNG nên dùng cho code mới.
      */
     @Deprecated
+    // ── Mục 2: Sửa poll đã nhập ──────────────────────────────────────
+    public ReaderPollDTO updatePollData(String pollId, PollInputRequest request, String boardMemberId) {
+        ReaderPoll poll = readerPollRepository.findById(pollId)
+                .orElseThrow(() -> new RuntimeException("Poll không tồn tại"));
+
+        // Chỉ người đã nhập hoặc board chair mới được sửa
+        User editor = userRepository.findById(boardMemberId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (!poll.getEnteredBy().equals(boardMemberId) && !editor.isBoardChair()) {
+            throw new RuntimeException("Chỉ người nhập hoặc Board trưởng mới được sửa poll này");
+        }
+
+        // Tính lại autoRank từ voteCount mới (bỏ poll hiện tại khỏi tính toán)
+        int autoRank = readerPollRepository.countByPollPeriodAndPollYearAndVoteCountGreaterThan(
+                request.getPollPeriod() != null ? request.getPollPeriod() : poll.getPollPeriod(),
+                request.getPollYear()   != null ? request.getPollYear()   : poll.getPollYear(),
+                request.getVoteCount()  != null ? request.getVoteCount()  : poll.getVoteCount()
+        ) + 1;
+
+        if (request.getVoteCount()      != null) poll.setVoteCount(request.getVoteCount());
+        if (request.getPollPeriod()     != null) poll.setPollPeriod(request.getPollPeriod());
+        if (request.getPollYear()       != null) poll.setPollYear(request.getPollYear());
+        if (request.getReaderScore()    != null) poll.setReaderScore(request.getReaderScore());
+        if (request.getReaderVoteCount()!= null) poll.setReaderVoteCount(request.getReaderVoteCount());
+        if (request.getNotes()          != null) poll.setNotes(request.getNotes());
+        if (request.getPollDate()       != null) {
+            try { poll.setPollDate(java.time.LocalDate.parse(request.getPollDate())); }
+            catch (Exception ignored) {}
+        }
+        poll.setRankPosition(autoRank);
+        poll = readerPollRepository.save(poll);
+
+        // Cập nhật current_rank series nếu trùng kỳ mới nhất
+        Series series = seriesRepository.findById(poll.getSeriesId()).orElse(null);
+        if (series != null) {
+            series.setPreviousRank(series.getCurrentRank());
+            series.setCurrentRank(autoRank);
+            seriesRepository.save(series);
+        }
+
+        log.info("Poll updated: id={}, by={}", pollId, boardMemberId);
+        return new ReaderPollDTO(poll.getId(), poll.getSeriesId(),
+                poll.getPollPeriod(), poll.getPollYear(),
+                poll.getRankPosition(), poll.getVoteCount(),
+                poll.getPollDate() != null ? poll.getPollDate().toString() : null);
+    }
+
+    // ── Mục 3: Xóa poll nhầm ─────────────────────────────────────────
+    public void deletePollData(String pollId, String boardMemberId) {
+        ReaderPoll poll = readerPollRepository.findById(pollId)
+                .orElseThrow(() -> new RuntimeException("Poll không tồn tại"));
+
+        User deleter = userRepository.findById(boardMemberId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        if (!poll.getEnteredBy().equals(boardMemberId) && !deleter.isBoardChair()) {
+            throw new RuntimeException("Chỉ người nhập hoặc Board trưởng mới được xóa poll này");
+        }
+
+        readerPollRepository.delete(poll);
+        log.info("Poll deleted: id={}, by={}", pollId, boardMemberId);
+    }
+
+
     public SeriesDTO makeDecision(EditorialDecisionRequest request, String boardMemberId) {
         Series series = seriesRepository.findById(request.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
@@ -480,6 +631,7 @@ public class BoardService {
                             v.getVoterId(), name,
                             v.getVote().name(),
                             v.getComment(),
+                            v.getSchedule(),
                             v.getVotedAt() != null ? v.getVotedAt().toString() : null
                     );
                 })
@@ -497,6 +649,15 @@ public class BoardService {
         Series series = seriesRepository.findById(request.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
+        // Chỉ cho phép tạo proposal cho series đang publishing hoặc on_hiatus
+        // draft/submitted/approved/rejected/cancelled không được tạo proposal
+        if (series.getStatus() != Series.SeriesStatus.publishing
+                && series.getStatus() != Series.SeriesStatus.on_hiatus) {
+            throw new RuntimeException(
+                "Chỉ có thể tạo đề xuất cho series đang xuất bản hoặc tạm ngưng. "
+                + "Trạng thái hiện tại: " + series.getStatus().name());
+        }
+
         // Không tạo đề xuất trùng khi đang có 1 proposal voting cho cùng series
         boolean hasActiveProposal = !editorialProposalRepository
                 .findBySeriesIdAndStatus(request.getSeriesId(), EditorialProposal.ProposalStatus.voting)
@@ -511,6 +672,7 @@ public class BoardService {
         proposal.setNewSchedule(request.getNewSchedule());
         proposal.setProposedBy(boardMemberId);
         proposal.setReason(request.getReason());
+        proposal.setVotingDeadline(LocalDateTime.now().plusDays(3)); // 3 ngày để vote
         proposal = editorialProposalRepository.save(proposal);
 
         log.info("Editorial proposal created: seriesId={}, action={}, by={}",
@@ -552,9 +714,10 @@ public class BoardService {
             default -> proposal.setVoteAbstain(proposal.getVoteAbstain() + 1);
         }
 
-        // Quorum cố định 3 — giống pattern castVote() submission (có thể đổi thành % tổng board member active)
+        // Quorum động: 60% board member active, tối thiểu 2
+        int activeBoardMembers = (int) userRepository.findByRole_NameAndIsActiveTrue("board_member").size();
+        final int QUORUM = Math.max(2, (int) Math.ceil(activeBoardMembers * 0.6));
         int totalVotes = proposal.getVoteYes() + proposal.getVoteNo() + proposal.getVoteAbstain();
-        final int QUORUM = 3;
 
         if (totalVotes >= QUORUM) {
             if (proposal.getVoteYes() > proposal.getVoteNo()) {
@@ -646,6 +809,64 @@ public class BoardService {
         }
     }
 
+    // TODO 1: Lịch sử proposals đã quyết định
+    public List<EditorialProposalDTO> getProposalHistory(String boardMemberId) {
+        return editorialProposalRepository
+                .findByStatusInOrderByDecidedAtDesc(
+                        List.of(EditorialProposal.ProposalStatus.approved,
+                                EditorialProposal.ProposalStatus.rejected))
+                .stream()
+                .map(p -> {
+                    Series series = seriesRepository.findById(p.getSeriesId()).orElse(null);
+                    return mapProposalToDTO(p, series, boardMemberId);
+                })
+                .collect(Collectors.toList());
+    }
+
+    // TODO 3: Chi tiết phiếu bầu của 1 editorial proposal
+    public com.mangaproject.backend.dto.ProposalVoteDetailsDTO getEditorialVoteDetails(String proposalId) {
+        EditorialProposal proposal = editorialProposalRepository.findById(proposalId)
+                .orElseThrow(() -> new RuntimeException("Proposal not found"));
+
+        // Danh sách đã vote
+        List<com.mangaproject.backend.dto.EditorialVoteDetailDTO> voted =
+                editorialVoteRepository.findByProposalIdOrderByVotedAtAsc(proposalId)
+                .stream()
+                .map(v -> {
+                    String voterName = userRepository.findById(v.getVoterId())
+                            .map(u -> u.getName() != null ? u.getName() : u.getUsername())
+                            .orElse("Unknown");
+                    return new com.mangaproject.backend.dto.EditorialVoteDetailDTO(
+                            v.getVoterId(), voterName,
+                            v.getVote().name(),
+                            v.getComment(),
+                            v.getVotedAt() != null ? v.getVotedAt().toString() : null);
+                })
+                .collect(Collectors.toList());
+
+        // Danh sách chưa vote — board_member active, không phải Board trưởng
+        java.util.Set<String> votedIds = voted.stream()
+                .map(com.mangaproject.backend.dto.EditorialVoteDetailDTO::getVoterId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<com.mangaproject.backend.dto.EditorialVoteDetailDTO> pending =
+                userRepository.findByRole_NameAndIsActiveTrue("board_member")
+                .stream()
+                .filter(u -> !u.isBoardChair() && !votedIds.contains(u.getId()))
+                .map(u -> new com.mangaproject.backend.dto.EditorialVoteDetailDTO(
+                        u.getId(),
+                        u.getName() != null ? u.getName() : u.getUsername(),
+                        null, null, null))
+                .collect(Collectors.toList());
+
+        // Quorum động
+        int activeBoardMembers = (int) userRepository.findByRole_NameAndIsActiveTrue("board_member").size();
+        int quorum = Math.max(2, (int) Math.ceil(activeBoardMembers * 0.6));
+
+        return new com.mangaproject.backend.dto.ProposalVoteDetailsDTO(
+                voted, pending, quorum, voted.size());
+    }
+
     private EditorialProposalDTO mapProposalToDTO(EditorialProposal proposal, Series series, String currentUserId) {
         String seriesTitle = series != null ? series.getTitle() : "";
         String proposedByName = userRepository.findById(proposal.getProposedBy())
@@ -654,21 +875,39 @@ public class BoardService {
         boolean hasVoted = editorialVoteRepository
                 .existsByProposalIdAndVoterId(proposal.getId(), currentUserId);
 
-        return new EditorialProposalDTO(
-                proposal.getId(),
-                proposal.getSeriesId(),
-                seriesTitle,
-                proposal.getActionType(),
-                proposal.getNewSchedule(),
-                proposal.getReason(),
-                proposedByName,
-                proposal.getVoteYes(),
-                proposal.getVoteNo(),
-                proposal.getVoteAbstain(),
-                proposal.getStatus().name(),
-                hasVoted,
-                proposal.getCreatedAt() != null ? proposal.getCreatedAt().toString() : null
-        );
+        int totalVotes = proposal.getVoteYes() + proposal.getVoteNo() + proposal.getVoteAbstain();
+
+        // Quorum động: số board_member active (tối thiểu 2)
+        int activeBoardMembers = (int) userRepository.findByRole_NameAndIsActiveTrue("board_member").size();
+        int quorum = Math.max(2, (int) Math.ceil(activeBoardMembers * 0.6)); // 60% board
+
+        EditorialProposalDTO dto = new EditorialProposalDTO();
+        dto.setId(proposal.getId());
+        dto.setSeriesId(proposal.getSeriesId());
+        dto.setSeriesTitle(seriesTitle);
+        dto.setActionType(proposal.getActionType());
+        dto.setNewSchedule(proposal.getNewSchedule());
+        dto.setReason(proposal.getReason());
+        dto.setProposedByName(proposedByName);
+        dto.setVoteYes(proposal.getVoteYes());
+        dto.setVoteNo(proposal.getVoteNo());
+        dto.setVoteAbstain(proposal.getVoteAbstain());
+        dto.setStatus(proposal.getStatus().name());
+        dto.setHasVoted(hasVoted);
+        dto.setCreatedAt(proposal.getCreatedAt() != null ? proposal.getCreatedAt().toString() : null);
+        dto.setDecidedAt(proposal.getDecidedAt() != null ? proposal.getDecidedAt().toString() : null);
+        dto.setTotalVotes(totalVotes);
+        dto.setQuorum(quorum);
+        dto.setVotingDeadline(proposal.getVotingDeadline() != null ? proposal.getVotingDeadline().toString() : null);
+        return dto;
+    }
+
+    // ── Series on_hiatus cần Board đề xuất ───────────────────────
+    public List<SeriesRankingDTO> getHiatusSeries() {
+        // Dùng lại getAllRankings() đã tính đủ fields, filter chỉ on_hiatus
+        return getAllRankings().stream()
+                .filter(r -> "on_hiatus".equals(r.getSeriesStatus()))
+                .collect(Collectors.toList());
     }
 
     // ── Xem rankings ─────────────────────────────────────────────
@@ -709,15 +948,44 @@ public class BoardService {
                         double R = (v * rs + 20 * 6.8) / (v + 20);
                         ws = Math.round(R * 100.0) / 100.0;
                     }
-                    return new SeriesRankingDTO(
-                            series.getId(), series.getTitle(), curr, prev, trend,
-                            latest != null ? latest.getVoteCount() : 0,
-                            previous != null ? previous.getVoteCount() : 0,
-                            series.getCancellationRisk() != null && series.getCancellationRisk(),
-                            consecutiveLow,
-                            latest != null ? latest.getPollDate().toString() : null,
-                            rs, rv, ws
-                    );
+                    SeriesRankingDTO dto = new SeriesRankingDTO();
+                    dto.setSeriesId(series.getId());
+                    dto.setSeriesTitle(series.getTitle());
+                    dto.setSeriesStatus(series.getStatus() != null ? series.getStatus().name() : null);
+                    dto.setCurrentRank(curr);
+                    dto.setPreviousRank(prev);
+                    dto.setTrend(trend);
+                    dto.setCurrentVotes(latest != null ? latest.getVoteCount() : 0);
+                    dto.setPreviousVotes(previous != null ? previous.getVoteCount() : 0);
+                    dto.setAtRisk(series.getCancellationRisk() != null && series.getCancellationRisk());
+                    dto.setConsecutiveLowPeriods(consecutiveLow);
+                    dto.setLastUpdate(latest != null ? latest.getPollDate().toString() : null);
+                    dto.setReaderScore(rs);
+                    dto.setReaderVoteCount(rv);
+                    dto.setWeightedScore(ws);
+                    dto.setLatestPollId(latest != null ? latest.getId() : null);
+                    dto.setLatestPollPeriod(latest != null ? latest.getPollPeriod() : null);
+                    dto.setLatestPollYear(latest != null ? latest.getPollYear() : null);
+                    // publishOnTimeRate + publishTotalCount + publishAvgDaysLate
+                    List<com.mangaproject.backend.model.Chapter> pubChapters =
+                        chapterRepository.findBySeries_IdOrderByChapterNumberAsc(series.getId())
+                        .stream().filter(c -> c.getStatus() == com.mangaproject.backend.model.Chapter.ChapterStatus.published).toList();
+                    int onTimeCount = (int) pubChapters.stream().filter(c ->
+                        c.getPublishedAt() != null && c.getDeadline() != null
+                        && !c.getPublishedAt().isAfter(c.getDeadline())).count();
+                    int lateCount = (int) pubChapters.stream().filter(c ->
+                        c.getPublishedAt() != null && c.getDeadline() != null
+                        && c.getPublishedAt().isAfter(c.getDeadline())).count();
+                    long totalDaysLate = pubChapters.stream()
+                        .filter(c -> c.getPublishedAt() != null && c.getDeadline() != null
+                            && c.getPublishedAt().isAfter(c.getDeadline()))
+                        .mapToLong(c -> java.time.temporal.ChronoUnit.DAYS.between(c.getDeadline(), c.getPublishedAt()))
+                        .sum();
+                    dto.setPublishOnTimeRate(pubChapters.isEmpty() ? null
+                        : (int) Math.round((double) onTimeCount / pubChapters.size() * 100));
+                    dto.setPublishTotalCount(pubChapters.size());
+                    dto.setPublishAvgDaysLate(lateCount > 0 ? (int) Math.round((double) totalDaysLate / lateCount) : null);
+                    return dto;
                 }).sorted(Comparator.comparingInt(r -> r.getCurrentRank() == 0 ? 999 : r.getCurrentRank()))
                 .collect(Collectors.toList());
     }

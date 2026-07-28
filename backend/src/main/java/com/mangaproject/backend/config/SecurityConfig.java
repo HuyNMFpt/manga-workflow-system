@@ -28,6 +28,10 @@ public class SecurityConfig {
                 .cors(cors -> {})
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // Tắt no-store default của Spring Security — FileConfig tự set cache header cho /uploads/**
+                .headers(headers -> headers
+                        .cacheControl(cache -> cache.disable())
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/uploads/**").permitAll()

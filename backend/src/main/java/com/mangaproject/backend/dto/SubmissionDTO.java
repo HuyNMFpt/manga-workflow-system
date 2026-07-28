@@ -1,10 +1,10 @@
 package com.mangaproject.backend.dto;
 
 import lombok.*;
+import java.util.List;
 
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 public class SubmissionDTO {
     private String id;
     private String manuscriptId;
@@ -19,5 +19,7 @@ public class SubmissionDTO {
     private Integer voteAbstain;
     private String votingDeadline;
     private String createdAt;
-    private String assignedEditorName; // tên Editor được auto-assign (null nếu chưa có)
+    private String assignedEditorName;   // tên Editor được auto-assign (null nếu chưa có)
+    private List<ManuscriptPageDTO> manuscriptPages; // trang bản thảo cho Board xem
+    private String coverUrl;             // ảnh bìa series (null nếu chưa upload)
 }

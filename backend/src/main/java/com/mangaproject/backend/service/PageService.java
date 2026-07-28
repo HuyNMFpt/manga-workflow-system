@@ -5,6 +5,7 @@ import com.mangaproject.backend.model.Chapter;
 import com.mangaproject.backend.model.Page;
 import com.mangaproject.backend.repository.ChapterRepository;
 import com.mangaproject.backend.repository.PageRepository;
+import com.mangaproject.backend.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -33,6 +34,9 @@ public class PageService {
     private final PageRepository pageRepository;
     private final ChapterRepository chapterRepository;
     private final FileStorageService fileStorageService;
+    private final TaskRepository taskRepository;
+    private final com.mangaproject.backend.repository.UserRepository userRepository;
+    private final ChapterService chapterService;
 
     @Transactional(readOnly = true)
     public List<PageDTO> getPagesByChapter(String chapterId) {
@@ -140,6 +144,20 @@ public class PageService {
         return mapToDTO(page);
     }
 
+    // ── Update notes + status cùng lúc ───────────────────────────
+    public PageDTO updatePage(String id, String notes, String status) {
+        Page page = pageRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Page not found"));
+        if (notes != null) page.setNotes(notes);
+        if (status != null) {
+            try { page.setStatus(Page.PageStatus.valueOf(status)); }
+            catch (IllegalArgumentException e) {
+                throw new RuntimeException("Status không hợp lệ: " + status);
+            }
+        }
+        return mapToDTO(pageRepository.save(page));
+    }
+
     // ── Batch Upload — nhiều ảnh cùng lúc ──────────────────────────
     @Transactional
     public List<PageDTO> uploadPages(String chapterId, List<MultipartFile> files,
@@ -179,6 +197,8 @@ public class PageService {
         long totalPages = pageRepository.countByChapter_Id(chapterId);
         chapter.setTotalPages((int) totalPages);
         chapterRepository.save(chapter);
+        // Chapter 0 task: recheck status sau khi upload trang
+        chapterService.refreshStatusIfReady(chapterId);
 
         return result;
     }
@@ -237,6 +257,8 @@ public class PageService {
         long totalPages = pageRepository.countByChapter_Id(chapterId);
         chapter.setTotalPages((int) totalPages);
         chapterRepository.save(chapter);
+        // Chapter 0 task: recheck status sau khi upload PDF
+        chapterService.refreshStatusIfReady(chapterId);
 
         return result;
     }
@@ -276,6 +298,31 @@ public class PageService {
         dto.setNotes(page.getNotes());
         dto.setCreatedAt(page.getCreatedAt());
         dto.setUpdatedAt(page.getUpdatedAt());
+
+        // Mục 3: tính pageStatus + activeTaskType + activeAssigneeName từ tasks
+        List<com.mangaproject.backend.model.Task> tasks = taskRepository.findByPageId(page.getId());
+        if (tasks.isEmpty()) {
+            dto.setPageStatus("no_task");
+        } else {
+            com.mangaproject.backend.model.Task activeTask = tasks.stream()
+                    .filter(t -> t.getStatus() != com.mangaproject.backend.model.Task.TaskStatus.approved)
+                    .findFirst()
+                    .orElse(null);
+
+            if (activeTask == null) {
+                // Tất cả task đã approved → sẵn sàng giao task tiếp
+                dto.setPageStatus("ready");
+            } else {
+                // Đang có task chưa xong → chặn giao task mới
+                dto.setPageStatus("has_active_task");
+                dto.setActiveTaskType(activeTask.getTaskType() != null ? activeTask.getTaskType().name() : null);
+                if (activeTask.getAssignedTo() != null) {
+                    final String assigneeId = activeTask.getAssignedTo();
+                    userRepository.findById(assigneeId).ifPresent(u ->
+                            dto.setActiveAssigneeName(u.getName() != null ? u.getName() : u.getUsername()));
+                }
+            }
+        }
         return dto;
     }
 }

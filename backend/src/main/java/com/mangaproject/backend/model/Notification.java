@@ -47,6 +47,10 @@ public class Notification {
 
     public enum NotificationType {
         task_assigned, task_approved, revision_requested, deadline_warning,
-        series_at_risk, poll_updated, series_cancelled, submission_result
+        series_at_risk, poll_updated, series_cancelled, submission_result,
+        board_approved,        // Board duyệt series — gửi Mangaka + Editor
+        board_rejected,        // Board từ chối series — gửi Mangaka
+        manuscript_submitted,  // Mangaka nộp bản thảo — gửi Editor
+        chapter_published      // Chapter được xuất bản — gửi Mangaka
     }
 }

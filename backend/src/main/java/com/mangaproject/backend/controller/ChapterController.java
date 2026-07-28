@@ -89,4 +89,27 @@ public class ChapterController {
         ChapterDTO chapter = chapterService.updateChapterStatus(id, status, userId);
         return ResponseEntity.ok(new ApiResponse<>(chapter, "Chapter status updated", true));
     }
+
+    /**
+     * GET /api/chapters/{id}/readiness
+     * Pre-publish validation: kiểm tra chapter đủ điều kiện xuất bản chưa
+     */
+    @GetMapping("/{id}/readiness")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> checkReadiness(
+            @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.success(chapterService.checkReadiness(id)));
+    }
+
+    /**
+     * PUT /api/chapters/{id}/schedule
+     * Đặt lịch xuất bản — publishAt=null nghĩa là phát hành ngay
+     */
+    @PutMapping("/{id}/schedule")
+    public ResponseEntity<ApiResponse<ChapterDTO>> schedulePublish(
+            @PathVariable String id,
+            @RequestBody Map<String, String> request) {
+        String publishAt = request.get("publishAt");
+        ChapterDTO chapter = chapterService.schedulePublish(id, publishAt);
+        return ResponseEntity.ok(new ApiResponse<>(chapter, "Đã đặt lịch xuất bản", true));
+    }
 }

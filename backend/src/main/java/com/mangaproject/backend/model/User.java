@@ -58,6 +58,13 @@ public class User {
     @Column(name = "personal_email")
     private String personalEmail;
 
+    @Column(name = "is_board_chair", nullable = false)
+    private boolean isBoardChair = false;
+
+    // Kỹ năng Assistant — lưu JSON string, ví dụ: ["background","shading"]
+    @Column(name = "skills", columnDefinition = "TEXT")
+    private String skills;
+
     public enum UserRole {
         mangaka, assistant, editor, board_member, admin
     }

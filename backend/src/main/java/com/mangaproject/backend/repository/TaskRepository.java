@@ -35,5 +35,12 @@ public interface TaskRepository extends JpaRepository<Task, String> {
             "JOIN pages p ON t.page_id = p.id " +
             "WHERE p.chapter_id = :chapterId AND t.status != 'approved'", nativeQuery = true)
     long countNonApprovedByChapterId(@Param("chapterId") String chapterId);
+
+    @Query("SELECT t.assignedTo, COUNT(t) FROM Task t " +
+            "WHERE t.assignedTo IN :assistantIds " +
+            "AND t.status IN ('pending', 'in_progress', 'revision_needed') " +
+            "GROUP BY t.assignedTo")
+    List<Object[]> countActiveTasksByAssistants(@Param("assistantIds") List<String> assistantIds);
+
     void deleteByPageId(String pageId);
 }

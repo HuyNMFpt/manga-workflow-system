@@ -108,20 +108,27 @@ public class RankingService {
             weightedScore = Math.round(R * 100.0) / 100.0;
         }
 
-        return new SeriesRankingDTO(
-                series.getId(),
-                series.getTitle(),
-                currentRank,
-                previousRank,
-                trend,
-                currentVotes,
-                previousVotes,
-                series.getCancellationRisk() != null && series.getCancellationRisk(),
-                consecutiveLow,
-                latest != null ? latest.getPollDate().toString() : null,
-                readerScore,
-                readerVoteCount,
-                weightedScore
-        );
+        SeriesRankingDTO dto = new SeriesRankingDTO();
+        dto.setSeriesId(series.getId());
+        dto.setSeriesTitle(series.getTitle());
+        dto.setCurrentRank(currentRank);
+        dto.setPreviousRank(previousRank);
+        dto.setTrend(trend);
+        dto.setCurrentVotes(currentVotes);
+        dto.setPreviousVotes(previousVotes);
+        dto.setAtRisk(series.getCancellationRisk() != null && series.getCancellationRisk());
+        dto.setConsecutiveLowPeriods(consecutiveLow);
+        dto.setLastUpdate(latest != null ? latest.getPollDate().toString() : null);
+        dto.setReaderScore(readerScore);
+        dto.setReaderVoteCount(readerVoteCount);
+        dto.setWeightedScore(weightedScore);
+        dto.setLatestPollId(latest != null ? latest.getId() : null);
+        dto.setLatestPollPeriod(latest != null ? latest.getPollPeriod() : null);
+        dto.setLatestPollYear(latest != null ? latest.getPollYear() : null);
+        dto.setPublishOnTimeRate(null);
+        dto.setPublishTotalCount(null);
+        dto.setPublishAvgDaysLate(null);
+        dto.setSeriesStatus(series.getStatus() != null ? series.getStatus().name() : null);
+        return dto;
     }
 }

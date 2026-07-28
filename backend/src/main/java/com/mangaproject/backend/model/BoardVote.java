@@ -7,10 +7,10 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "board_votes",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_board_votes_submission_voter",
-        columnNames = {"submission_id", "voter_id"}
-    )
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_board_votes_submission_voter",
+                columnNames = {"submission_id", "voter_id"}
+        )
 )
 @Data
 @NoArgsConstructor
@@ -33,6 +33,9 @@ public class BoardVote {
 
     @Column(columnDefinition = "TEXT")
     private String comment;
+
+    @Column(name = "schedule")
+    private String schedule; // weekly/biweekly/monthly member đề xuất khi vote
 
     @CreationTimestamp
     @Column(name = "voted_at", nullable = false, updatable = false)

@@ -35,4 +35,6 @@ public class SubmissionDetailDTO {
     private String recommendedSchedule;
     private String editorNote;
     private List<ManuscriptPageDTO> manuscriptPages; // trang bản thảo cho Board xem
+    private String coverUrl;      // ảnh bìa series — frontend VotingQueue card
+    private String submittedAt;   // thời điểm Editor nộp lên Board
 }
