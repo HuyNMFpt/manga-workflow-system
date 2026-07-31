@@ -92,6 +92,10 @@ public class PageService {
 
         String chapterId = page.getChapter().getId();
         Chapter chapter = page.getChapter();
+        int deletedPageNumber = page.getPageNumber();
+
+        // Xóa tasks liên quan trước (tránh FK constraint)
+        taskRepository.deleteByPageId(id);
 
         try {
             fileStorageService.deleteFile(page.getImageUrl());
@@ -102,12 +106,25 @@ public class PageService {
 
         pageRepository.delete(page);
 
+        // Renumber: các trang có pageNumber > deletedPageNumber giảm xuống 1
+        // đảm bảo thứ tự liên tục 1,2,3,... sau khi xóa
+        List<Page> pagesAfter = pageRepository
+                .findByChapter_IdOrderByPageNumberAsc(chapterId)
+                .stream()
+                .filter(p -> p.getPageNumber() > deletedPageNumber)
+                .toList();
+        for (Page p : pagesAfter) {
+            p.setPageNumber(p.getPageNumber() - 1);
+            pageRepository.save(p);
+        }
+
         // Cập nhật total_pages
         long totalPages = pageRepository.countByChapter_Id(chapterId);
         chapter.setTotalPages((int) totalPages);
         chapterRepository.save(chapter);
 
-        log.info("Page deleted successfully: {}", id);
+        log.info("Page {} deleted (was page {}), renumbered {} pages after it",
+                id, deletedPageNumber, pagesAfter.size());
     }
 
     @Transactional

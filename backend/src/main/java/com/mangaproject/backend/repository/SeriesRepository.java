@@ -22,4 +22,9 @@ public interface SeriesRepository extends JpaRepository<Series, String> {
 
     // At-risk dynamic threshold: đếm tổng series đang publishing
     int countByStatus(Series.SeriesStatus status);
+
+    // Xóa assets khi deleteSeries (không có AssetRepository entity)
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = "DELETE FROM assets WHERE series_id = :seriesId", nativeQuery = true)
+    void deleteAssetsBySeriesId(@org.springframework.data.repository.query.Param("seriesId") String seriesId);
 }

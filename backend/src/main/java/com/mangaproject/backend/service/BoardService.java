@@ -466,7 +466,7 @@ public class BoardService {
             series.setCancellationRisk(false);
         } else {
             List<ReaderPoll> recentPolls = readerPollRepository
-                    .findTop5BySeriesIdOrderByPollDateDesc(request.getSeriesId());
+                    .findTop5BySeriesIdOrderByPollDateDescCreatedAtDesc(request.getSeriesId());
             int consecutiveLow = 0;
             for (ReaderPoll p : recentPolls) {
                 if (p.getRankPosition() != null
@@ -719,16 +719,23 @@ public class BoardService {
         final int QUORUM = Math.max(2, (int) Math.ceil(activeBoardMembers * 0.6));
         int totalVotes = proposal.getVoteYes() + proposal.getVoteNo() + proposal.getVoteAbstain();
 
-        if (totalVotes >= QUORUM) {
+        // Đóng sớm khi TẤT CẢ board member đã vote (100% tham gia, không ai pending)
+        // — không cần chờ hết hạn, kết quả đã chắc chắn
+        if (totalVotes >= activeBoardMembers) {
             if (proposal.getVoteYes() > proposal.getVoteNo()) {
                 proposal.setStatus(EditorialProposal.ProposalStatus.approved);
                 proposal.setDecidedAt(LocalDateTime.now());
+                editorialProposalRepository.save(proposal);
                 applyDecisionToSeries(proposal);
+                log.info("Editorial proposal CLOSED EARLY (full participation) APPROVED: id={}", proposal.getId());
             } else {
                 proposal.setStatus(EditorialProposal.ProposalStatus.rejected);
                 proposal.setDecidedAt(LocalDateTime.now());
+                editorialProposalRepository.save(proposal);
+                log.info("Editorial proposal CLOSED EARLY (full participation) REJECTED: id={}", proposal.getId());
             }
         }
+
         proposal = editorialProposalRepository.save(proposal);
 
         Series series = seriesRepository.findById(proposal.getSeriesId()).orElse(null);
@@ -751,7 +758,7 @@ public class BoardService {
     }
 
     /** Thực thi quyết định lên Series khi proposal được approved — tái dùng logic switch-case của makeDecision cũ */
-    private void applyDecisionToSeries(EditorialProposal proposal) {
+    public void applyDecisionToSeries(EditorialProposal proposal) {
         Series series = seriesRepository.findById(proposal.getSeriesId())
                 .orElseThrow(() -> new RuntimeException("Series not found"));
 
@@ -792,13 +799,13 @@ public class BoardService {
             ));
             notificationRepository.save(cancelNotif);
         }
-        // Notification series_at_risk khi hiatus
+        // Notification series_hiatus khi hiatus
         if (proposal.getActionType().equals("hiatus")) {
             Notification hiatusNotif = new Notification();
             hiatusNotif.setUserId(series.getMangakaId());
-            hiatusNotif.setType(Notification.NotificationType.series_at_risk);
+            hiatusNotif.setType(Notification.NotificationType.series_hiatus);
             hiatusNotif.setNotificationTypeId(
-                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_at_risk));
+                    lookupResolverService.resolveNotificationTypeId(Notification.NotificationType.series_hiatus));
             hiatusNotif.setReferenceId(series.getId());
             hiatusNotif.setReferenceType("series");
             hiatusNotif.setMessage(String.format(
@@ -844,7 +851,8 @@ public class BoardService {
                 })
                 .collect(Collectors.toList());
 
-        // Danh sách chưa vote — board_member active, không phải Board trưởng
+        // Danh sách chưa vote — tất cả board_member active KỂ CẢ Board trưởng
+        // Test case: Board 3 người (2 member + 1 trưởng), chưa ai vote → pending hiện đủ cả 3
         java.util.Set<String> votedIds = voted.stream()
                 .map(com.mangaproject.backend.dto.EditorialVoteDetailDTO::getVoterId)
                 .collect(java.util.stream.Collectors.toSet());
@@ -852,7 +860,7 @@ public class BoardService {
         List<com.mangaproject.backend.dto.EditorialVoteDetailDTO> pending =
                 userRepository.findByRole_NameAndIsActiveTrue("board_member")
                 .stream()
-                .filter(u -> !u.isBoardChair() && !votedIds.contains(u.getId()))
+                .filter(u -> !votedIds.contains(u.getId()))
                 .map(u -> new com.mangaproject.backend.dto.EditorialVoteDetailDTO(
                         u.getId(),
                         u.getName() != null ? u.getName() : u.getUsername(),
@@ -916,7 +924,7 @@ public class BoardService {
                         List.of(Series.SeriesStatus.publishing, Series.SeriesStatus.approved)
                 ).stream().map(series -> {
                     ReaderPoll latest = readerPollRepository
-                            .findTopBySeriesIdOrderByPollDateDesc(series.getId()).orElse(null);
+                            .findTopBySeriesIdOrderByPollDateDescCreatedAtDesc(series.getId()).orElse(null);
                     ReaderPoll previous = latest != null
                             ? readerPollRepository.findTopBySeriesIdAndPollDateBeforeOrderByPollDateDesc(
                             series.getId(), latest.getPollDate()).orElse(null)
@@ -930,7 +938,7 @@ public class BoardService {
                     int totalPub = seriesRepository.countByStatus(Series.SeriesStatus.publishing);
                     int thr = Math.max(1, (int) Math.ceil(totalPub * AT_RISK_BOTTOM_PCT));
                     List<ReaderPoll> recent = readerPollRepository
-                            .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
+                            .findTop5BySeriesIdOrderByPollDateDescCreatedAtDesc(series.getId());
                     int consecutiveLow = 0;
                     if (totalPub > 1) {
                         for (ReaderPoll p : recent) {

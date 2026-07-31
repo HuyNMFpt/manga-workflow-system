@@ -51,5 +51,5 @@ public class EditorialProposal {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    public enum ProposalStatus { voting, approved, rejected }
+    public enum ProposalStatus { voting, approved, rejected, expired }
 }

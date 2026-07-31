@@ -17,6 +17,7 @@ public class RankingService {
 
     private final SeriesRepository seriesRepository;
     private final ReaderPollRepository readerPollRepository;
+    private final com.mangaproject.backend.repository.ChapterRepository chapterRepository;
 
     // m = ngưỡng tối thiểu số người chấm để điểm R tin cậy
     private static final int BAYESIAN_M = 20;
@@ -27,13 +28,13 @@ public class RankingService {
 
     public List<SeriesRankingDTO> getAllRankings() {
         List<Series> allSeries = seriesRepository.findByStatusIn(
-                List.of(Series.SeriesStatus.publishing, Series.SeriesStatus.approved)
+                List.of(Series.SeriesStatus.publishing, Series.SeriesStatus.approved, Series.SeriesStatus.on_hiatus)
         );
 
         // Tính C động: trung bình readerScore của tất cả series có poll
         // chỉ dùng khi có ít nhất 5 series có điểm để kết quả có ý nghĩa thống kê
         List<ReaderPoll> latestPolls = allSeries.stream()
-                .map(s -> readerPollRepository.findTopBySeriesIdOrderByPollDateDesc(s.getId()).orElse(null))
+                .map(s -> readerPollRepository.findTopBySeriesIdOrderByPollDateDescCreatedAtDesc(s.getId()).orElse(null))
                 .filter(p -> p != null && p.getReaderScore() != null)
                 .collect(Collectors.toList());
 
@@ -57,7 +58,7 @@ public class RankingService {
     private SeriesRankingDTO buildRankingDTO(Series series, double C) {
         // Poll mới nhất
         ReaderPoll latest = readerPollRepository
-                .findTopBySeriesIdOrderByPollDateDesc(series.getId())
+                .findTopBySeriesIdOrderByPollDateDescCreatedAtDesc(series.getId())
                 .orElse(null);
 
         // Poll trước đó để tính trend
@@ -83,7 +84,7 @@ public class RankingService {
                 List.of(Series.SeriesStatus.publishing)).size();
         int threshold = Math.max(1, (int) Math.ceil(totalPublishing * AT_RISK_BOTTOM_PCT));
         List<ReaderPoll> recentPolls = readerPollRepository
-                .findTop5BySeriesIdOrderByPollDateDesc(series.getId());
+                .findTop5BySeriesIdOrderByPollDateDescCreatedAtDesc(series.getId());
         int consecutiveLow = 0;
         if (totalPublishing > 1) {
             for (ReaderPoll p : recentPolls) {
@@ -125,9 +126,26 @@ public class RankingService {
         dto.setLatestPollId(latest != null ? latest.getId() : null);
         dto.setLatestPollPeriod(latest != null ? latest.getPollPeriod() : null);
         dto.setLatestPollYear(latest != null ? latest.getPollYear() : null);
-        dto.setPublishOnTimeRate(null);
-        dto.setPublishTotalCount(null);
-        dto.setPublishAvgDaysLate(null);
+        // Tính publishOnTimeRate/TotalCount/AvgDaysLate đồng bộ với BoardService
+        java.util.List<com.mangaproject.backend.model.Chapter> pubChapters =
+            chapterRepository.findBySeries_IdOrderByChapterNumberAsc(series.getId())
+            .stream().filter(c -> c.getStatus() == com.mangaproject.backend.model.Chapter.ChapterStatus.published)
+            .toList();
+        int onTime = (int) pubChapters.stream().filter(c ->
+            c.getPublishedAt() != null && c.getDeadline() != null
+            && !c.getPublishedAt().isAfter(c.getDeadline())).count();
+        int late = (int) pubChapters.stream().filter(c ->
+            c.getPublishedAt() != null && c.getDeadline() != null
+            && c.getPublishedAt().isAfter(c.getDeadline())).count();
+        long totalDaysLate = pubChapters.stream()
+            .filter(c -> c.getPublishedAt() != null && c.getDeadline() != null
+                && c.getPublishedAt().isAfter(c.getDeadline()))
+            .mapToLong(c -> java.time.temporal.ChronoUnit.DAYS.between(c.getDeadline(), c.getPublishedAt()))
+            .sum();
+        dto.setPublishOnTimeRate(pubChapters.isEmpty() ? null
+            : (int) Math.round((double) onTime / pubChapters.size() * 100));
+        dto.setPublishTotalCount(pubChapters.size());
+        dto.setPublishAvgDaysLate(late > 0 ? (int) Math.round((double) totalDaysLate / late) : null);
         dto.setSeriesStatus(series.getStatus() != null ? series.getStatus().name() : null);
         return dto;
     }

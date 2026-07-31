@@ -111,7 +111,15 @@ public class ChapterService {
             throw new RuntimeException("Cannot delete published chapter");
         }
 
+        // Cascade: xóa tasks → pages → chapter
+        List<Page> pages = pageRepository.findByChapterId(id);
+        for (Page p : pages) {
+            taskRepository.deleteByPageId(p.getId());
+        }
+        pageRepository.deleteByChapterId(id);
+
         chapterRepository.delete(chapter);
+        log.info("Chapter deleted with cascade: id={}", id);
     }
 
     @Transactional

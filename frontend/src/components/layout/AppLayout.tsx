@@ -307,6 +307,7 @@ export default function AppLayout() {
                       revision_requested:{ dot: 'bg-amber-400',  label: 'Cần sửa'         },
                       deadline_warning: { dot: 'bg-red-400',     label: 'Sắp deadline'    },
                       series_at_risk:   { dot: 'bg-red-500',     label: 'At-risk'         },
+                      series_hiatus:    { dot: 'bg-amber-500',   label: 'Tạm ngưng'       },
                       poll_updated:     { dot: 'bg-violet-400',  label: 'Kết quả poll'    },
                       series_cancelled: { dot: 'bg-red-600',     label: 'Series bị hủy'  },
                       submission_result:{ dot: 'bg-teal-400',    label: 'Kết quả nộp'    },

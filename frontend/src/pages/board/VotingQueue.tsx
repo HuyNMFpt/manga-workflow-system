@@ -645,12 +645,11 @@ const VotingQueue = () => {
                         <label className="block text-[10px] font-bold tracking-[0.12em] uppercase text-zinc-600 mb-2">
                           Quyết định *
                         </label>
-                        <div className={`grid ${isChair ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
+                        <div className="grid grid-cols-2 gap-2">
                           {[
                             { v: 'approve',  l: 'Approve', c: 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300' },
                             { v: 'reject',   l: 'Reject',  c: 'bg-red-500/15 border-red-500/30 text-red-300'             },
-                            { v: 'revision', l: 'Cần sửa', c: 'bg-amber-500/15 border-amber-500/30 text-amber-300'       },
-                          ].filter(d => !isChair || d.v !== 'revision').map(d => (
+                          ].map(d => (
                             <button key={d.v}
                               onClick={() => setVoteForm(f => ({ ...f, decision: d.v as any }))}
                               className={`py-2.5 rounded-xl border text-[12px] font-bold transition-all ${

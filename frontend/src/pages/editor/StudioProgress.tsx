@@ -396,7 +396,7 @@ const StudioProgress = () => {
       {/* ════ PUBLISH CONFIRM MODAL ════ */}
       {publishTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-[#0e0e1a] border border-teal-900/30 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-sm max-h-[90vh] overflow-y-auto bg-[#0e0e1a] border border-teal-900/30 rounded-2xl shadow-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/6">
               <div className="flex items-center gap-2">
                 <Send className="w-4 h-4 text-teal-400" />

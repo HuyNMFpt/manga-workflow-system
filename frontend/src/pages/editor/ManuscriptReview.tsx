@@ -248,7 +248,7 @@ const ManuscriptReview = () => {
   const [aForm, setAForm]       = useState({ tag:'story', comment:'', pageNumber:'' });
   const [aErr,  setAErr]        = useState('');
   const [pendingPin, setPendingPin] = useState<{ x:number; y:number } | null>(null);
-  const [localPins, setLocalPins] = useState<{ x:number; y:number; tag:string; comment:string; index:number; color:string }[]>([]);
+  const [localPins, setLocalPins] = useState<{ x:number; y:number; tag:string; comment:string; index:number; color:string; pageNumber?: number }[]>([]);
   const [msPageMap, setMsPageMap] = useState<Record<string, number>>({}); // manuscriptId → currentPage
 
   // Return-to-mangaka form
@@ -344,16 +344,11 @@ const ManuscriptReview = () => {
       qc.invalidateQueries({ queryKey:['editor','manuscripts'] });
       setAForm({ tag:'story', comment:'', pageNumber:'' });
       setAErr('');
-      // Thêm vào localPins nếu có tọa độ (từ single-image canvas)
-      if (vars.x != null && vars.y != null && !vars.pageId) {
-        setLocalPins(prev => [...prev, {
-          x: vars.x!, y: vars.y!,
-          tag: vars.tag ?? 'story',
-          comment: vars.note,
-          index: prev.length,
-          color: PIN_COLORS[prev.length % PIN_COLORS.length],
-        }]);
-      }
+      // Không cần tự thêm vào localPins nữa — invalidateQueries() ở trên đã
+      // refetch annotation thật từ server (kèm đúng pageNumber/x/y/tag).
+      // Trước đây vừa refetch vừa tự thêm localPins khiến MỖI pin bị hiện
+      // lặp lại vĩnh viễn (1 bản thật từ server + 1 bản local không bao giờ
+      // được dọn đi).
       // Xóa pending pin từ grid nếu vừa submit
       if (vars.pageId) {
         setPendingPins(prev => {
@@ -452,18 +447,22 @@ const ManuscriptReview = () => {
 
   // Khi Editor click lên trang trong PageGridAnnotator → thêm vào pendingPins
   // Sau đó Editor điền form text → submit → annotateMutation gửi lên backend
-  const handleAnnotate = (msId: string) => {
+  // curPage: trang ĐANG XEM lúc bấm Gửi (đọc từ msPageMap) — dùng cái này để
+  // gắn pageNumber tự động, không dựa vào aForm.pageNumber gõ tay (dễ quên/gõ
+  // sai, và là nguyên nhân chính khiến pin bị lẫn qua trang khác).
+  const handleAnnotate = (msId: string, curPage?: number) => {
     setAErr('');
     if (!aForm.comment.trim()) { setAErr('Vui lòng nhập nội dung'); return; }
     const tag = ANNOTATION_TAGS.find(t => t.value === aForm.tag);
-    const note = `[${tag?.label ?? aForm.tag}]${aForm.pageNumber ? ` Trang ${aForm.pageNumber}` : ''}${
+    const effectivePageNumber = curPage != null ? String(curPage) : (aForm.pageNumber || undefined);
+    const note = `[${tag?.label ?? aForm.tag}]${effectivePageNumber ? ` Trang ${effectivePageNumber}` : ''}${
       pendingPin ? ` @(${pendingPin.x}%,${pendingPin.y}%)` : ''
     }: ${aForm.comment}`;
     annotateMutation.mutate({
       id: msId, note,
       x: pendingPin?.x, y: pendingPin?.y,
       tag: aForm.tag,
-      pageNumber: aForm.pageNumber || undefined,
+      pageNumber: effectivePageNumber,
     });
   };
 
@@ -813,7 +812,7 @@ const ManuscriptReview = () => {
                                   : 'Nội dung cần chỉnh sửa (thoại, kịch bản, layout...)...'}
                                 className={inputCls} />
                               {aErr && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle className="w-3 h-3"/>{aErr}</p>}
-                              <button onClick={() => handleAnnotate(m.id)} disabled={annotateMutation.isPending}
+                              <button onClick={() => handleAnnotate(m.id, (m.pages?.length ?? 0) > 0 ? (msPageMap[`ms-page-${m.id}`] ?? 1) : undefined)} disabled={annotateMutation.isPending}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600/20 border border-amber-500/25 text-amber-300 text-sm font-semibold hover:bg-amber-600/30 disabled:opacity-50 transition-all">
                                 {annotateMutation.isPending
                                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Đang gửi...</>

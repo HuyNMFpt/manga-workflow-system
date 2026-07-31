@@ -31,6 +31,7 @@ public class SeriesService {
     private final ChapterRepository chapterRepository;
     private final PageRepository pageRepository;
     private final TaskRepository taskRepository;
+    private final com.mangaproject.backend.repository.ReaderPollRepository readerPollRepository;
 
     public SeriesDTO createSeries(CreateSeriesRequest request, String mangakaId) {
         Series series = new Series();
@@ -158,7 +159,12 @@ public class SeriesService {
         }
         chapterRepository.deleteBySeriesId(id);
 
-        // 4. Xóa series
+        // 4. Xóa assets (native query vì không có AssetRepository entity), reader_polls, notifications
+        seriesRepository.deleteAssetsBySeriesId(id);
+        readerPollRepository.deleteBySeriesId(id);
+        notificationRepository.deleteByReferenceIdAndReferenceType(id, "series");
+
+        // 5. Xóa series
         seriesRepository.delete(series);
         log.info("Series deleted: id={}, by mangaka={}", id, mangakaId);
     }

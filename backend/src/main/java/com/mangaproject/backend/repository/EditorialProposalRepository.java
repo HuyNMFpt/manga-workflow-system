@@ -13,4 +13,8 @@ public interface EditorialProposalRepository extends JpaRepository<EditorialProp
     List<EditorialProposal> findByStatusOrderByCreatedAtDesc(EditorialProposal.ProposalStatus status);
     List<EditorialProposal> findByStatusInOrderByDecidedAtDesc(List<EditorialProposal.ProposalStatus> statuses);
     int countByStatusAndDecidedAtAfter(EditorialProposal.ProposalStatus status, LocalDateTime after);
+
+    // BD-11: Scheduler tìm proposal hết hạn voting
+    List<EditorialProposal> findByStatusAndVotingDeadlineBefore(
+            EditorialProposal.ProposalStatus status, LocalDateTime deadline);
 }

@@ -11,4 +11,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Stri
     List<Notification> findByUserIdOrderByCreatedAtDesc(String userId);
     long countByUserIdAndIsRead(String userId, Boolean isRead);
     List<Notification> findByUserIdAndIsReadFalseOrderByCreatedAtDesc(String userId);
+
+    // Delete cascade khi xóa series/chapter/task
+    void deleteByReferenceIdAndReferenceType(String referenceId, String referenceType);
 }

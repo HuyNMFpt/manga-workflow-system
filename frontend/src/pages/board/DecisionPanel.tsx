@@ -262,8 +262,8 @@ const DecisionPanel = () => {
                               <p className="text-[10px] text-zinc-600 mb-1">Chưa bỏ phiếu:</p>
                               <div className="flex flex-wrap gap-1.5">
                                 {voteDetails.pending.map((u: any) => (
-                                  <span key={u.userId} className="text-[11px] text-zinc-500 bg-white/4 border border-white/6 px-2 py-0.5 rounded-md">
-                                    {u.name}
+                                  <span key={u.voterId} className="text-[11px] text-zinc-500 bg-white/4 border border-white/6 px-2 py-0.5 rounded-md">
+                                    {u.voterName}
                                   </span>
                                 ))}
                               </div>
