@@ -266,6 +266,8 @@ export type NotificationType =
   | "board_approved"        // Board duyệt series → Mangaka + Editor
   | "board_rejected"        // Board từ chối series → Mangaka
   | "manuscript_submitted"  // Mangaka nộp bản thảo → Editor
+  | "chapter_published"     // Chapter được xuất bản → Mangaka
+  | "series_hiatus"         // Series bị tạm ngưng theo quyết định Board
 
 // ✅ Khớp với backend NotificationDTO
 export interface Notification {

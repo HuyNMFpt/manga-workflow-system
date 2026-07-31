@@ -138,7 +138,10 @@ export default function TaskAssignment() {
   const { data:chapters=[],   isLoading:loadChapters }  = useQuery({ queryKey:['chapters',selectedSeriesId], queryFn:()=>fetchChapters(selectedSeriesId), enabled:!!selectedSeriesId });
   const { data:assistants=[],  isLoading:loadAssistants } = useQuery({ queryKey:['assistants'], queryFn:fetchAssistants });
   const { data:pagesData=[] } = useQuery({
-    queryKey: ['pages', selectedChapterId],
+    // Dùng chung key 'chapter-pages' với ChapterManager.tsx (Chapter & Trang) —
+    // trước đây key là ['pages', ...] khác tên, nên khi xoá/renumber trang bên
+    // Chapter & Trang, cache ở đây không bị invalidate theo, hiện ảnh cũ.
+    queryKey: ['chapter-pages', selectedChapterId],
     queryFn: async () => { const r = await api.get('/pages', { params:{ chapterId:selectedChapterId } }); return r.data.data ?? []; },
     enabled: !!selectedChapterId,
   });

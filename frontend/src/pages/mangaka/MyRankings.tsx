@@ -17,7 +17,7 @@ const MyRankings = () => {
     queryFn: fetchMyRankings,
   });
 
-  const atRisk   = rankings.filter(s => s.isAtRisk);
+  const atRisk   = rankings.filter(s => s.atRisk);
   const avgRank  = rankings.length ? Math.round(rankings.reduce((a,s)=>a+s.currentRank,0)/rankings.length) : 0;
   const top10    = rankings.filter(s => s.currentRank <= 10).length;
 
@@ -121,7 +121,7 @@ const MyRankings = () => {
               const rankChange = (s.previousRank ?? s.currentRank) - s.currentRank;
               return (
                 <div key={s.seriesId}
-                  className={`grid grid-cols-[3rem_1fr_6rem_6rem_5rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${s.isAtRisk ? 'bg-red-500/3' : ''}`}>
+                  className={`grid grid-cols-[3rem_1fr_6rem_6rem_5rem] gap-4 px-6 py-4 items-center border-b border-white/4 last:border-0 hover:bg-white/[0.02] transition-colors ${s.atRisk ? 'bg-red-500/3' : ''}`}>
 
                   {/* Rank */}
                   <div className="flex items-center justify-center">
@@ -134,7 +134,7 @@ const MyRankings = () => {
                   {/* Title */}
                   <div>
                     <p className="text-[13px] font-semibold text-white">{s.seriesTitle}</p>
-                    {s.isAtRisk && <p className="text-[10px] text-red-400 mt-0.5">⚠ At-risk</p>}
+                    {s.atRisk && <p className="text-[10px] text-red-400 mt-0.5">⚠ At-risk</p>}
                   </div>
 
                   {/* Votes */}
@@ -154,7 +154,7 @@ const MyRankings = () => {
 
                   {/* Status */}
                   <div className="flex justify-center">
-                    {s.isAtRisk
+                    {s.atRisk
                       ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">Nguy hiểm</span>
                       : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">An toàn</span>}
                   </div>
